@@ -2,9 +2,17 @@
 //   1) Keep the user's Supabase session cookie fresh
 //   2) Gate /upload to logged-in users (sends others to /login)
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 export async function middleware(request: NextRequest) {
+  // API-key-authenticated or public JSON endpoints — skip the Supabase cookie
+  // refresh entirely. These are called by the Chrome extension (no cookies)
+  // and by the popup for stats; cookie processing just adds latency.
+  const pathname = request.nextUrl.pathname;
+  if (pathname.startsWith("/api/ingest") || pathname.startsWith("/api/stats")) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -15,7 +23,9 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(
+          cookiesToSet: { name: string; value: string; options: CookieOptions }[],
+        ) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
@@ -32,7 +42,6 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
   const isProtected =
     pathname.startsWith("/upload") || pathname.startsWith("/api/upload");
 

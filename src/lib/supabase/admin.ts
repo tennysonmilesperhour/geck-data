@@ -3,11 +3,16 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Accept either the Next.js-style names (NEXT_PUBLIC_SUPABASE_URL /
+  // SUPABASE_SERVICE_ROLE_KEY) or the shorter names often configured on
+  // Vercel (SUPABASE_URL / SUPABASE_SERVICE_KEY).
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) {
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL not set. Check .env.local.",
+      "Supabase admin env vars missing. Set SUPABASE_URL + SUPABASE_SERVICE_KEY (or NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).",
     );
   }
   return createSupabaseClient(url, key, {
