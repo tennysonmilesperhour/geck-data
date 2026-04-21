@@ -2,6 +2,7 @@
 // count and recency. Helps spot which events drive the most chatter.
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
+import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative } from "@/lib/format";
 
@@ -37,7 +38,7 @@ export default async function ShowsPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load show mentions: {error.message}
       </div>
     );
@@ -111,7 +112,7 @@ export default async function ShowsPage() {
       key: "context",
       header: "Context",
       render: (r) => (
-        <span className="line-clamp-2 text-neutral-700">{r.context ?? "—"}</span>
+        <span className="line-clamp-2 text-ink-200">{r.context ?? "—"}</span>
       ),
     },
     {
@@ -123,7 +124,7 @@ export default async function ShowsPage() {
             href={r.source_url}
             target="_blank"
             rel="noreferrer noopener"
-            className="text-gecko hover:underline"
+            className="text-claude hover:underline"
           >
             open ↗
           </a>
@@ -136,13 +137,11 @@ export default async function ShowsPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-semibold text-gecko-dark">Shows & expos</h1>
-        <p className="mt-1 text-neutral-600">
-          Show names mentioned in listings, bios, or forum posts, aggregated by
-          event.
-        </p>
-      </header>
+      <SectionHeader
+        eyebrow="Events"
+        title="Shows & expos"
+        description="Show names mentioned in listings, bios, or forum posts, aggregated by event."
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Distinct shows" value={shows.length} />
@@ -159,7 +158,7 @@ export default async function ShowsPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Shows by mention count</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Shows by mention count</h2>
         <DataTable
           columns={columns}
           rows={shows}
@@ -169,7 +168,7 @@ export default async function ShowsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Recent mentions</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recent mentions</h2>
         <DataTable
           columns={recentColumns}
           rows={rows.slice(0, 50)}

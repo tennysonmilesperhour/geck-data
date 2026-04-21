@@ -3,6 +3,7 @@
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
+import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtPct, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -38,7 +39,7 @@ export default async function PriceDropsPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load price drops: {error.message}
       </div>
     );
@@ -67,10 +68,10 @@ export default async function PriceDropsPage() {
       header: "Listing",
       render: (r) => (
         <div>
-          <div className="font-medium">
+          <div className="font-medium text-ink-100">
             {r.market_listings?.title ?? r.listing_id}
           </div>
-          <div className="text-xs text-neutral-500">{r.listing_id}</div>
+          <div className="text-xs text-ink-400">{r.listing_id}</div>
         </div>
       ),
     },
@@ -81,7 +82,7 @@ export default async function PriceDropsPage() {
       render: (r) => (
         <span
           className={`font-semibold ${
-            (r.pct_change ?? 0) < 0 ? "text-red-700" : "text-gecko"
+            (r.pct_change ?? 0) < 0 ? "text-danger" : "text-ready"
           }`}
         >
           {fmtPct(r.pct_change)}
@@ -93,7 +94,7 @@ export default async function PriceDropsPage() {
       header: "Was",
       align: "right",
       render: (r) => (
-        <span className="text-neutral-500 line-through">
+        <span className="text-ink-400 line-through">
           {fmtUsd(r.old_price_usd ?? r.old_price)}
         </span>
       ),
