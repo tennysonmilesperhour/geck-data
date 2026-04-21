@@ -647,6 +647,99 @@ const SUPPLY_COLORS: readonly string[] = [
   "#4ade80", "#fde047", "#f97316", "#38bdf8",
 ];
 
+// ----------------------------------------------------------------------------
+// Breeders tab — ranked breeders with activity + specialty + recent velocity.
+// No screenshot for this one; designed to surface "who's shipping volume,
+// at what price, with what lineage weight" so an analyst can skim for
+// whose listings to watch.
+// ----------------------------------------------------------------------------
+const BREEDER_NAMES = [
+  "Ridgeback Reptiles",
+  "Kodama Koncepts",
+  "Nordic Morph Works",
+  "Pangea Select",
+  "Crested Cape",
+  "Axanthic Alchemy",
+  "Moonglow Morphs",
+  "Lilly Lab",
+  "Harlequin Haven",
+  "Sable Selects",
+  "Pinstripe Provisions",
+  "Full Spectrum Reptiles",
+] as const;
+
+const BREEDER_REGIONS: RegionKey[] = ["US", "US", "EU", "UK", "CA", "AU", "JP", "SE", "US", "EU", "UK", "SEA"];
+
+export type BreederRow = {
+  name: string;
+  region: RegionKey;
+  activeListings: number;
+  soldInWindow: number;
+  avgSoldPrice: number;
+  avgDaysToSell: number;
+  specialty: Combo;
+  velocity: number[];          // 12-week sparkline of new listings
+  lineageScore: number;        // 0..100; higher = stronger project/proven
+  attribution: Attribution;
+};
+
+export type BreedersData = {
+  rows: BreederRow[];
+  kpis: {
+    totalBreeders: number;
+    topRegion: RegionKey;
+    avgSoldPrice: number;
+    avgDaysToSell: number;
+  };
+};
+
+export function getBreeders(f: Filters): BreedersData {
+  const rand = mulberry32(seedFor(f, "breeders"));
+
+  const rows: BreederRow[] = BREEDER_NAMES.map((name, i) => {
+    const velocity = Array.from({ length: 12 }, () =>
+      Math.max(0, Math.round(2 + rand() * 10)),
+    );
+    const activeListings = 4 + Math.floor(rand() * 40);
+    const soldInWindow = 2 + Math.floor(rand() * 30);
+    const avgSoldPrice = 800 + Math.floor(rand() * 4500);
+    const avgDaysToSell = 18 + Math.floor(rand() * 28);
+    const specialty =
+      COMBOS[Math.floor(rand() * COMBOS.length)] ?? COMBOS[0]!;
+    const lineageScore = 30 + Math.floor(rand() * 65);
+    return {
+      name,
+      region: BREEDER_REGIONS[i] ?? "US",
+      activeListings,
+      soldInWindow,
+      avgSoldPrice,
+      avgDaysToSell,
+      specialty,
+      velocity,
+      lineageScore,
+      attribution: synthesizeAttribution(f, rand, 3, 55),
+    };
+  }).sort((a, b) => b.soldInWindow - a.soldInWindow);
+
+  const byRegion = new Map<RegionKey, number>();
+  for (const r of rows) byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + 1);
+  const topRegion = [...byRegion.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "US";
+
+  return {
+    rows,
+    kpis: {
+      totalBreeders: rows.length,
+      topRegion,
+      avgSoldPrice: Math.round(
+        rows.reduce((a, r) => a + r.avgSoldPrice, 0) / Math.max(1, rows.length),
+      ),
+      avgDaysToSell: Math.round(
+        rows.reduce((a, r) => a + r.avgDaysToSell, 0) / Math.max(1, rows.length),
+      ),
+    },
+  };
+}
+
 export function getSupplyPipeline(f: Filters): SupplyPipeline {
   const rand = mulberry32(seedFor(f, "supply"));
   // Monthly profile — ramps up to a summer peak then drops off, so the
