@@ -11,7 +11,7 @@
 // pipeline is ready, swap the body to a Supabase query without changing the
 // public signature; the dashboard keeps working end-to-end during the port.
 import type { Attribution, Filters, SourceId, Timeframe } from "./types";
-import { ALL_SOURCE_IDS } from "./sources";
+import { ALL_SOURCE_IDS, sourceMeta } from "./sources";
 
 // ----------------------------------------------------------------------------
 // Mulberry32 — tiny, fast, deterministic PRNG. Not cryptographic; we just
@@ -232,6 +232,180 @@ export function getPeakIndicators(f: Filters): PeakIndicator[] {
     };
   });
   return rows.sort((a, b) => b.score - a.score).slice(0, 6);
+}
+
+// ----------------------------------------------------------------------------
+// Combos tab — ranked table + per-combo detail.
+//
+// getCombosRanked returns one row per known combo, sortable by multiple
+// metrics. getComboDetail returns the selected combo's multi-series price
+// chart (sold median, ask median, internal avg, external avg, upper band)
+// plus blended price contribution and summary metrics.
+// ----------------------------------------------------------------------------
+export type ComboRow = {
+  combo: Combo;
+  traits: [string, string];     // split for the sub-label under the combo name
+  medianSold: number;
+  stddev: number;
+  ask: number;
+  spreadPct: number;            // (ask - sold) / sold * 100
+  daysToSell: number;
+  volume: number;
+  attribution: Attribution;
+};
+
+export type ComboRankSort =
+  | "volume"
+  | "medianSold"
+  | "ask"
+  | "spread"
+  | "days";
+
+export function getCombosRanked(
+  f: Filters,
+  sort: ComboRankSort = "volume",
+): ComboRow[] {
+  const rand = mulberry32(seedFor(f, "combos-ranked"));
+  const rows: ComboRow[] = COMBOS.map((combo) => {
+    const medianSold = 500 + Math.floor(rand() * 4500);
+    const stddev = Math.floor(medianSold * (0.12 + rand() * 0.2));
+    const ask = Math.round(medianSold * (0.9 + rand() * 0.4));
+    const spreadPct = ((ask - medianSold) / medianSold) * 100;
+    const daysToSell = 25 + Math.floor(rand() * 20);
+    const volume = 10 + Math.floor(rand() * 30);
+    const parts = combo.split(" × ");
+    return {
+      combo,
+      traits: [parts[0] ?? combo, parts[1] ?? ""],
+      medianSold,
+      stddev,
+      ask,
+      spreadPct,
+      daysToSell,
+      volume,
+      attribution: synthesizeAttribution(f, rand, 3, 48),
+    };
+  });
+  return sortComboRows(rows, sort);
+}
+
+export function sortComboRows(rows: ComboRow[], sort: ComboRankSort): ComboRow[] {
+  const keyFn: Record<ComboRankSort, (r: ComboRow) => number> = {
+    volume: (r) => r.volume,
+    medianSold: (r) => r.medianSold,
+    ask: (r) => r.ask,
+    spread: (r) => Math.abs(r.spreadPct),
+    days: (r) => -r.daysToSell, // fewer days = better
+  };
+  return [...rows].sort((a, b) => keyFn[sort](b) - keyFn[sort](a));
+}
+
+// Multi-series time chart — mirrors the Combos detail panel screenshot
+// (Upper band / Sold median / Ask median / Internal avg / External avg).
+export type MultiSeries = {
+  name: string;
+  color: string;
+  dashed?: boolean;
+  points: IndexPoint[];
+};
+
+export type ComboDetail = {
+  combo: Combo;
+  medianSold: number;
+  range: [number, number];
+  observations: number;
+  series: MultiSeries[];
+  blend: Array<{ source: SourceId; n: number; amount: number; pct: number; label: string }>;
+  keyMetrics: {
+    medianAsk: number;
+    askSoldSpreadPct: number;
+    daysToSell: number;
+    volume: number;
+  };
+  attribution: Attribution;
+};
+
+export function getComboDetail(f: Filters, combo: Combo | null): ComboDetail | null {
+  if (!combo) return null;
+  const rand = mulberry32(seedFor(f, `combo-detail-${combo}`));
+  const n = Math.max(12, TIMEFRAME_MONTHS[f.timeframe] * 4);
+
+  // Build five correlated-but-distinct series. Sold median leads; ask is
+  // biased a bit above it; internal/external averages oscillate around it;
+  // upper band rides +stddev.
+  const sold = walk(rand, 1800, n, 0.015, 0.12);
+  const ask = sold.map((p) => ({ t: p.t, v: Math.round(p.v * (1 + 0.06 * (rand() - 0.3))) }));
+  const internal = sold.map((p) => ({ t: p.t, v: Math.round(p.v * (0.9 + 0.2 * rand())) }));
+  const external = sold.map((p) => ({ t: p.t, v: Math.round(p.v * (1.05 + 0.2 * (rand() - 0.5))) }));
+  const upper = sold.map((p) => ({ t: p.t, v: Math.round(p.v * 1.35) }));
+
+  const attribution = synthesizeAttribution(f, rand, 4, 52);
+  const medianSoldLatest = sold[sold.length - 1]!.v;
+  const range: [number, number] = [
+    Math.min(...sold.map((p) => p.v)),
+    Math.max(...sold.map((p) => p.v)),
+  ];
+
+  // Translate the attribution.blend into a displayable shape (with source
+  // labels resolved from the SOURCES catalog).
+  const blend = (attribution.blend ?? []).map((b) => ({
+    source: b.source,
+    n: b.n,
+    amount: b.amount,
+    pct: b.pct,
+    label: sourceMeta(b.source).short,
+  }));
+
+  return {
+    combo,
+    medianSold: medianSoldLatest,
+    range,
+    observations: 20 + Math.floor(rand() * 40),
+    series: [
+      { name: "Upper band",    color: "#10b98166", dashed: true, points: upper },
+      { name: "Sold (median)", color: "#34d399",                  points: sold },
+      { name: "Ask (median)",  color: "#a78bfa",   dashed: true, points: ask },
+      { name: "Internal avg",  color: "#fbbf24",                  points: internal },
+      { name: "External avg",  color: "#38bdf8",                  points: external },
+    ],
+    blend,
+    keyMetrics: {
+      medianAsk: Math.round(medianSoldLatest * (1 + (rand() * 0.15))),
+      askSoldSpreadPct: Math.round(((rand() - 0.4) * 20) * 10) / 10,
+      daysToSell: 25 + Math.floor(rand() * 20),
+      volume: 12 + Math.floor(rand() * 30),
+    },
+    attribution,
+  };
+}
+
+// Smooth-ish random walk helper for the detail chart. Kept local to
+// fixtures so the PRNG is seeded consistently.
+function walk(
+  rand: () => number,
+  start: number,
+  n: number,
+  driftBias: number,
+  volatility: number,
+): IndexPoint[] {
+  const out: IndexPoint[] = [];
+  let v = start;
+  for (let i = 0; i < n; i++) {
+    const drift = (rand() - 0.4) * driftBias;
+    const shock = (rand() - 0.5) * volatility;
+    v = Math.max(50, v * (1 + drift + shock));
+    out.push({ t: timeLabel(i, n), v: Math.round(v) });
+  }
+  return out;
+}
+
+function timeLabel(i: number, n: number): string {
+  const now = new Date();
+  const monthsBack = ((n - 1 - i) / n) * 12;
+  const d = new Date(now);
+  d.setDate(1);
+  d.setMonth(d.getMonth() - Math.round(monthsBack));
+  return d.toLocaleString("en-US", { month: "short", year: "2-digit" });
 }
 
 // ----------------------------------------------------------------------------
