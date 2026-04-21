@@ -15,6 +15,7 @@ const TABS: Tab[] = [
   { href: "/sold",           label: "Sold",          group: "core" },
   { href: "/price-drops",    label: "Drops",         group: "core" },
   { href: "/sellers",        label: "Sellers",       group: "core" },
+  { href: "/market",         label: "Market",        group: "analysis" },
   { href: "/trends",         label: "Trends",        group: "analysis" },
   { href: "/compare",        label: "Compare",       group: "analysis" },
   { href: "/shows",          label: "Shows",         group: "ops" },
