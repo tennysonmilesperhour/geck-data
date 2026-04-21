@@ -241,7 +241,33 @@ create policy "owner delete alerts" on public.alerts
   for delete using (auth.uid() = owner_id);
 
 -- ----------------------------------------------------------------------------
--- 10. Convenience view: sold listings with days_to_sell
+-- 10. touch_listing_seen(p_id, p_observed)
+--
+--     Atomic update to first_seen_at / last_seen_at / current_status when a
+--     listing is (re-)observed live. Replaces the read-modify-write dance in
+--     application code so two concurrent listingSeen events can't clobber
+--     each other. Preserves terminal states (sold, removed) so a stale
+--     listingSeen can't undo a sold inference.
+-- ----------------------------------------------------------------------------
+create or replace function public.touch_listing_seen(
+  p_id text,
+  p_observed timestamptz
+)
+returns void
+language sql
+as $$
+  update public.market_listings set
+    first_seen_at = least(coalesce(first_seen_at, p_observed), p_observed),
+    last_seen_at  = greatest(coalesce(last_seen_at,  p_observed), p_observed),
+    current_status = case
+      when current_status in ('sold','removed') then current_status
+      else 'live'
+    end
+  where id = p_id;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 11. Convenience view: sold listings with days_to_sell
 -- ----------------------------------------------------------------------------
 create or replace view public.sold_listings_v as
 select

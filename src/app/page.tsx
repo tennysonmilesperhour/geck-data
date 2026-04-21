@@ -30,16 +30,20 @@ export default async function DashboardPage() {
     showCount,
     crossCount,
   ] = await Promise.all([
+    // PostgREST caps the default page at 1000 rows; set an explicit higher
+    // limit so the dashboard keeps rendering the full snapshot as we scale.
     supabase
       .from("market_listings")
       .select(
         "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits",
-      ),
+      )
+      .limit(10000),
     supabase
       .from("market_sellers")
       .select(
         "seller_id, seller_name, seller_location, membership, feedback_count, seller_rating_score, total_listings, avg_price, five_star_rating",
-      ),
+      )
+      .limit(5000),
     supabase
       .from("price_drops")
       .select("id", { count: "exact", head: true })

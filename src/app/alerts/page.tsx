@@ -1,5 +1,7 @@
-// Alerts inbox. Requires login (enforced at /alerts* via middleware). Shows
-// each alert the current user owns and the most recent matches.
+// Alerts inbox. Shows each alert the current user owns and the most recent
+// matches. Unauthenticated visitors get an in-page login prompt; the query
+// itself is safe either way — owner-scoped RLS on the alerts table means an
+// anon caller sees zero rows.
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";

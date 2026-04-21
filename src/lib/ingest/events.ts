@@ -150,31 +150,24 @@ function projectListing(payload: Record<string, unknown>): Record<string, unknow
   return out;
 }
 
-async function touchListingTimes(
+async function touchListingSeen(
   admin: Admin,
   id: string,
   observed: string,
 ): Promise<void> {
-  // first_seen_at = min(existing, observed); last_seen_at = max(existing, observed)
-  const { data } = await admin
-    .from("market_listings")
-    .select("first_seen_at, last_seen_at")
-    .eq("id", id)
-    .maybeSingle();
-  const firstSeen =
-    data?.first_seen_at &&
-    Date.parse(data.first_seen_at as string) < Date.parse(observed)
-      ? (data.first_seen_at as string)
-      : observed;
-  const lastSeen =
-    data?.last_seen_at &&
-    Date.parse(data.last_seen_at as string) > Date.parse(observed)
-      ? (data.last_seen_at as string)
-      : observed;
+  // Single atomic UPDATE in Postgres (see touch_listing_seen in 0002).
+  // Protects against concurrent listingSeen events racing on first/last_seen_at,
+  // and preserves terminal states (sold, removed) so a late listingSeen can't
+  // undo a sold inference.
+  await admin.rpc("touch_listing_seen", { p_id: id, p_observed: observed });
+}
+
+// Ensure a market_listings row exists for the given id before writing any
+// child row that FKs into it. Stub-only: does not overwrite existing columns.
+async function ensureListingStub(admin: Admin, id: string): Promise<void> {
   await admin
     .from("market_listings")
-    .update({ first_seen_at: firstSeen, last_seen_at: lastSeen, current_status: "live" })
-    .eq("id", id);
+    .upsert({ id }, { onConflict: "id", ignoreDuplicates: true });
 }
 
 async function daysSinceFirstSeen(
@@ -209,7 +202,7 @@ async function handleListingSeen(
     .upsert(row, { onConflict: "id" });
   if (upErr) return { type: env.type, ok: false, detail: `listings upsert: ${upErr.message}` };
 
-  await touchListingTimes(admin, row.id as string, observed);
+  await touchListingSeen(admin, row.id as string, observed);
 
   const priceRow = {
     listing_id: row.id,
@@ -277,10 +270,11 @@ async function handlePriceDrop(
   const observed = toIso(env.occurred_at, nowIso());
   const listingId = str(env.payload.listing_id) ?? str(env.payload.id);
   if (!listingId) return { type: env.type, ok: false, detail: "missing listing id" };
+  await ensureListingStub(admin, listingId);
   const oldPrice = num(env.payload.old_price);
   const newPrice = num(env.payload.new_price);
   const pct =
-    oldPrice && newPrice && oldPrice > 0
+    oldPrice != null && newPrice != null && oldPrice > 0
       ? ((newPrice - oldPrice) / oldPrice) * 100
       : null;
   const row = {
@@ -325,6 +319,7 @@ async function handleSoldInferred(
   const observed = toIso(env.occurred_at, nowIso());
   const listingId = str(env.payload.listing_id) ?? str(env.payload.id);
   if (!listingId) return { type: env.type, ok: false, detail: "missing listing id" };
+  await ensureListingStub(admin, listingId);
   const days = await daysSinceFirstSeen(admin, listingId, observed);
   const { error } = await admin.from("listing_status_events").upsert(
     {
@@ -368,6 +363,7 @@ async function handleAuctionClose(
   const { error } = await admin.from("auction_results").insert(row);
   if (error) return { type: env.type, ok: false, detail: error.message };
   if (listingId) {
+    await ensureListingStub(admin, listingId);
     await admin.from("listing_status_events").upsert(
       {
         listing_id: listingId,
@@ -392,9 +388,32 @@ async function handleShowMention(
 ): Promise<EventResult> {
   const showName = str(env.payload.show_name);
   if (!showName) return { type: env.type, ok: false, detail: "missing show_name" };
+
+  // The FKs on show_mentions are nullable but still enforced when non-null.
+  // Null out ids that don't exist yet so a mention is never dropped because
+  // its listing/seller hasn't been observed through another stream.
+  let listingId = str(env.payload.listing_id);
+  let sellerId = str(env.payload.seller_id);
+  if (listingId) {
+    const { data } = await admin
+      .from("market_listings")
+      .select("id")
+      .eq("id", listingId)
+      .maybeSingle();
+    if (!data) listingId = null;
+  }
+  if (sellerId) {
+    const { data } = await admin
+      .from("market_sellers")
+      .select("seller_id")
+      .eq("seller_id", sellerId)
+      .maybeSingle();
+    if (!data) sellerId = null;
+  }
+
   const row = {
-    listing_id: str(env.payload.listing_id),
-    seller_id: str(env.payload.seller_id),
+    listing_id: listingId,
+    seller_id: sellerId,
     show_name: showName,
     show_date: str(env.payload.show_date),
     context: str(env.payload.context),
@@ -495,11 +514,26 @@ async function handleAlertMatch(
 ): Promise<EventResult> {
   const alertId = str(env.payload.alert_id);
   if (!alertId) return { type: env.type, ok: false, detail: "missing alert_id" };
+
+  // Verify the alert exists. INGEST_API_KEY authenticates the extension but
+  // does not bind it to a specific user, so a caller could otherwise forge
+  // matches against arbitrary alert ids. Existence check at least guarantees
+  // we only write matches for alerts the app knows about, and avoids a FK
+  // violation on bad input.
+  const { data: alertRow, error: alertErr } = await admin
+    .from("alerts")
+    .select("id")
+    .eq("id", alertId)
+    .maybeSingle();
+  if (alertErr) return { type: env.type, ok: false, detail: alertErr.message };
+  if (!alertRow) return { type: env.type, ok: false, detail: `alert ${alertId} not found` };
+
   const listingId = str(env.payload.listing_id);
   const crossId = str(env.payload.cross_platform_listing_id);
   if (!listingId && !crossId) {
     return { type: env.type, ok: false, detail: "one of listing_id or cross_platform_listing_id required" };
   }
+  if (listingId) await ensureListingStub(admin, listingId);
   const { error } = await admin.from("alert_matches").insert({
     alert_id: alertId,
     listing_id: listingId,
