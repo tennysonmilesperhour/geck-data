@@ -623,6 +623,72 @@ function arbRowBySource(
   };
 }
 
+// ----------------------------------------------------------------------------
+// Supply tab — projected hatchlings (9-month). Stacked by combo per month.
+// Forward-looking signal assembled from user-tracked breeding pairs on the
+// Geck Inspect side (the screenshots' enterprise-only badge copy).
+// ----------------------------------------------------------------------------
+export type SupplyMonth = {
+  monthLabel: string;                     // e.g. "Apr 26"
+  perCombo: Array<{ combo: Combo; n: number; color: string }>;
+  total: number;
+};
+
+export type SupplyPipeline = {
+  activePairs: number;
+  projectedNine: number;
+  peakMonth: string;
+  months: SupplyMonth[];
+};
+
+const SUPPLY_COLORS: readonly string[] = [
+  "#34d399", "#60a5fa", "#a78bfa", "#f472b6",
+  "#fbbf24", "#fb7185", "#22d3ee", "#c084fc",
+  "#4ade80", "#fde047", "#f97316", "#38bdf8",
+];
+
+export function getSupplyPipeline(f: Filters): SupplyPipeline {
+  const rand = mulberry32(seedFor(f, "supply"));
+  // Monthly profile — ramps up to a summer peak then drops off, so the
+  // chart reads as a breeding-season shape (matches the screenshot).
+  const profile = [0.2, 0.35, 0.75, 1.0, 1.0, 0.65, 0.55, 0.35, 0.2];
+  const months: SupplyMonth[] = [];
+  let activePairs = 0;
+  let peakTotal = -Infinity;
+  let peakIdx = 0;
+
+  const now = new Date();
+  for (let i = 0; i < profile.length; i++) {
+    const d = new Date(now);
+    d.setDate(1);
+    d.setMonth(now.getMonth() + i);
+    const label = d.toLocaleString("en-US", { month: "short", year: "2-digit" });
+
+    const perCombo = COMBOS.slice(0, 12).map((combo, idx) => {
+      const n = Math.max(0, Math.round(profile[i]! * (5 + rand() * 18)));
+      activePairs += n > 0 ? 1 : 0;
+      return {
+        combo,
+        n,
+        color: SUPPLY_COLORS[idx % SUPPLY_COLORS.length]!,
+      };
+    });
+    const total = perCombo.reduce((a, b) => a + b.n, 0);
+    if (total > peakTotal) {
+      peakTotal = total;
+      peakIdx = i;
+    }
+    months.push({ monthLabel: label, perCombo, total });
+  }
+
+  return {
+    activePairs: 60 + Math.floor(rand() * 30),
+    projectedNine: months.reduce((a, m) => a + m.total, 0),
+    peakMonth: months[peakIdx]!.monthLabel,
+    months,
+  };
+}
+
 function arbRowByRegion(
   _f: Filters,
   combo: Combo,
