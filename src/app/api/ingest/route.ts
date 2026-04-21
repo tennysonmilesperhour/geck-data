@@ -26,6 +26,7 @@ import {
   recordIngestAudit,
   type AuditRow,
 } from "@/lib/ingest/audit";
+import { checkRateLimit } from "@/lib/ingest/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -250,6 +251,20 @@ async function handle(req: NextRequest, audit: AuditRow): Promise<NextResponse> 
 
   const contentType = req.headers.get("content-type") ?? "";
   const admin = createAdminClient();
+
+  // Rate limit: protects the DB from a compromised INGEST_API_KEY (shipped
+  // in the extension bundle, so semi-public). Checked after auth so we
+  // don't waste DB queries on unauthenticated probes.
+  const rl = await checkRateLimit(admin, audit.client_ip_hash ?? null);
+  if (!rl.allowed) {
+    audit.error_summary = rl.reason;
+    const res = NextResponse.json(
+      { error: rl.reason, retryAfterSec: rl.retryAfterSec },
+      { status: 429 },
+    );
+    res.headers.set("Retry-After", String(rl.retryAfterSec));
+    return withCors(res, req);
+  }
 
   if (contentType.includes("application/json")) {
     let body: unknown;
