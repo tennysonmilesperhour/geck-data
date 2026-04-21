@@ -26,7 +26,8 @@ geck-inspect/
     │   ├── page.tsx                       ← public dashboard
     │   ├── login/page.tsx                 ← email/password sign-in
     │   ├── upload/page.tsx                ← drop zone (logged-in only)
-    │   └── api/upload/route.ts            ← server route that ingests files
+    │   ├── api/upload/route.ts            ← browser drop-zone → server ingest (session auth)
+    │   └── api/ingest/route.ts            ← machine-to-machine ingest (Bearer INGEST_API_KEY)
     ├── components/
     │   ├── Header.tsx, LogoutButton.tsx
     │   ├── DropZone.tsx
