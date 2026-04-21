@@ -521,6 +521,134 @@ export function heatmapMetricLabel(m: HeatmapMetric): string {
 }
 
 // ----------------------------------------------------------------------------
+// Arbitrage tab — spread opportunities.
+//
+// Two axes we can arbitrage along:
+//   - By source: where one feed quotes a combo meaningfully cheaper or
+//     dearer than another (GI listings vs Pangea vs Breeder, etc.)
+//   - By region: where a combo is cheap in region A and dear in region B
+//     (think: buy in US, ship to JP)
+//
+// For each combo, we find the min/max leg in the selected axis and expose
+// a row with the spread in dollars and percent.
+// ----------------------------------------------------------------------------
+export type ArbitrageAxis = "source" | "region";
+
+export type ArbitrageRow = {
+  combo: Combo;
+  low: { label: string; tag: string; price: number; n: number };
+  high: { label: string; tag: string; price: number; n: number };
+  spreadAbs: number;
+  spreadPct: number;
+  attribution: Attribution;
+};
+
+export type Arbitrage = {
+  axis: ArbitrageAxis;
+  rows: ArbitrageRow[];
+  kpis: {
+    biggestPct: number;
+    avgPct: number;
+    opportunities: number; // rows with spreadPct >= 10
+  };
+};
+
+export function getArbitrage(f: Filters, axis: ArbitrageAxis): Arbitrage {
+  const rand = mulberry32(seedFor(f, `arb-${axis}`));
+  const rows: ArbitrageRow[] = COMBOS.map((combo) => {
+    if (axis === "source") {
+      return arbRowBySource(f, combo, rand);
+    }
+    return arbRowByRegion(f, combo, rand);
+  })
+    // Drop ties (synthetic equal prices) so the list is always informative.
+    .filter((r) => r.spreadAbs > 0)
+    .sort((a, b) => b.spreadPct - a.spreadPct);
+
+  const pcts = rows.map((r) => r.spreadPct);
+  const biggest = pcts[0] ?? 0;
+  const avg =
+    pcts.length === 0 ? 0 : pcts.reduce((a, b) => a + b, 0) / pcts.length;
+  const opportunities = pcts.filter((p) => p >= 10).length;
+
+  return {
+    axis,
+    rows: rows.slice(0, 10),
+    kpis: {
+      biggestPct: biggest,
+      avgPct: avg,
+      opportunities,
+    },
+  };
+}
+
+function arbRowBySource(
+  f: Filters,
+  combo: Combo,
+  rand: () => number,
+): ArbitrageRow {
+  const pool: SourceId[] =
+    f.sources === "all" ? [...ALL_SOURCE_IDS] : Array.from(f.sources);
+  const chosen =
+    pool.length >= 2
+      ? pool
+      : ([...ALL_SOURCE_IDS].sort(() => rand() - 0.5) as SourceId[]);
+  const quotes = chosen.map((id) => ({
+    id,
+    price: 400 + Math.floor(rand() * 4500),
+    n: 1 + Math.floor(rand() * 12),
+  }));
+  quotes.sort((a, b) => a.price - b.price);
+  const low = quotes[0]!;
+  const high = quotes[quotes.length - 1]!;
+  const spreadAbs = high.price - low.price;
+  const spreadPct = low.price === 0 ? 0 : (spreadAbs / low.price) * 100;
+  return {
+    combo,
+    low: {
+      label: sourceMeta(low.id).short,
+      tag: "buy",
+      price: low.price,
+      n: low.n,
+    },
+    high: {
+      label: sourceMeta(high.id).short,
+      tag: "sell",
+      price: high.price,
+      n: high.n,
+    },
+    spreadAbs,
+    spreadPct,
+    attribution: synthesizeAttribution(f, rand, 3, 52),
+  };
+}
+
+function arbRowByRegion(
+  _f: Filters,
+  combo: Combo,
+  rand: () => number,
+): ArbitrageRow {
+  const quotes = REGION_COLUMNS.map((r) => ({
+    region: r,
+    price: Math.round(400 * regionMultiplier(r, rand) + rand() * 3000),
+    n: 1 + Math.floor(rand() * 12),
+  }));
+  quotes.sort((a, b) => a.price - b.price);
+  const low = quotes[0]!;
+  const high = quotes[quotes.length - 1]!;
+  const spreadAbs = high.price - low.price;
+  const spreadPct = low.price === 0 ? 0 : (spreadAbs / low.price) * 100;
+  return {
+    combo,
+    low: { label: low.region, tag: "buy", price: low.price, n: low.n },
+    high: { label: high.region, tag: "sell", price: high.price, n: high.n },
+    spreadAbs,
+    spreadPct,
+    attribution: synthesizeAttribution(_f, rand, 3, 48),
+  };
+}
+
+// ----------------------------------------------------------------------------
 // Attribution synthesizer. Picks N sources honoring the filter, and assigns
 // each a contribution weight that sums to 100%.
 // ----------------------------------------------------------------------------
