@@ -246,6 +246,65 @@ SQL Editor — safe to re-run.
 | `/shows` | Expo/show mention aggregation |
 | `/cross-platform` | Listings from Fauna Classifieds, Reptile Forums, Preloved, Kijiji |
 | `/alerts` | Your saved queries and their matches (login required) |
+| `/admin/analytics` | **Admin only** — Growth / Engagement / Features / Retention / Errors |
+
+## Admin analytics (`/admin/analytics`)
+
+A five-tab dashboard at `/admin/analytics`, gated to users with
+`profiles.role = 'admin'`. Structure mirrors the companion app's Analytics
+page so patterns stay consistent across the stack:
+
+- **Growth** — new signups, new listings, price drops, sold, cross-platform,
+  show mentions. Every KPI compares the selected period to the prior period
+  of equal length and shows the raw prior count next to the delta.
+- **Engagement** — DAU from `user_events`, sessions, return rate, top pages
+  (events + distinct sessions per page).
+- **Features** — `page_view` vs feature events, top event names, full
+  breakdown table with **count + unique-user reach** per event name.
+- **Retention** — weekly cohort grid (last 8 signup weeks × W+1..W+4
+  follow-up weeks). Incomplete weeks render `—`; cell color saturates at 60%.
+- **Errors** — `error_logs` viewer with period/level/search filters and a
+  detail modal (mark resolved, delete).
+
+### Telemetry
+
+`src/lib/telemetry.ts` exposes four entry points, all safe to call from
+anywhere on the client:
+
+```ts
+import {
+  trackEvent,
+  trackPageView,
+  reportError,
+  installGlobalErrorHandlers,
+} from "@/lib/telemetry";
+
+trackEvent("upload_started", { filename, bytes });
+trackEvent("alert_created", { query_type: "maturity" });
+```
+
+Page views are already captured automatically on every route change via
+`src/components/TelemetryClient.tsx`. `installGlobalErrorHandlers()` is
+invoked once at mount and routes uncaught `window.error` + unhandled promise
+rejections into `public.error_logs`; `src/components/ErrorBoundary.tsx` adds
+the React render-time pipeline.
+
+Every event row carries a `source` column (currently `'geck-inspect'`) so
+future inspectors / scrapers / the browser extension can write into the
+same tables via the Supabase REST API and stay distinguishable in the
+dashboard.
+
+### Enabling it
+
+1. Run `supabase/migrations/0003_admin_analytics.sql` (creates `profiles`,
+   `user_events`, `error_logs`, indexes, RLS, and the `v_daily_activity`
+   view — see `README_admin_analytics_prod.md` for details).
+2. Promote yourself to admin once, in the Supabase SQL editor:
+   ```sql
+   update public.profiles set role = 'admin' where email = 'you@example.com';
+   ```
+3. Reload the app; an **Analytics** tab appears in the header and
+   `/admin/analytics` unlocks.
 
 ## Next up (v3 ideas)
 

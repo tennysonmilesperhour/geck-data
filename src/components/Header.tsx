@@ -2,7 +2,7 @@
 // Claude Code-styled top navigation with a leading asterisk wordmark,
 // grouped section tabs, and a compact auth/session cluster.
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -23,29 +23,39 @@ const TABS: Tab[] = [
 
 export default function Header() {
   const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    const supabase = createClient();
     let active = true;
 
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       if (!active) return;
       setUser(data.user ?? null);
       setLoaded(true);
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (active) setRole((profile?.role as string) ?? null);
+      }
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (!session?.user) setRole(null);
     });
 
     return () => {
       active = false;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase]);
 
   async function logout() {
     const supabase = createClient();
@@ -103,6 +113,21 @@ export default function Header() {
             >
               Alerts
             </Link>
+          ) : null}
+          {loaded && role === "admin" ? (
+            <>
+              <span aria-hidden className="mx-1.5 h-4 w-px bg-ink-700" />
+              <Link
+                href="/admin/analytics"
+                className={`rounded-md px-2.5 py-1.5 ${
+                  isActive("/admin")
+                    ? "bg-ink-800 text-ink-50 shadow-panel"
+                    : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
+                }`}
+              >
+                Analytics
+              </Link>
+            </>
           ) : null}
         </div>
 
