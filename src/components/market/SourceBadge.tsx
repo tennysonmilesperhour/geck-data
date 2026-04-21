@@ -22,8 +22,8 @@ export default function SourceBadge({
   const px = size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs";
   const icon = m.kind === "internal" ? "◈" : m.kind === "breeder" ? "☁" : "◇";
   const cls = active
-    ? "bg-ink-750 text-ink-50"
-    : "bg-ink-850/80 text-ink-200 hover:bg-ink-800";
+    ? "bg-forest-750 text-forest-50 border-forest-600"
+    : "bg-forest-900/80 text-forest-200 hover:bg-forest-850 border-forest-700";
 
   const Tag = onClick ? "button" : ("span" as const);
 
@@ -32,14 +32,14 @@ export default function SourceBadge({
       type={onClick ? "button" : undefined}
       onClick={onClick}
       title={`${m.label} — ${m.description}`}
-      className={`inline-flex items-center gap-1 rounded-md border border-ink-700 font-mono ${px} ${cls}`}
+      className={`inline-flex items-center gap-1 rounded-md border font-mono ${px} ${cls}`}
     >
       <span
         aria-hidden
         className="inline-block h-1.5 w-1.5 rounded-full"
         style={{ backgroundColor: m.color }}
       />
-      <span aria-hidden className="text-ink-500">
+      <span aria-hidden className="text-forest-500">
         {icon}
       </span>
       <span>{m.short}</span>
@@ -73,7 +73,7 @@ export function SourceBadgeList({
         />
       ))}
       {extra > 0 ? (
-        <span className="rounded-md border border-ink-700 bg-ink-850/80 px-1.5 py-0.5 font-mono text-[10px] text-ink-300">
+        <span className="rounded-md border border-forest-700 bg-forest-900/80 px-1.5 py-0.5 font-mono text-[10px] text-forest-300">
           +{extra} more
         </span>
       ) : null}

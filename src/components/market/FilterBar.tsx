@@ -4,10 +4,9 @@
 //
 //   [timeframe]   [region]   [age]   [lineage]   [sources]
 //
-// The timeframe is a segmented control (matches screenshot). Region is a
-// dropdown. Age and Lineage are simple label + dropdown pairs styled as
-// chips. Sources is a popover with a multi-select (not yet implemented —
-// shows the summary label for now, to keep this task scoped).
+// Forest-themed surfaces + emerald-green active states match the handoff
+// screenshots. Age/Lineage/Region use a native <select> underneath a styled
+// pill — good enough until one of them needs a searchable popover.
 import { useState } from "react";
 import type {
   Age,
@@ -49,7 +48,7 @@ export default function FilterBar({
   onChange: (f: Filters) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink-700 bg-ink-850/70 p-2 shadow-panel">
+    <div className="forest-surface-soft flex flex-wrap items-center gap-2 p-2">
       <Segmented
         value={filters.timeframe}
         options={TIMEFRAMES}
@@ -69,8 +68,8 @@ export default function FilterBar({
       <Chip
         label={
           <>
-            <span className="text-ink-400">Age:</span>{" "}
-            <span className="text-ink-100 capitalize">{filters.age}</span>
+            <span className="text-forest-400">Age:</span>{" "}
+            <span className="text-forest-50 capitalize">{filters.age}</span>
           </>
         }
         title="Age"
@@ -85,8 +84,8 @@ export default function FilterBar({
       <Chip
         label={
           <>
-            <span className="text-ink-400">Lineage:</span>{" "}
-            <span className="text-ink-100 capitalize">
+            <span className="text-forest-400">Lineage:</span>{" "}
+            <span className="text-forest-50 capitalize">
               {filters.lineage.replace("_", " ")}
             </span>
           </>
@@ -123,7 +122,7 @@ function Segmented<T extends string>({
   labelOf: (v: T) => string;
 }) {
   return (
-    <div className="inline-flex overflow-hidden rounded-lg border border-ink-700 bg-ink-900/60 text-xs">
+    <div className="inline-flex overflow-hidden rounded-lg border border-forest-700 bg-forest-950/60 text-xs">
       {options.map((opt) => {
         const active = opt === value;
         return (
@@ -133,8 +132,8 @@ function Segmented<T extends string>({
             onClick={() => onChange(opt)}
             className={`px-3 py-1.5 transition ${
               active
-                ? "bg-ready/20 text-ready"
-                : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
+                ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(74,222,128,0.25)]"
+                : "text-forest-300 hover:bg-forest-850 hover:text-forest-100"
             }`}
           >
             {labelOf(opt)}
@@ -146,8 +145,7 @@ function Segmented<T extends string>({
 }
 
 // ----------------------------------------------------------------------------
-// Chip — label + native select, styled to read as a pill. Good enough until
-// we need a searchable popover for any of these.
+// Chip — label + native select, styled to read as a pill.
 // ----------------------------------------------------------------------------
 function Chip<T extends string>({
   label,
@@ -166,12 +164,12 @@ function Chip<T extends string>({
 }) {
   return (
     <label
-      className="relative inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-200 hover:border-ink-650"
+      className="relative inline-flex items-center gap-1.5 rounded-lg border border-forest-700 bg-forest-950/60 px-3 py-1.5 text-xs text-forest-200 hover:border-forest-600"
       title={title}
     >
       {icon ? <span aria-hidden>{icon}</span> : null}
       <span>{label}</span>
-      <span aria-hidden className="text-ink-500">
+      <span aria-hidden className="text-forest-500">
         ▾
       </span>
       <select
@@ -213,7 +211,6 @@ function SourcesControl({
 
   function toggle(id: SourceId) {
     if (value === "all") {
-      // Uncheck one out of all -> initialize a Set that excludes it.
       const next = new Set<SourceId>(ALL_SOURCE_IDS);
       next.delete(id);
       onChange(next);
@@ -230,23 +227,23 @@ function SourcesControl({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-200 hover:border-ink-650"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-forest-700 bg-forest-950/60 px-3 py-1.5 text-xs text-forest-200 hover:border-forest-600"
       >
         <span aria-hidden>⚙</span>
         <span>{allLabel}</span>
-        <span aria-hidden className="text-ink-500">
+        <span aria-hidden className="text-forest-500">
           ▾
         </span>
       </button>
       {open ? (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-30 mt-2 w-64 rounded-lg border border-ink-700 bg-ink-900 p-2 shadow-panel">
-            <div className="mb-2 flex items-center justify-between px-1.5 text-[10px] uppercase tracking-wider text-ink-400">
+          <div className="absolute right-0 z-30 mt-2 w-64 rounded-lg border border-forest-700 bg-forest-900 p-2 shadow-forest-panel">
+            <div className="mb-2 flex items-center justify-between px-1.5 text-[10px] uppercase tracking-wider text-forest-400">
               <span>Sources</span>
               <button
                 type="button"
-                className="text-ink-300 hover:text-ink-100"
+                className="text-forest-300 hover:text-forest-100"
                 onClick={() => onChange("all")}
               >
                 Reset
@@ -255,11 +252,10 @@ function SourcesControl({
             <ul className="space-y-1">
               {ALL_SOURCE_IDS.map((id) => {
                 const meta = sourceMeta(id);
-                const checked =
-                  value === "all" ? true : value.has(id);
+                const checked = value === "all" ? true : value.has(id);
                 return (
                   <li key={id}>
-                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-ink-850">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-forest-850">
                       <input
                         type="checkbox"
                         className="accent-ready"
@@ -267,7 +263,7 @@ function SourcesControl({
                         onChange={() => toggle(id)}
                       />
                       <SourceBadge id={id} size="sm" />
-                      <span className="ml-auto text-[10px] text-ink-500">
+                      <span className="ml-auto text-[10px] text-forest-500">
                         {meta.kind}
                       </span>
                     </label>

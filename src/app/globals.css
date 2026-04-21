@@ -84,3 +84,51 @@ body::before {
   50% { transform: rotate(22deg) scale(1.08); opacity: 0.85; }
 }
 .claude-star { animation: claudePulse 4s ease-in-out infinite; color: rgb(var(--accent)); }
+
+/* =============================================================
+   /market — Forest (emerald-tinted) theme
+   ============================================================= */
+.market-theme {
+  /* Per-scope background + faint emerald atmospheric glows to match the
+     screenshots. Uses a pseudo-element so it sits behind content without
+     fighting page-level scroll. */
+  position: relative;
+  isolation: isolate;
+}
+.market-theme::before {
+  content: "";
+  position: absolute;
+  inset: -24px -24px 0 -24px;
+  pointer-events: none;
+  z-index: -1;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(16,185,129,0.08), transparent 45%),
+    radial-gradient(circle at 85% 100%, rgba(5,150,105,0.05), transparent 55%),
+    radial-gradient(circle at 50% 50%, rgba(6,78,59,0.15), transparent 70%),
+    #081210;
+}
+
+/* Panel surface tuned for the forest theme: green-tinted bg + subtle
+   emerald inner border + green drop shadow. */
+.market-theme .forest-surface {
+  background: #0e2019;
+  border: 1px solid rgba(74,222,128,0.08);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 0 rgba(74,222,128,0.04) inset,
+    0 0 0 1px rgba(74,222,128,0.05),
+    0 16px 48px -32px rgba(16,185,129,0.35);
+}
+.market-theme .forest-surface-soft {
+  background: rgba(11,24,20,0.7);
+  border: 1px solid rgba(74,222,128,0.08);
+  border-radius: 12px;
+}
+
+/* Scoped overrides for the D3/axis styles inside /market so labels read
+   as emerald-grey instead of neutral grey. */
+.market-theme .tick text { fill: #a8c4b8; }
+.market-theme .domain,
+.market-theme .tick line { stroke: #2a523d; }
+.market-theme .grid line { stroke: #193526; }
