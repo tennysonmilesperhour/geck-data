@@ -6,6 +6,7 @@ import SellerLeaderboardScatter, {
 } from "@/components/charts/SellerLeaderboardScatter";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
+import { Panel, SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
@@ -25,7 +26,7 @@ export default async function SellersPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load sellers: {error.message}
       </div>
     );
@@ -44,7 +45,7 @@ export default async function SellersPage() {
       render: (s) => (
         <Link
           href={`/sellers/${s.seller_id}`}
-          className="font-medium text-gecko hover:underline"
+          className="font-medium text-claude hover:underline"
         >
           {s.seller_name ?? s.seller_id}
         </Link>
@@ -81,13 +82,11 @@ export default async function SellersPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-semibold text-gecko-dark">Sellers</h1>
-        <p className="mt-1 text-neutral-600">
-          {fmtInt(rows.length)} tracked sellers. Click a name to see their
-          timeline.
-        </p>
-      </header>
+      <SectionHeader
+        eyebrow="Directory"
+        title="Sellers"
+        description={`${fmtInt(rows.length)} tracked sellers. Click a name to see their timeline.`}
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Sellers" value={rows.length} />
@@ -100,15 +99,12 @@ export default async function SellersPage() {
         />
       </div>
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Leaderboard scatter</h2>
-        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <SellerLeaderboardScatter data={rows} />
-        </div>
-      </section>
+      <Panel title="Leaderboard scatter" subtitle="Listings vs feedback">
+        <SellerLeaderboardScatter data={rows} />
+      </Panel>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">All sellers</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">All sellers</h2>
         <DataTable columns={columns} rows={rows} rowKey={(s) => s.seller_id} />
       </section>
     </div>

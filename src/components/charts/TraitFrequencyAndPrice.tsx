@@ -3,6 +3,7 @@
 // Bars = count (left axis). Dots = median price (right axis, log scale).
 import { useEffect, useMemo, useRef } from "react";
 import * as d3 from "d3";
+import { chartTheme } from "./theme";
 
 export type TraitInput = {
   cached_traits: string | null;
@@ -95,7 +96,7 @@ export default function TraitFrequencyAndPrice({
       .attr("x", w)
       .attr("y", -6)
       .attr("text-anchor", "end")
-      .attr("fill", "#2f7d32")
+      .attr("fill", chartTheme.label)
       .text("listings");
 
     // Bars
@@ -107,7 +108,8 @@ export default function TraitFrequencyAndPrice({
       .attr("x", 0)
       .attr("height", y.bandwidth())
       .attr("width", (d) => xCount(d.count))
-      .attr("fill", "#a5d6a7");
+      .attr("fill", chartTheme.primary)
+      .attr("fill-opacity", 0.85);
 
     // Median price dots, on the same axis space (different scale)
     g.append("g")
@@ -117,8 +119,8 @@ export default function TraitFrequencyAndPrice({
       .attr("cy", (d) => y(d.trait)! + y.bandwidth() / 2)
       .attr("cx", (d) => xPrice(d.median))
       .attr("r", 5)
-      .attr("fill", "#f57c00")
-      .attr("stroke", "white")
+      .attr("fill", chartTheme.secondary)
+      .attr("stroke", chartTheme.markerStroke)
       .attr("stroke-width", 1.5)
       .append("title")
       .text((d) => `${d.trait}: $${d3.format(",.0f")(d.median)} median`);
@@ -129,15 +131,27 @@ export default function TraitFrequencyAndPrice({
       .append("rect")
       .attr("width", 12)
       .attr("height", 12)
-      .attr("fill", "#a5d6a7");
-    legend.append("text").attr("x", 18).attr("y", 10).attr("font-size", 11).text("listing count");
+      .attr("fill", chartTheme.primary);
+    legend
+      .append("text")
+      .attr("x", 18)
+      .attr("y", 10)
+      .attr("font-size", 11)
+      .attr("fill", chartTheme.label)
+      .text("listing count");
     legend
       .append("circle")
       .attr("cx", 110)
       .attr("cy", 6)
       .attr("r", 5)
-      .attr("fill", "#f57c00");
-    legend.append("text").attr("x", 120).attr("y", 10).attr("font-size", 11).text("median $ (log)");
+      .attr("fill", chartTheme.secondary);
+    legend
+      .append("text")
+      .attr("x", 120)
+      .attr("y", 10)
+      .attr("font-size", 11)
+      .attr("fill", chartTheme.label)
+      .text("median $ (log)");
   }, [traitStats]);
 
   return <svg ref={svgRef} className="w-full" style={{ minHeight: 360 }} />;

@@ -1,21 +1,24 @@
 "use client";
-// Client component so the auth state stays in sync as the user navigates
-// (server-component layouts can render stale auth state on client-side
-// navigations). Subscribes to onAuthStateChange so login/logout updates
-// the nav instantly.
+// Claude Code-styled top navigation with a leading asterisk wordmark,
+// grouped section tabs, and a compact auth/session cluster.
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-const PUBLIC_TABS = [
-  { href: "/", label: "Pulse" },
-  { href: "/sold", label: "Sold" },
-  { href: "/price-drops", label: "Drops" },
-  { href: "/sellers", label: "Sellers" },
-  { href: "/shows", label: "Shows" },
-  { href: "/cross-platform", label: "Cross-platform" },
+type Tab = { href: string; label: string; group?: "core" | "analysis" | "ops" };
+
+const TABS: Tab[] = [
+  { href: "/",               label: "Pulse",         group: "core" },
+  { href: "/daily-log",      label: "Daily Log",     group: "core" },
+  { href: "/sold",           label: "Sold",          group: "core" },
+  { href: "/price-drops",    label: "Drops",         group: "core" },
+  { href: "/sellers",        label: "Sellers",       group: "core" },
+  { href: "/trends",         label: "Trends",        group: "analysis" },
+  { href: "/compare",        label: "Compare",       group: "analysis" },
+  { href: "/shows",          label: "Shows",         group: "ops" },
+  { href: "/cross-platform", label: "Cross-platform", group: "ops" },
 ];
 
 export default function Header() {
@@ -57,48 +60,69 @@ export default function Header() {
   }
 
   return (
-    <header className="border-b border-neutral-200 bg-white">
-      <nav className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-        <Link href="/" className="text-lg font-semibold text-gecko-dark">
-          Geck Inspect
+    <header className="sticky top-0 z-30 border-b border-ink-700/70 bg-ink-900/80 backdrop-blur">
+      <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-6 px-6 py-3">
+        <Link href="/" className="flex items-center gap-2 text-ink-50">
+          <span className="claude-star text-xl leading-none">✷</span>
+          <span className="text-sm font-semibold tracking-tight">Geck Inspect</span>
+          <span className="ml-1 rounded border border-ink-700 bg-ink-800 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-ink-400">
+            market
+          </span>
         </Link>
-        <div className="flex flex-wrap items-center gap-1 text-sm">
-          {PUBLIC_TABS.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={`rounded-md px-2.5 py-1.5 ${
-                isActive(t.href)
-                  ? "bg-gecko/10 text-gecko-dark"
-                  : "text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              {t.label}
-            </Link>
-          ))}
+
+        <div className="flex flex-1 flex-wrap items-center gap-0.5 text-[13px]">
+          {TABS.map((t, i) => {
+            const prev = TABS[i - 1];
+            const divider = prev && prev.group !== t.group ? (
+              <span key={`d-${t.href}`} aria-hidden className="mx-1.5 h-4 w-px bg-ink-700" />
+            ) : null;
+            return (
+              <span key={t.href} className="flex items-center">
+                {divider}
+                <Link
+                  href={t.href}
+                  className={`rounded-md px-2.5 py-1.5 transition ${
+                    isActive(t.href)
+                      ? "bg-ink-800 text-ink-50 shadow-panel"
+                      : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
+                  }`}
+                >
+                  {t.label}
+                </Link>
+              </span>
+            );
+          })}
           {loaded && user ? (
             <Link
               href="/alerts"
-              className={`rounded-md px-2.5 py-1.5 ${
+              className={`ml-1 rounded-md px-2.5 py-1.5 ${
                 isActive("/alerts")
-                  ? "bg-gecko/10 text-gecko-dark"
-                  : "text-neutral-700 hover:bg-neutral-100"
+                  ? "bg-ink-800 text-ink-50 shadow-panel"
+                  : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
               }`}
             >
               Alerts
             </Link>
           ) : null}
         </div>
-        <div className="flex items-center gap-3 text-sm">
+
+        <div className="flex items-center gap-3 text-[13px]">
+          <span className="hidden items-center gap-1.5 text-ink-400 md:inline-flex">
+            <span className="status-dot" />
+            <span className="font-mono text-[11px] uppercase tracking-wider">Ready</span>
+          </span>
           {loaded && user ? (
             <>
-              <Link href="/upload" className="text-neutral-700 hover:text-gecko">
+              <Link
+                href="/upload"
+                className="rounded-md border border-ink-700 bg-ink-850 px-2.5 py-1.5 text-ink-200 hover:border-ink-600 hover:text-ink-50"
+              >
                 Upload
               </Link>
-              <span className="text-neutral-500">{user.email}</span>
+              <span className="hidden text-ink-400 md:inline">{user.email}</span>
               <button
                 onClick={logout}
-                className="text-neutral-600 hover:text-gecko"
+                className="text-ink-400 hover:text-ink-100"
                 type="button"
               >
                 Log out
@@ -107,7 +131,7 @@ export default function Header() {
           ) : loaded ? (
             <Link
               href="/login"
-              className="rounded-md bg-gecko px-3 py-1.5 text-white hover:bg-gecko-dark"
+              className="rounded-md bg-claude px-3 py-1.5 text-ink-50 shadow-glow hover:bg-claude-glow"
             >
               Log in
             </Link>

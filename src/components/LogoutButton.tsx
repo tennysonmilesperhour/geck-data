@@ -13,7 +13,7 @@ export default function LogoutButton() {
   return (
     <button
       onClick={logout}
-      className="text-neutral-600 hover:text-gecko"
+      className="text-ink-400 hover:text-claude"
       type="button"
     >
       Log out

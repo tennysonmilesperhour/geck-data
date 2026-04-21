@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
+import { Panel, SectionHeader } from "@/components/ui/Panel";
 import TimeSeriesLine, { type Series } from "@/components/charts/TimeSeriesLine";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
@@ -88,7 +89,7 @@ export default async function SellerDetailPage({
 
   if (sellerRes.error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load seller: {sellerRes.error.message}
       </div>
     );
@@ -125,8 +126,8 @@ export default async function SellerDetailPage({
       header: "Listing",
       render: (r) => (
         <div>
-          <div className="font-medium">{r.title ?? r.id}</div>
-          <div className="text-xs text-neutral-500">{r.id}</div>
+          <div className="font-medium text-ink-100">{r.title ?? r.id}</div>
+          <div className="text-xs text-ink-400">{r.id}</div>
         </div>
       ),
     },
@@ -136,15 +137,7 @@ export default async function SellerDetailPage({
       key: "status",
       header: "Status",
       render: (r) => (
-        <span
-          className={`rounded px-1.5 py-0.5 text-xs ${
-            r.current_status === "sold"
-              ? "bg-neutral-200 text-neutral-700"
-              : r.current_status === "live"
-                ? "bg-gecko/10 text-gecko-dark"
-                : "bg-neutral-100 text-neutral-600"
-          }`}
-        >
+        <span className="inline-flex items-center rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200">
           {r.current_status ?? "—"}
         </span>
       ),
@@ -185,18 +178,18 @@ export default async function SellerDetailPage({
 
   return (
     <div className="space-y-8">
-      <header>
-        <Link href="/sellers" className="text-sm text-gecko hover:underline">
+      <div>
+        <Link href="/sellers" className="text-sm text-claude hover:underline">
           ← All sellers
         </Link>
-        <h1 className="mt-2 text-3xl font-semibold text-gecko-dark">
+        <h1 className="mt-2 text-xl font-semibold tracking-tight text-ink-50">
           {seller.seller_name ?? seller.seller_id}
         </h1>
-        <p className="mt-1 text-neutral-600">
+        <p className="mt-1 text-sm text-ink-400">
           {[seller.seller_location, seller.membership].filter(Boolean).join(" · ") ||
             "—"}
         </p>
-      </header>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Live listings" value={liveCount} tone="positive" />
@@ -208,22 +201,19 @@ export default async function SellerDetailPage({
         <KpiCard label="Feedback" value={fmtInt(seller.feedback_count)} />
       </div>
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Snapshot trend</h2>
-        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          {snapshots.length >= 2 ? (
-            <TimeSeriesLine series={[feedbackSeries, listingsSeries]} yLabel="count" />
-          ) : (
-            <p className="py-6 text-center text-sm text-neutral-500">
-              Not enough snapshots yet. The extension will build this up as you
-              revisit this seller.
-            </p>
-          )}
-        </div>
-      </section>
+      <Panel title="Snapshot trend" subtitle="Feedback and listings over time">
+        {snapshots.length >= 2 ? (
+          <TimeSeriesLine series={[feedbackSeries, listingsSeries]} yLabel="count" />
+        ) : (
+          <p className="py-6 text-center text-sm text-ink-400">
+            Not enough snapshots yet. The extension will build this up as you
+            revisit this seller.
+          </p>
+        )}
+      </Panel>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Current & recent listings</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Current & recent listings</h2>
         <DataTable
           columns={listingColumns}
           rows={listings}
@@ -233,7 +223,7 @@ export default async function SellerDetailPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Recently sold</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recently sold</h2>
         <DataTable
           columns={soldColumns}
           rows={sold}

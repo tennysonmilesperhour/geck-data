@@ -4,6 +4,7 @@ import Link from "next/link";
 import DaysToSellHistogram from "@/components/charts/DaysToSellHistogram";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
+import { Panel, SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -35,7 +36,7 @@ export default async function SoldPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load sold listings: {error.message}
       </div>
     );
@@ -58,8 +59,8 @@ export default async function SoldPage() {
       header: "Listing",
       render: (r) => (
         <div>
-          <div className="font-medium text-neutral-900">{r.title ?? r.id}</div>
-          <div className="text-xs text-neutral-500">{r.id}</div>
+          <div className="font-medium text-ink-100">{r.title ?? r.id}</div>
+          <div className="text-xs text-ink-400">{r.id}</div>
         </div>
       ),
     },
@@ -89,7 +90,7 @@ export default async function SoldPage() {
       header: "Seller",
       render: (r) =>
         r.seller_id ? (
-          <Link href={`/sellers/${r.seller_id}`} className="text-gecko hover:underline">
+          <Link href={`/sellers/${r.seller_id}`} className="text-claude hover:underline">
             {r.seller_id}
           </Link>
         ) : (
@@ -100,7 +101,7 @@ export default async function SoldPage() {
       key: "source",
       header: "Source",
       render: (r) => (
-        <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+        <span className="rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200">
           {r.sold_source ?? "—"}
         </span>
       ),
@@ -109,13 +110,11 @@ export default async function SoldPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-semibold text-gecko-dark">Sold</h1>
-        <p className="mt-1 text-neutral-600">
-          Listings that have flipped from live to sold — either explicitly
-          captured by the extension or inferred from absence.
-        </p>
-      </header>
+      <SectionHeader
+        eyebrow="Outcomes"
+        title="Sold"
+        description="Listings that have flipped from live to sold — either explicitly captured by the extension or inferred from absence."
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Sold (all time)" value={fmtInt(rows.length)} />
@@ -127,26 +126,23 @@ export default async function SoldPage() {
         <KpiCard label="Median sold price" value={fmtUsd(medianPrice)} />
       </div>
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Time on market</h2>
-        <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          {days.length > 0 ? (
-            <DaysToSellHistogram days={days} />
-          ) : (
-            <p className="py-6 text-center text-sm text-neutral-500">
-              No days-to-sell data yet.
-            </p>
-          )}
-          {inferredCount > 0 ? (
-            <p className="mt-2 text-xs text-neutral-500">
-              {fmtInt(inferredCount)} sold events inferred from absence (14d rule).
-            </p>
-          ) : null}
-        </div>
-      </section>
+      <Panel title="Time on market" subtitle="Distribution of days-to-sell">
+        {days.length > 0 ? (
+          <DaysToSellHistogram days={days} />
+        ) : (
+          <p className="py-6 text-center text-sm text-ink-400">
+            No days-to-sell data yet.
+          </p>
+        )}
+        {inferredCount > 0 ? (
+          <p className="mt-2 text-xs text-ink-400">
+            {fmtInt(inferredCount)} sold events inferred from absence (14d rule).
+          </p>
+        ) : null}
+      </Panel>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Recently sold</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recently sold</h2>
         <DataTable
           columns={columns}
           rows={rows.slice(0, 200)}

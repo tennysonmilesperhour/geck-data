@@ -3,6 +3,7 @@
 // trends, show mention cadence, etc. One or more numeric series over time.
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
+import { chartTheme } from "./theme";
 
 export type SeriesPoint = { t: Date; v: number };
 export type Series = {
@@ -68,7 +69,7 @@ export default function TimeSeriesLine({
         .attr("y", -6)
         .attr("text-anchor", "start")
         .attr("font-size", 11)
-        .attr("fill", "#6b7280")
+        .attr("fill", chartTheme.label)
         .text(yLabel);
     }
 
@@ -105,7 +106,12 @@ export default function TimeSeriesLine({
     series.forEach((s, i) => {
       const row = legend.append("g").attr("transform", `translate(0, ${i * 16})`);
       row.append("rect").attr("width", 10).attr("height", 10).attr("fill", s.color);
-      row.append("text").attr("x", 14).attr("y", 9).text(s.name);
+      row
+        .append("text")
+        .attr("x", 14)
+        .attr("y", 9)
+        .attr("fill", chartTheme.label)
+        .text(s.name);
     });
   }, [series, height, yFormat, yLabel]);
 

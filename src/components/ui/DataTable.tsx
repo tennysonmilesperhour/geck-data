@@ -24,21 +24,21 @@ export default function DataTable<T>({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-neutral-300 bg-neutral-50 p-6 text-center text-sm text-neutral-500">
+      <div className="rounded-md border border-dashed border-ink-700 bg-ink-850 p-6 text-center text-sm text-ink-400">
         {emptyMessage}
       </div>
     );
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
-      <table className="min-w-full divide-y divide-neutral-200 text-sm">
-        <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-600">
+    <div className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-800 shadow-panel">
+      <table className="min-w-full divide-y divide-ink-700 text-sm">
+        <thead className="bg-ink-850 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-400">
           <tr>
             {columns.map((c) => (
               <th
                 key={c.key}
                 scope="col"
-                className={`px-3 py-2 font-medium ${
+                className={`px-3 py-2.5 font-medium ${
                   c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left"
                 }`}
                 style={c.width ? { width: c.width } : undefined}
@@ -48,13 +48,13 @@ export default function DataTable<T>({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className="divide-y divide-ink-700/70 text-ink-200">
           {rows.map((row, idx) => (
-            <tr key={rowKey(row, idx)} className="hover:bg-neutral-50">
+            <tr key={rowKey(row, idx)} className="transition hover:bg-ink-850">
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-3 py-2 align-top ${
+                  className={`px-3 py-2.5 align-top ${
                     c.align === "right"
                       ? "text-right tabular-nums"
                       : c.align === "center"
