@@ -43,8 +43,17 @@ function classify(name: string, mime: string): FileResult["kind"] {
 function authorized(req: NextRequest): boolean {
   const expected = process.env.INGEST_API_KEY;
   if (!expected) return false;
-  const header = req.headers.get("authorization") ?? "";
-  const presented = header.startsWith("Bearer ") ? header.slice(7) : header;
+
+  // Accept two equivalent formats so the extension and other clients don't
+  // have to agree on a header name:
+  //   Authorization: Bearer <token>
+  //   x-api-key: <token>
+  const auth = req.headers.get("authorization") ?? "";
+  const fromBearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const fromApiKey = req.headers.get("x-api-key") ?? "";
+  const presented = fromBearer || fromApiKey;
+  if (!presented) return false;
+
   const a = Buffer.from(presented);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
