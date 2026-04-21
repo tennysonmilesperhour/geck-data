@@ -206,12 +206,53 @@ Email** and toggle off "Confirm email" for development.
 
 ---
 
-## Next up (v2 ideas)
+## Extension event stream (v2)
+
+Alongside bulk `.db` uploads, the browser extension pushes live JSON events to
+`/api/ingest` as it captures data while you browse MorphMarket and other
+platforms. The API branches on `Content-Type`:
+
+```
+POST /api/ingest
+Authorization: Bearer <INGEST_API_KEY>
+Content-Type: application/json
+
+{ "events": [
+  { "type": "listingSeen",      "payload": { …listing… } },
+  { "type": "priceDrop",        "payload": { listing_id, old_price, new_price } },
+  { "type": "soldInferred",     "payload": { listing_id } },
+  { "type": "auctionClose",     "payload": { listing_id, final_price, bid_count, closed_at } },
+  { "type": "showMention",      "payload": { show_name, show_date, context, source_url } },
+  { "type": "sellerSnapshot",   "payload": { seller_id, feedback_count, total_listings, … } },
+  { "type": "crossPlatform",    "payload": { platform, external_id, title, price, … } },
+  { "type": "alertMatch",       "payload": { alert_id, listing_id | cross_platform_listing_id } },
+  { "type": "searchResultBatch","payload": { listings: [ … ] } }
+]}
+```
+
+Schema for the tables each event writes to lives in
+`supabase/migrations/0002_extension_streams.sql`. Run it once in the Supabase
+SQL Editor — safe to re-run.
+
+## Analytics routes
+
+| Route | What it shows |
+|---|---|
+| `/` | Market pulse — past-7d KPIs + three charts |
+| `/sold` | Sold listings with days-to-sell histogram |
+| `/price-drops` | Every drop the extension captured |
+| `/sellers` | Seller leaderboard + table |
+| `/sellers/[id]` | One seller's timeline, inventory, recent sales |
+| `/shows` | Expo/show mention aggregation |
+| `/cross-platform` | Listings from Fauna Classifieds, Reptile Forums, Preloved, Kijiji |
+| `/alerts` | Your saved queries and their matches (login required) |
+
+## Next up (v3 ideas)
 
 - Geographic map of sellers (D3 + TopoJSON US states).
 - Image gallery on the dashboard, filterable by trait.
-- Time-series of new listings per week.
 - Trait combo box plots.
 - Pedigree premium chart (proven_breeder vs not).
+- In-UI alert creation / editing (currently insert directly into `alerts`).
 - CSV parsing in `/api/upload` — route to the right staging table by filename
   prefix.

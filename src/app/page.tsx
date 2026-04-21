@@ -1,5 +1,7 @@
-// Public dashboard. Reads directly from Supabase using the anon key + the
-// public-read RLS policies from the migration. No auth required.
+// Public dashboard — top-level analytics overview. Reads directly from
+// Supabase using the anon key + the public-read RLS policies. KPI strip at
+// the top summarises activity across every extension stream; the three
+// original D3 charts follow.
 import PriceHistogram, {
   type Listing,
 } from "@/components/charts/PriceHistogram";
@@ -9,58 +11,92 @@ import TraitFrequencyAndPrice, {
 import SellerLeaderboardScatter, {
   type Seller,
 } from "@/components/charts/SellerLeaderboardScatter";
+import KpiCard from "@/components/ui/KpiCard";
 import { createClient } from "@/lib/supabase/server";
+import { fmtInt } from "@/lib/format";
 
-// Always re-fetch on the server (no caching) so the dashboard reflects
-// the latest data after an upload. For heavy traffic you'd add ISR + a
-// revalidate webhook — overkill for v1.
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const supabase = createClient();
 
-  // Listings: pull everything we need for both the histogram and the trait chart
-  // in a single query (column projection keeps the payload tiny).
-  const { data: listings, error: listingsError } = await supabase
-    .from("market_listings")
-    .select(
-      "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits",
-    );
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
 
-  const { data: sellers, error: sellersError } = await supabase
-    .from("market_sellers")
-    .select(
-      "seller_id, seller_name, seller_location, membership, feedback_count, seller_rating_score, total_listings, avg_price, five_star_rating",
-    );
+  const [
+    listingsRes,
+    sellersRes,
+    dropCount,
+    soldCount,
+    showCount,
+    crossCount,
+  ] = await Promise.all([
+    supabase
+      .from("market_listings")
+      .select(
+        "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits",
+      ),
+    supabase
+      .from("market_sellers")
+      .select(
+        "seller_id, seller_name, seller_location, membership, feedback_count, seller_rating_score, total_listings, avg_price, five_star_rating",
+      ),
+    supabase
+      .from("price_drops")
+      .select("id", { count: "exact", head: true })
+      .gte("observed_at", sevenDaysAgo),
+    supabase
+      .from("listing_status_events")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "sold")
+      .gte("observed_at", sevenDaysAgo),
+    supabase
+      .from("show_mentions")
+      .select("id", { count: "exact", head: true })
+      .gte("observed_at", sevenDaysAgo),
+    supabase
+      .from("cross_platform_listings")
+      .select("id", { count: "exact", head: true })
+      .gte("last_seen_at", sevenDaysAgo),
+  ]);
 
-  if (listingsError || sellersError) {
+  if (listingsRes.error || sellersRes.error) {
     return (
       <div className="rounded-md bg-red-50 p-4 text-red-800">
         <p className="font-semibold">Could not load data from Supabase.</p>
         <pre className="mt-2 whitespace-pre-wrap text-xs">
-          {listingsError?.message || sellersError?.message}
+          {listingsRes.error?.message || sellersRes.error?.message}
         </pre>
         <p className="mt-2 text-sm">
           Check that <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
           <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> are set, and that the SQL
-          migration in <code>supabase/migrations/</code> has been applied.
+          migrations in <code>supabase/migrations/</code> have been applied.
         </p>
       </div>
     );
   }
 
-  const rowsL = (listings ?? []) as Listing[] & TraitInput[];
-  const rowsS = (sellers ?? []) as Seller[];
+  const rowsL = (listingsRes.data ?? []) as Listing[] & TraitInput[];
+  const rowsS = (sellersRes.data ?? []) as Seller[];
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-10">
       <header>
         <h1 className="text-3xl font-semibold text-gecko-dark">Market pulse</h1>
         <p className="mt-1 text-neutral-600">
-          {rowsL.length.toLocaleString()} listings · {rowsS.length.toLocaleString()}{" "}
-          sellers · refreshed live from Supabase.
+          {fmtInt(rowsL.length)} listings · {fmtInt(rowsS.length)} sellers · refreshed live
+          from Supabase.
         </p>
       </header>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold">Past 7 days</h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <KpiCard label="Price drops" value={fmtInt(dropCount.count ?? 0)} tone="warn" />
+          <KpiCard label="Sold" value={fmtInt(soldCount.count ?? 0)} tone="positive" />
+          <KpiCard label="Show mentions" value={fmtInt(showCount.count ?? 0)} />
+          <KpiCard label="Cross-platform updates" value={fmtInt(crossCount.count ?? 0)} />
+        </div>
+      </section>
 
       <section>
         <h2 className="mb-3 text-xl font-semibold">Price distribution</h2>

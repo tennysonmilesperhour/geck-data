@@ -6,13 +6,23 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+const PUBLIC_TABS = [
+  { href: "/", label: "Pulse" },
+  { href: "/sold", label: "Sold" },
+  { href: "/price-drops", label: "Drops" },
+  { href: "/sellers", label: "Sellers" },
+  { href: "/shows", label: "Shows" },
+  { href: "/cross-platform", label: "Cross-platform" },
+];
 
 export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [loaded, setLoaded] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const supabase = createClient();
@@ -41,19 +51,48 @@ export default function Header() {
     router.push("/");
   }
 
+  function isActive(href: string): boolean {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
   return (
     <header className="border-b border-neutral-200 bg-white">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <nav className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
         <Link href="/" className="text-lg font-semibold text-gecko-dark">
           Geck Inspect
         </Link>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/" className="hover:text-gecko">
-            Dashboard
-          </Link>
+        <div className="flex flex-wrap items-center gap-1 text-sm">
+          {PUBLIC_TABS.map((t) => (
+            <Link
+              key={t.href}
+              href={t.href}
+              className={`rounded-md px-2.5 py-1.5 ${
+                isActive(t.href)
+                  ? "bg-gecko/10 text-gecko-dark"
+                  : "text-neutral-700 hover:bg-neutral-100"
+              }`}
+            >
+              {t.label}
+            </Link>
+          ))}
+          {loaded && user ? (
+            <Link
+              href="/alerts"
+              className={`rounded-md px-2.5 py-1.5 ${
+                isActive("/alerts")
+                  ? "bg-gecko/10 text-gecko-dark"
+                  : "text-neutral-700 hover:bg-neutral-100"
+              }`}
+            >
+              Alerts
+            </Link>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-3 text-sm">
           {loaded && user ? (
             <>
-              <Link href="/upload" className="hover:text-gecko">
+              <Link href="/upload" className="text-neutral-700 hover:text-gecko">
                 Upload
               </Link>
               <span className="text-neutral-500">{user.email}</span>
