@@ -51,6 +51,85 @@ function authorized(req: NextRequest): boolean {
   return timingSafeEqual(a, b);
 }
 
+// GET — Bearer-gated diagnostic. Returns per-table row counts plus a check
+// that the touch_listing_seen RPC from migration 0002 registered, so we can
+// tell end-to-end whether the extension's events are landing in Supabase
+// (and, if they are not, which specific piece is broken).
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  let admin;
+  try {
+    admin = createAdminClient();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: `admin client: ${msg}` }, { status: 500 });
+  }
+
+  const tables = [
+    "market_listings",
+    "market_sellers",
+    "price_history",
+    "price_drops",
+    "listing_status_events",
+    "auction_results",
+    "seller_snapshots",
+    "show_mentions",
+    "cross_platform_listings",
+    "alerts",
+    "alert_matches",
+  ];
+  const counts: Record<string, number | string> = {};
+  for (const t of tables) {
+    const { count, error } = await admin
+      .from(t)
+      .select("*", { count: "exact", head: true });
+    counts[t] = error ? `error: ${error.message}` : (count ?? 0);
+  }
+
+  // Probe the RPC. A missing function surfaces as a PostgREST error; a
+  // harmless "no matching listing" result means the function exists.
+  let touchRpc: string;
+  try {
+    const { error } = await admin.rpc("touch_listing_seen", {
+      p_id: "__diag_nonexistent__",
+      p_observed: new Date().toISOString(),
+    });
+    touchRpc = error ? `error: ${error.message}` : "ok";
+  } catch (e) {
+    touchRpc = `threw: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  // Most recent activity timestamps per stream — quick "is anything flowing?"
+  // check without pulling any rows.
+  const recency: Record<string, string | null | "error"> = {};
+  const recencyTargets: Array<[string, string]> = [
+    ["market_listings", "last_seen_at"],
+    ["price_drops", "observed_at"],
+    ["listing_status_events", "observed_at"],
+    ["show_mentions", "observed_at"],
+    ["seller_snapshots", "observed_at"],
+    ["cross_platform_listings", "last_seen_at"],
+    ["alert_matches", "matched_at"],
+  ];
+  for (const [table, col] of recencyTargets) {
+    const { data, error } = await admin
+      .from(table)
+      .select(col)
+      .order(col, { ascending: false, nullsFirst: false })
+      .limit(1);
+    if (error) {
+      recency[table] = "error";
+    } else {
+      const row = (data as unknown as Record<string, string | null>[] | null)?.[0];
+      recency[table] = row?.[col] ?? null;
+    }
+  }
+
+  return NextResponse.json({ counts, touchRpc, mostRecent: recency });
+}
+
 export async function POST(req: NextRequest) {
   try {
     return await handle(req);
