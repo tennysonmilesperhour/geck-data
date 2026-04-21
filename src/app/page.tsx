@@ -215,7 +215,9 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <StatusPill status={ingestPill.status} label={ingestPill.label} />
+          <Link href="/status" title="Ingest status detail">
+            <StatusPill status={ingestPill.status} label={ingestPill.label} />
+          </Link>
           <Link
             href="/daily-log"
             className="rounded-md border border-ink-700 bg-ink-850 px-3 py-1.5 text-xs text-ink-200 hover:border-ink-600 hover:text-ink-50"
