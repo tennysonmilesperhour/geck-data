@@ -5,6 +5,7 @@
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
+import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -48,7 +49,7 @@ export default async function AlertsPage() {
 
   if (!user) {
     return (
-      <div className="rounded-md bg-amber-50 p-4 text-amber-800">
+      <div className="rounded-md border border-busy/40 bg-busy/10 p-4 text-sm text-busy">
         You need to{" "}
         <Link href="/login?next=/alerts" className="font-semibold underline">
           log in
@@ -64,7 +65,7 @@ export default async function AlertsPage() {
     .order("created_at", { ascending: false });
   if (aErr) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load alerts: {aErr.message}
       </div>
     );
@@ -84,7 +85,7 @@ export default async function AlertsPage() {
       .limit(200);
     if (error) {
       return (
-        <div className="rounded-md bg-red-50 p-4 text-red-800">
+        <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
           Failed to load matches: {error.message}
         </div>
       );
@@ -110,10 +111,10 @@ export default async function AlertsPage() {
         if (m.market_listings) {
           return (
             <div>
-              <div className="font-medium">
+              <div className="font-medium text-ink-100">
                 {m.market_listings.title ?? m.listing_id}
               </div>
-              <div className="text-xs text-neutral-500">
+              <div className="text-xs text-ink-400">
                 MorphMarket · {m.listing_id}
               </div>
             </div>
@@ -122,13 +123,13 @@ export default async function AlertsPage() {
         if (m.cross_platform_listings) {
           return (
             <div>
-              <div className="font-medium">
+              <div className="font-medium text-ink-100">
                 {m.cross_platform_listings.url ? (
                   <a
                     href={m.cross_platform_listings.url}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="text-gecko hover:underline"
+                    className="text-claude hover:underline"
                   >
                     {m.cross_platform_listings.title ?? "(untitled)"} ↗
                   </a>
@@ -136,7 +137,7 @@ export default async function AlertsPage() {
                   (m.cross_platform_listings.title ?? "(untitled)")
                 )}
               </div>
-              <div className="text-xs text-neutral-500">
+              <div className="text-xs text-ink-400">
                 {m.cross_platform_listings.platform}
               </div>
             </div>
@@ -166,8 +167,10 @@ export default async function AlertsPage() {
       header: "Active",
       render: (a) => (
         <span
-          className={`rounded px-1.5 py-0.5 text-xs ${
-            a.active ? "bg-gecko/10 text-gecko-dark" : "bg-neutral-200 text-neutral-600"
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+            a.active
+              ? "border-ready/40 bg-ready/10 text-ready"
+              : "border-ink-700 bg-ink-850 text-ink-400"
           }`}
         >
           {a.active ? "on" : "off"}
@@ -178,7 +181,7 @@ export default async function AlertsPage() {
       key: "query",
       header: "Query",
       render: (a) => (
-        <code className="text-xs text-neutral-600">
+        <code className="text-xs text-ink-400">
           {truncate(JSON.stringify(a.query), 80)}
         </code>
       ),
@@ -188,12 +191,11 @@ export default async function AlertsPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-semibold text-gecko-dark">Alerts</h1>
-        <p className="mt-1 text-neutral-600">
-          Saved queries and the matches the extension has sent back.
-        </p>
-      </header>
+      <SectionHeader
+        eyebrow="Inbox"
+        title="Alerts"
+        description="Saved queries and the matches the extension has sent back."
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Alerts" value={alertRows.length} />
@@ -203,7 +205,7 @@ export default async function AlertsPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Your alerts</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Your alerts</h2>
         <DataTable
           columns={alertColumns}
           rows={alertRows}
@@ -213,7 +215,7 @@ export default async function AlertsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Recent matches</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recent matches</h2>
         <DataTable
           columns={matchColumns}
           rows={matches}

@@ -2,6 +2,7 @@
 // Preloved, Kijiji, etc. Grouped by platform with a recent-activity table.
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
+import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -48,7 +49,7 @@ export default async function CrossPlatformPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-800">
+      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
         Failed to load cross-platform listings: {error.message}
       </div>
     );
@@ -80,7 +81,7 @@ export default async function CrossPlatformPage() {
       key: "platform",
       header: "Platform",
       render: (r) => (
-        <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+        <span className="rounded border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200">
           {PLATFORM_LABELS[r.platform] ?? r.platform}
         </span>
       ),
@@ -90,13 +91,13 @@ export default async function CrossPlatformPage() {
       header: "Listing",
       render: (r) => (
         <div>
-          <div className="font-medium">
+          <div className="font-medium text-ink-100">
             {r.url ? (
               <a
                 href={r.url}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="text-gecko hover:underline"
+                className="text-claude hover:underline"
               >
                 {r.title ?? "(untitled)"} ↗
               </a>
@@ -104,7 +105,7 @@ export default async function CrossPlatformPage() {
               (r.title ?? "(untitled)")
             )}
           </div>
-          <div className="text-xs text-neutral-500">{r.seller_name ?? "—"}</div>
+          <div className="text-xs text-ink-400">{r.seller_name ?? "—"}</div>
         </div>
       ),
     },
@@ -121,7 +122,7 @@ export default async function CrossPlatformPage() {
         <span>
           {fmtUsd(r.price_usd_equivalent ?? r.price)}
           {r.currency && r.currency !== "USD" && (r.price_usd_equivalent ?? null) == null ? (
-            <span className="ml-1 text-xs text-neutral-500">{r.currency}</span>
+            <span className="ml-1 text-xs text-ink-400">{r.currency}</span>
           ) : null}
         </span>
       ),
@@ -150,12 +151,11 @@ export default async function CrossPlatformPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-semibold text-gecko-dark">Cross-platform</h1>
-        <p className="mt-1 text-neutral-600">
-          Listings observed on platforms other than MorphMarket.
-        </p>
-      </header>
+      <SectionHeader
+        eyebrow="Sources"
+        title="Cross-platform"
+        description="Listings observed on platforms other than MorphMarket."
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Total listings" value={rows.length} />
@@ -172,7 +172,7 @@ export default async function CrossPlatformPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">By platform</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">By platform</h2>
         <DataTable
           columns={platformColumns}
           rows={platforms}
@@ -182,7 +182,7 @@ export default async function CrossPlatformPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Recent listings</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recent listings</h2>
         <DataTable
           columns={columns}
           rows={rows.slice(0, 200)}

@@ -112,7 +112,7 @@ export default async function PriceDropsPage() {
         r.market_listings?.seller_id ? (
           <Link
             href={`/sellers/${r.market_listings.seller_id}`}
-            className="text-gecko hover:underline"
+            className="text-claude hover:underline"
           >
             {r.market_listings.seller_id}
           </Link>
@@ -125,12 +125,11 @@ export default async function PriceDropsPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-semibold text-gecko-dark">Price drops</h1>
-        <p className="mt-1 text-neutral-600">
-          Explicit price reductions the extension captured on revisit.
-        </p>
-      </header>
+      <SectionHeader
+        eyebrow="Signals"
+        title="Price drops"
+        description="Explicit price reductions the extension captured on revisit."
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Drops (all time)" value={rows.length} />
