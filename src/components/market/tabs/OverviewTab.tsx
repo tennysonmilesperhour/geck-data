@@ -10,12 +10,14 @@ import { useMemo } from "react";
 import {
   getMarketCalendar,
   getMarketIndex,
+  getPeakIndicators,
   getTopMovers,
 } from "@/lib/market/fixtures";
 import type { Filters, SourceId } from "@/lib/market/types";
 import MarketIndexCard from "@/components/market/widgets/MarketIndexCard";
 import TopMoversPanel from "@/components/market/widgets/TopMoversPanel";
 import MarketCalendarPanel from "@/components/market/widgets/MarketCalendarPanel";
+import PeakIndicatorGrid from "@/components/market/widgets/PeakIndicatorGrid";
 
 export default function OverviewTab({
   filters,
@@ -31,6 +33,7 @@ export default function OverviewTab({
   const index = useMemo(() => getMarketIndex(filters), [filters]);
   const movers = useMemo(() => getTopMovers(filters), [filters]);
   const calendar = useMemo(() => getMarketCalendar(filters), [filters]);
+  const peaks = useMemo(() => getPeakIndicators(filters), [filters]);
 
   function applySource(id: SourceId) {
     // Clicking a source badge on the Market Index narrows the dashboard
@@ -61,6 +64,8 @@ export default function OverviewTab({
         </div>
         <MarketCalendarPanel entries={calendar} />
       </div>
+
+      <PeakIndicatorGrid indicators={peaks} />
     </div>
   );
 }

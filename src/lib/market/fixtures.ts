@@ -185,6 +185,56 @@ export function getMarketCalendar(_f: Filters): CalendarEntry[] {
 }
 
 // ----------------------------------------------------------------------------
+// Peak Indicator — composite 0..100 "is this combo peaking or still early?"
+// score used on the Overview tab.
+//   0..34   Accumulate (green gradient bar lives on the left)
+//   35..69  Fair value (middle)
+//   70..100 Peaking    (right — "sell into strength")
+// Attribution follows the same shape as everything else so the click-through
+// story is consistent.
+// ----------------------------------------------------------------------------
+export type PeakTier = "Peaking" | "Fair value" | "Accumulate";
+
+export type PeakIndicator = {
+  combo: Combo;
+  score: number;             // 0..100
+  tier: PeakTier;
+  action: string;            // "Sell into strength" / "Hold" / "Accumulate"
+  n: number;
+  attribution: Attribution;
+};
+
+export function tierForScore(score: number): PeakTier {
+  if (score >= 70) return "Peaking";
+  if (score >= 35) return "Fair value";
+  return "Accumulate";
+}
+
+export function actionForScore(score: number): string {
+  if (score >= 70) return "Sell into strength";
+  if (score >= 35) return "Hold";
+  return "Accumulate";
+}
+
+export function getPeakIndicators(f: Filters): PeakIndicator[] {
+  const rand = mulberry32(seedFor(f, "peak"));
+  const rows: PeakIndicator[] = COMBOS.map((combo) => {
+    // Distribute scores across the full 5..95 range so every filter state
+    // produces a mix of peaking / fair / accumulate cards to look at.
+    const score = 5 + Math.floor(rand() * 90);
+    return {
+      combo,
+      score,
+      tier: tierForScore(score),
+      action: actionForScore(score),
+      n: 8 + Math.floor(rand() * 30),
+      attribution: synthesizeAttribution(f, rand, 3, 45),
+    };
+  });
+  return rows.sort((a, b) => b.score - a.score).slice(0, 6);
+}
+
+// ----------------------------------------------------------------------------
 // Attribution synthesizer. Picks N sources honoring the filter, and assigns
 // each a contribution weight that sums to 100%.
 // ----------------------------------------------------------------------------
