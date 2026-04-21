@@ -1,6 +1,6 @@
-# Admin Analytics migration
+# Admin Analytics migrations
 
-File: `0003_admin_analytics.sql`
+Files: `0003_admin_analytics.sql`, `0004_ingest_audit.sql`
 
 ## What it creates
 
@@ -53,6 +53,24 @@ where email = 'you@example.com';
 
 That unlocks `/admin/analytics`. Every subsequent signup gets `role = 'user'`
 by default; promote more admins the same way.
+
+## `0004_ingest_audit.sql` — ingest audit
+
+Adds `public.ingest_audit` so we have a per-request log of
+`POST /api/ingest` activity, plus a `v_ingest_daily` rollup view for the
+admin Ingest tab.
+
+- One row per POST; written by the route handler using the service role
+  (anon/authenticated can't insert — RLS enforces admin-only SELECT/DELETE)
+- Columns: `received_at, source_tag, content_type, event_count, ok_count,
+  failed_count, duration_ms, status_code, error_summary, event_types,
+  file_count, client_ip_hash, user_agent`
+- `client_ip_hash` = `sha256(daily_salt + ip).slice(0, 32)`. Raw IPs are
+  never persisted; the salt rotates every UTC day
+- Indexed on `received_at desc`, `(status_code, received_at)`, and on
+  `event_types` via GIN so the admin viewer can filter by type quickly
+
+Admin Ingest tab in `/admin/analytics` reads from this table.
 
 ## Scaling note
 

@@ -20,6 +20,12 @@ import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseMorphmarketDb, upsertBatched } from "@/lib/ingest/parseSqlite";
 import { handleEvent, parseEnvelopes } from "@/lib/ingest/events";
+import {
+  distinctEventTypes,
+  hashClientIp,
+  recordIngestAudit,
+  type AuditRow,
+} from "@/lib/ingest/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -183,20 +189,59 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Audit scaffolding. We build the row as the request progresses and flush
+  // it in `finally` so every path (success, validation error, fatal) leaves
+  // a trace in ingest_audit. Audit failures never propagate.
+  const t0 = Date.now();
+  const audit: AuditRow = {
+    source_tag: req.headers.get("x-ingest-source"),
+    content_type: req.headers.get("content-type"),
+    event_count: 0,
+    ok_count: 0,
+    failed_count: 0,
+    duration_ms: 0,
+    status_code: 500,
+    error_summary: null,
+    event_types: null,
+    file_count: null,
+    client_ip_hash: hashClientIp(clientIp(req)),
+    user_agent: req.headers.get("user-agent"),
+  };
+
+  let response: NextResponse;
   try {
-    return await handle(req);
+    response = await handle(req, audit);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[/api/ingest] fatal:", e);
-    return withCors(
+    audit.error_summary = msg.slice(0, 500);
+    audit.status_code = 500;
+    response = withCors(
       NextResponse.json({ error: msg }, { status: 500 }),
       req,
     );
   }
+
+  audit.status_code = response.status;
+  audit.duration_ms = Date.now() - t0;
+  // Log with the admin client; swallow any failure (see recordIngestAudit).
+  try {
+    await recordIngestAudit(createAdminClient(), audit);
+  } catch {
+    // swallow
+  }
+  return response;
 }
 
-async function handle(req: NextRequest) {
+function clientIp(req: NextRequest): string | null {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]!.trim();
+  return req.headers.get("x-real-ip");
+}
+
+async function handle(req: NextRequest, audit: AuditRow): Promise<NextResponse> {
   if (!authorized(req)) {
+    audit.error_summary = "unauthorized";
     return withCors(
       NextResponse.json({ error: "unauthorized" }, { status: 401 }),
       req,
@@ -211,13 +256,17 @@ async function handle(req: NextRequest) {
     try {
       body = await req.json();
     } catch {
+      audit.error_summary = "invalid JSON body";
       return withCors(
         NextResponse.json({ error: "invalid JSON body" }, { status: 400 }),
         req,
       );
     }
     const envelopes = parseEnvelopes(body);
+    audit.event_count = envelopes.length;
+    audit.event_types = distinctEventTypes(envelopes);
     if (envelopes.length === 0) {
+      audit.error_summary = "no valid events in body";
       return withCors(
         NextResponse.json(
           { error: "no valid events in body; expected { events: [{ type, payload }] }" },
@@ -231,6 +280,8 @@ async function handle(req: NextRequest) {
       results.push(await handleEvent(admin, env));
     }
     const okCount = results.filter((r) => r.ok).length;
+    audit.ok_count = okCount;
+    audit.failed_count = envelopes.length - okCount;
     return withCors(
       NextResponse.json({
         accepted: envelopes.length,
@@ -248,6 +299,7 @@ async function handle(req: NextRequest) {
     form = await req.formData();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
+    audit.error_summary = `invalid multipart body: ${msg}`.slice(0, 500);
     return withCors(
       NextResponse.json(
         { error: `invalid multipart body: ${msg}` },
@@ -258,7 +310,9 @@ async function handle(req: NextRequest) {
   }
 
   const files = form.getAll("files").filter((v): v is File => v instanceof File);
+  audit.file_count = files.length;
   if (files.length === 0) {
+    audit.error_summary = "no files uploaded";
     return withCors(
       NextResponse.json({ error: "no files uploaded" }, { status: 400 }),
       req,
@@ -331,5 +385,7 @@ async function handle(req: NextRequest) {
     }
   }
 
+  audit.ok_count = results.filter((r) => r.ok).length;
+  audit.failed_count = results.filter((r) => !r.ok).length;
   return withCors(NextResponse.json({ results }), req);
 }
