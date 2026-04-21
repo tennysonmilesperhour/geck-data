@@ -197,6 +197,24 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-10">
+      {(ingestAgeMin === null || ingestAgeMin >= 60 * 24) && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-busy/40 bg-busy/10 px-4 py-3 text-sm">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-busy">
+            Heads up
+          </span>
+          <span className="flex-1 text-ink-100">
+            {ingestAgeMin === null
+              ? "No ingest events yet. If the extension should be running, check that it's reloaded and pointed at the right host."
+              : `Ingest has been quiet for ${fmtRelative(newestIngestIso).replace(" ago", "")}. Data on this page may be out of date.`}
+          </span>
+          <Link
+            href="/status"
+            className="rounded-md border border-busy/50 bg-ink-900/40 px-3 py-1 text-xs text-ink-100 hover:border-busy hover:bg-ink-900/70"
+          >
+            See /status →
+          </Link>
+        </div>
+      )}
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="mb-2 flex items-center gap-2">
