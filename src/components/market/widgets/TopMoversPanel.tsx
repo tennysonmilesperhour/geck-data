@@ -5,32 +5,42 @@
 // Matches the handoff screenshots. Row click is reserved for task 4
 // (Combos tab detail drill-in) — placeholder handler for now.
 import { Sparkline } from "@/components/market/charts/InlineCharts";
+import LivePreviewTag, {
+  type LivePreviewStatus,
+} from "@/components/market/LivePreviewTag";
 import type { Mover } from "@/lib/market/fixtures";
 
 export default function TopMoversPanel({
   appreciating,
   depreciating,
   onSelectCombo,
+  status,
+  note,
 }: {
   appreciating: Mover[];
   depreciating: Mover[];
   onSelectCombo?: (combo: string) => void;
+  status?: LivePreviewStatus;
+  note?: string;
 }) {
   return (
     <section className="forest-surface p-5">
-      <header className="flex items-start gap-3">
-        <span
-          aria-hidden
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ready/10 text-ready ring-1 ring-inset ring-ready/30"
-        >
-          ⇅
-        </span>
-        <div>
-          <h2 className="text-base font-semibold text-forest-50">Top Movers</h2>
-          <p className="mt-0.5 text-xs text-forest-400">
-            Largest price swings in the selected timeframe
-          </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ready/10 text-ready ring-1 ring-inset ring-ready/30"
+          >
+            ⇅
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-forest-50">Top Movers</h2>
+            <p className="mt-0.5 text-xs text-forest-400">
+              Largest price swings in the selected timeframe
+            </p>
+          </div>
         </div>
+        {status ? <LivePreviewTag status={status} note={note} /> : null}
       </header>
 
       <div className="mt-4 grid grid-cols-1 gap-5 md:grid-cols-2">

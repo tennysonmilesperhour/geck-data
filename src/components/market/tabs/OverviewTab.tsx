@@ -1,18 +1,21 @@
 "use client";
-// Composes the three Overview widgets from the handoff screenshots:
-//   [                 Market Index (hero, full width)                 ]
-//   [      Top Movers (2/3 width)      ]   [ Market Calendar (1/3) ]
+// Composes the Overview widgets:
+//   [                   Market Index (hero, full width)                  ]
+//   [       Top Movers (2/3 width)       ]   [ Market Calendar (1/3) ]
+//   [                    Peak Indicator grid (full width)               ]
 //
-// Data comes from src/lib/market/fixtures.ts — swap any getX() to a real
-// Supabase query once the pipeline is ready; the component API doesn't
-// change.
+// Market Index / Top Movers / Peak Indicator read real data via the
+// queries module; each one falls back to fixtures when the underlying
+// views return empty so the dashboard never goes blank. Market Calendar
+// is still a fixture (the event data isn't in Supabase yet).
 import { useMemo } from "react";
+import { getMarketCalendar } from "@/lib/market/fixtures";
 import {
-  getMarketCalendar,
-  getMarketIndex,
-  getPeakIndicators,
-  getTopMovers,
-} from "@/lib/market/fixtures";
+  fetchMarketIndex,
+  fetchPeakIndicators,
+  fetchTopMovers,
+} from "@/lib/market/queries";
+import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import type { Filters, SourceId } from "@/lib/market/types";
 import MarketIndexCard from "@/components/market/widgets/MarketIndexCard";
 import TopMoversPanel from "@/components/market/widgets/TopMoversPanel";
@@ -28,17 +31,12 @@ export default function OverviewTab({
   onChange: (f: Filters) => void;
   onSelectCombo?: (combo: string) => void;
 }) {
-  // Three cheap in-memory computations keyed on filters; re-run only when
-  // the user changes a control.
-  const index = useMemo(() => getMarketIndex(filters), [filters]);
-  const movers = useMemo(() => getTopMovers(filters), [filters]);
+  const indexQ = useFilteredQuery(fetchMarketIndex, filters, [] as const);
+  const moversQ = useFilteredQuery(fetchTopMovers, filters, [] as const);
+  const peaksQ = useFilteredQuery(fetchPeakIndicators, filters, [] as const);
   const calendar = useMemo(() => getMarketCalendar(filters), [filters]);
-  const peaks = useMemo(() => getPeakIndicators(filters), [filters]);
 
   function applySource(id: SourceId) {
-    // Clicking a source badge on the Market Index narrows the dashboard
-    // to just that source. Clicking the same badge again restores "all"
-    // so it reads as a toggle.
     if (
       filters.sources !== "all" &&
       filters.sources.size === 1 &&
@@ -52,20 +50,50 @@ export default function OverviewTab({
 
   return (
     <div className="space-y-4">
-      <MarketIndexCard data={index} onFilterBySource={applySource} filters={filters} />
+      {indexQ.data ? (
+        <MarketIndexCard
+          data={indexQ.data}
+          onFilterBySource={applySource}
+          filters={filters}
+          status={indexQ.status}
+          note={indexQ.note}
+        />
+      ) : (
+        <div className="forest-surface p-6 text-sm text-forest-400">
+          Loading Market Index…
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="md:col-span-2">
-          <TopMoversPanel
-            appreciating={movers.appreciating}
-            depreciating={movers.depreciating}
-            onSelectCombo={onSelectCombo}
-          />
+          {moversQ.data ? (
+            <TopMoversPanel
+              appreciating={moversQ.data.appreciating}
+              depreciating={moversQ.data.depreciating}
+              onSelectCombo={onSelectCombo}
+              status={moversQ.status}
+              note={moversQ.note}
+            />
+          ) : (
+            <div className="forest-surface p-6 text-sm text-forest-400">
+              Loading Top Movers…
+            </div>
+          )}
         </div>
         <MarketCalendarPanel entries={calendar} />
       </div>
 
-      <PeakIndicatorGrid indicators={peaks} />
+      {peaksQ.data ? (
+        <PeakIndicatorGrid
+          indicators={peaksQ.data}
+          status={peaksQ.status}
+          note={peaksQ.note}
+        />
+      ) : (
+        <div className="forest-surface p-6 text-sm text-forest-400">
+          Loading Peak Indicator…
+        </div>
+      )}
     </div>
   );
 }

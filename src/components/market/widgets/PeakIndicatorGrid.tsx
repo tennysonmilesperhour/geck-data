@@ -5,6 +5,9 @@
 // sample size, a green→amber→red gradient bar with a marker, and a
 // confidence badge in the bottom-left.
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import LivePreviewTag, {
+  type LivePreviewStatus,
+} from "@/components/market/LivePreviewTag";
 import type { PeakIndicator, PeakTier } from "@/lib/market/fixtures";
 
 const TIER_META: Record<
@@ -33,8 +36,12 @@ const TIER_META: Record<
 
 export default function PeakIndicatorGrid({
   indicators,
+  status,
+  note,
 }: {
   indicators: PeakIndicator[];
+  status?: LivePreviewStatus;
+  note?: string;
 }) {
   return (
     <section className="forest-surface p-5">
@@ -56,14 +63,17 @@ export default function PeakIndicatorGrid({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-forest-700 bg-forest-950/40 px-2 py-1 text-[10px] text-forest-300 hover:text-forest-100"
-          title="Methodology (coming soon)"
-        >
-          <span aria-hidden>ⓘ</span>
-          Methodology
-        </button>
+        <div className="flex items-center gap-2">
+          {status ? <LivePreviewTag status={status} note={note} /> : null}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-forest-700 bg-forest-950/40 px-2 py-1 text-[10px] text-forest-300 hover:text-forest-100"
+            title="Methodology (coming soon)"
+          >
+            <span aria-hidden>ⓘ</span>
+            Methodology
+          </button>
+        </div>
       </header>
 
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
