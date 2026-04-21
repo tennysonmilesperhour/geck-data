@@ -60,20 +60,60 @@ function authorized(req: NextRequest): boolean {
   return timingSafeEqual(a, b);
 }
 
+// CORS — content scripts running on https://www.morphmarket.com are the
+// primary cross-origin caller. Extension service workers (chrome-extension://)
+// fetch with host_permissions so CORS doesn't apply to them, but we still
+// echo their origin back in case a future caller lacks the permission.
+const ALLOWED_ORIGINS = new Set(["https://www.morphmarket.com"]);
+const DEFAULT_ORIGIN = "https://www.morphmarket.com";
+
+function corsHeaders(req: NextRequest): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allowed =
+    ALLOWED_ORIGINS.has(origin) || origin.startsWith("chrome-extension://");
+  return {
+    "Access-Control-Allow-Origin": allowed ? origin : DEFAULT_ORIGIN,
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type, X-API-Key, Authorization",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+function withCors(res: NextResponse, req: NextRequest): NextResponse {
+  for (const [k, v] of Object.entries(corsHeaders(req))) {
+    res.headers.set(k, v);
+  }
+  return res;
+}
+
+// Preflight. Returns 200 immediately with the CORS headers so the browser
+// allows the subsequent POST / GET with x-api-key + application/json.
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 200, headers: corsHeaders(req) });
+}
+
 // GET — Bearer-gated diagnostic. Returns per-table row counts plus a check
 // that the touch_listing_seen RPC from migration 0002 registered, so we can
 // tell end-to-end whether the extension's events are landing in Supabase
 // (and, if they are not, which specific piece is broken).
 export async function GET(req: NextRequest) {
   if (!authorized(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return withCors(
+      NextResponse.json({ error: "unauthorized" }, { status: 401 }),
+      req,
+    );
   }
   let admin;
   try {
     admin = createAdminClient();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: `admin client: ${msg}` }, { status: 500 });
+    return withCors(
+      NextResponse.json({ error: `admin client: ${msg}` }, { status: 500 }),
+      req,
+    );
   }
 
   const tables = [
@@ -136,7 +176,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ counts, touchRpc, mostRecent: recency });
+  return withCors(
+    NextResponse.json({ counts, touchRpc, mostRecent: recency }),
+    req,
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -145,13 +188,19 @@ export async function POST(req: NextRequest) {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[/api/ingest] fatal:", e);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return withCors(
+      NextResponse.json({ error: msg }, { status: 500 }),
+      req,
+    );
   }
 }
 
 async function handle(req: NextRequest) {
   if (!authorized(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return withCors(
+      NextResponse.json({ error: "unauthorized" }, { status: 401 }),
+      req,
+    );
   }
 
   const contentType = req.headers.get("content-type") ?? "";
@@ -162,13 +211,19 @@ async function handle(req: NextRequest) {
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+      return withCors(
+        NextResponse.json({ error: "invalid JSON body" }, { status: 400 }),
+        req,
+      );
     }
     const envelopes = parseEnvelopes(body);
     if (envelopes.length === 0) {
-      return NextResponse.json(
-        { error: "no valid events in body; expected { events: [{ type, payload }] }" },
-        { status: 400 },
+      return withCors(
+        NextResponse.json(
+          { error: "no valid events in body; expected { events: [{ type, payload }] }" },
+          { status: 400 },
+        ),
+        req,
       );
     }
     const results = [];
@@ -176,12 +231,15 @@ async function handle(req: NextRequest) {
       results.push(await handleEvent(admin, env));
     }
     const okCount = results.filter((r) => r.ok).length;
-    return NextResponse.json({
-      accepted: envelopes.length,
-      ok: okCount,
-      failed: envelopes.length - okCount,
-      results,
-    });
+    return withCors(
+      NextResponse.json({
+        accepted: envelopes.length,
+        ok: okCount,
+        failed: envelopes.length - okCount,
+        results,
+      }),
+      req,
+    );
   }
 
   // Fall through: multipart file upload path.
@@ -190,15 +248,21 @@ async function handle(req: NextRequest) {
     form = await req.formData();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json(
-      { error: `invalid multipart body: ${msg}` },
-      { status: 400 },
+    return withCors(
+      NextResponse.json(
+        { error: `invalid multipart body: ${msg}` },
+        { status: 400 },
+      ),
+      req,
     );
   }
 
   const files = form.getAll("files").filter((v): v is File => v instanceof File);
   if (files.length === 0) {
-    return NextResponse.json({ error: "no files uploaded" }, { status: 400 });
+    return withCors(
+      NextResponse.json({ error: "no files uploaded" }, { status: 400 }),
+      req,
+    );
   }
 
   const results: FileResult[] = [];
@@ -267,5 +331,5 @@ async function handle(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ results });
+  return withCors(NextResponse.json({ results }), req);
 }
