@@ -9,6 +9,9 @@
 import { AreaChart } from "@/components/market/charts/InlineCharts";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import LivePreviewTag, {
+  type LivePreviewStatus,
+} from "@/components/market/LivePreviewTag";
 import type { MarketIndex } from "@/lib/market/fixtures";
 import type { Filters, SourceId } from "@/lib/market/types";
 
@@ -16,10 +19,14 @@ export default function MarketIndexCard({
   data,
   onFilterBySource,
   filters,
+  status,
+  note,
 }: {
   data: MarketIndex;
   onFilterBySource?: (id: SourceId) => void;
   filters: Filters;
+  status?: LivePreviewStatus;
+  note?: string;
 }) {
   const deltaPositive = data.deltaPct >= 0;
   const deltaColor = deltaPositive ? "text-ready" : "text-danger";
@@ -52,6 +59,7 @@ export default function MarketIndexCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {status ? <LivePreviewTag status={status} note={note} /> : null}
           <ConfidenceBadge score={data.attribution.confidence.score} size="md" />
           <button
             type="button"
