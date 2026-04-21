@@ -39,11 +39,30 @@ function authorized(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handle(req);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[/api/ingest] fatal:", e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+async function handle(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const form = await req.formData();
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json(
+      { error: `invalid multipart body: ${msg}` },
+      { status: 400 },
+    );
+  }
   const files = form.getAll("files").filter((v): v is File => v instanceof File);
   if (files.length === 0) {
     return NextResponse.json({ error: "no files uploaded" }, { status: 400 });
