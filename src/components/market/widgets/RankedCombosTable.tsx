@@ -4,6 +4,9 @@
 // Sort metric is a dropdown in the header (Volume / Median sold / Ask /
 // Spread / Days). Column headers are also click-to-sort for consistency.
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import LivePreviewTag, {
+  type LivePreviewStatus,
+} from "@/components/market/LivePreviewTag";
 import type { ComboRow, ComboRankSort } from "@/lib/market/fixtures";
 
 export default function RankedCombosTable({
@@ -12,12 +15,16 @@ export default function RankedCombosTable({
   onSortChange,
   selected,
   onSelect,
+  status,
+  note,
 }: {
   rows: ComboRow[];
   sort: ComboRankSort;
   onSortChange: (s: ComboRankSort) => void;
   selected: string | null;
   onSelect: (combo: string) => void;
+  status?: LivePreviewStatus;
+  note?: string;
 }) {
   return (
     <section className="forest-surface">
@@ -40,6 +47,7 @@ export default function RankedCombosTable({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {status ? <LivePreviewTag status={status} note={note} /> : null}
           <label className="sr-only">Sort by</label>
           <select
             value={sort}

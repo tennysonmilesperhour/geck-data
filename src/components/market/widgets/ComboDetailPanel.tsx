@@ -11,8 +11,19 @@ import { sourceMeta } from "@/lib/market/sources";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
 import MultiLineChart from "@/components/market/charts/MultiLineChart";
+import LivePreviewTag, {
+  type LivePreviewStatus,
+} from "@/components/market/LivePreviewTag";
 
-export default function ComboDetailPanel({ detail }: { detail: ComboDetail | null }) {
+export default function ComboDetailPanel({
+  detail,
+  status,
+  note,
+}: {
+  detail: ComboDetail | null;
+  status?: LivePreviewStatus;
+  note?: string;
+}) {
   if (!detail) {
     return (
       <section className="forest-surface flex h-[500px] items-center justify-center p-5 text-sm text-forest-500">
@@ -43,7 +54,10 @@ export default function ComboDetailPanel({ detail }: { detail: ComboDetail | nul
               </span>
             </div>
           </div>
-          <ConfidenceBadge score={detail.attribution.confidence.score} size="md" />
+          <div className="flex items-center gap-2">
+            {status ? <LivePreviewTag status={status} note={note} /> : null}
+            <ConfidenceBadge score={detail.attribution.confidence.score} size="md" />
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
