@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { SectionHeader, StatusPill } from "@/components/ui/Panel";
 import ErrorLogsViewer from "@/components/admin/ErrorLogsViewer";
+import IngestAuditViewer from "@/components/admin/IngestAuditViewer";
 import { fmtRelative } from "@/lib/format";
 import { DAY_MS } from "./analytics/aggregations";
 import GrowthTab from "./analytics/GrowthTab";
@@ -31,7 +32,14 @@ import RetentionTab from "./analytics/RetentionTab";
 import type { DataBundle, Period, Profile, UserEvent } from "./analytics/types";
 
 const PERIODS: Period[] = [7, 30, 90, 365];
-const TABS = ["growth", "engagement", "features", "retention", "errors"] as const;
+const TABS = [
+  "growth",
+  "engagement",
+  "features",
+  "retention",
+  "errors",
+  "ingest",
+] as const;
 type TabKey = (typeof TABS)[number];
 
 const MAX_PERIOD = 365;
@@ -225,6 +233,7 @@ export default function AnalyticsDashboard() {
       {tab === "features" && <FeaturesTab data={data} period={period} />}
       {tab === "retention" && <RetentionTab data={data} />}
       {tab === "errors" && <ErrorLogsViewer />}
+      {tab === "ingest" && <IngestAuditViewer />}
     </div>
   );
 }

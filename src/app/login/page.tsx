@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, setSessionOnly } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   // useSearchParams() forces client-side rendering; Next requires a Suspense
@@ -21,6 +21,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [stayLoggedIn, setStayLoggedIn] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +29,9 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    // Flip the session-storage flag *before* creating the client so the
+    // browser client wires its storage correctly the first time.
+    setSessionOnly(!stayLoggedIn);
     const supabase = createClient();
     const { error } =
       mode === "signin"
@@ -72,6 +76,21 @@ function LoginForm() {
             autoComplete={mode === "signin" ? "current-password" : "new-password"}
           />
         </div>
+
+        <label className="flex items-center gap-2 text-sm text-ink-300">
+          <input
+            type="checkbox"
+            checked={stayLoggedIn}
+            onChange={(e) => setStayLoggedIn(e.target.checked)}
+            className="accent-claude"
+          />
+          <span>Stay logged in on this browser</span>
+        </label>
+        <p className="-mt-2 text-xs text-ink-500">
+          {stayLoggedIn
+            ? "Session survives closing the tab and re-opening the browser."
+            : "Session ends when you close this tab."}
+        </p>
 
         {error && (
           <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">

@@ -19,6 +19,7 @@ import type {
 import { AGES, LINEAGES, REGIONS, TIMEFRAMES } from "@/lib/market/types";
 import { ALL_SOURCE_IDS, sourceMeta } from "@/lib/market/sources";
 import SourceBadge from "./SourceBadge";
+import PresetsMenu from "./PresetsMenu";
 
 const TIMEFRAME_LABEL: Record<Timeframe, string> = {
   "30d": "30 days",
@@ -103,6 +104,10 @@ export default function FilterBar({
         value={filters.sources}
         onChange={(v) => onChange({ ...filters, sources: v })}
       />
+
+      <div className="ml-auto">
+        <PresetsMenu filters={filters} onApply={onChange} />
+      </div>
     </div>
   );
 }
