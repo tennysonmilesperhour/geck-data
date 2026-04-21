@@ -13,6 +13,9 @@ import type {
   RegionKey,
 } from "@/lib/market/fixtures";
 import { REGION_COLUMNS, heatmapMetricLabel } from "@/lib/market/fixtures";
+import LivePreviewTag, {
+  type LivePreviewStatus,
+} from "@/components/market/LivePreviewTag";
 
 export default function RegionalHeatmap({
   data,
@@ -20,12 +23,16 @@ export default function RegionalHeatmap({
   onMetricChange,
   selected,
   onSelect,
+  status,
+  note,
 }: {
   data: HeatmapData;
   metric: HeatmapMetric;
   onMetricChange: (m: HeatmapMetric) => void;
   selected: { combo: string; region: RegionKey } | null;
   onSelect: (sel: { combo: string; region: RegionKey } | null) => void;
+  status?: LivePreviewStatus;
+  note?: string;
 }) {
   const [lo, hi] = data.range;
 
@@ -49,6 +56,7 @@ export default function RegionalHeatmap({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {status ? <LivePreviewTag status={status} note={note} /> : null}
           <select
             value={metric}
             onChange={(e) => onMetricChange(e.target.value as HeatmapMetric)}

@@ -1,39 +1,57 @@
 "use client";
 // Supply tab — forward-looking projected hatchlings over the next 9
-// months. Behind an enterprise-lock notice (the tab is visible to all,
-// but the preview lock + "View plans →" CTA mirror the screenshot). The
-// data below the banner renders at reduced opacity so the reader gets
-// the shape of the product even without a subscription.
-import { useMemo } from "react";
+// months. Reads v_supply_pipeline_monthly (aggregated by (month, combo))
+// with fixture fallback so the shape of the product is visible even
+// before any user records breeding data.
+//
+// The enterprise-lock banner stays because the UX promise ("Live
+// internal sales, scraped external feeds, and forward-looking breeding
+// signals activate with an Enterprise subscription") is the gate we'll
+// wire to real paywalling later — the data visibility itself already
+// respects RLS (owners see their pairs, admins see all).
 import type { Filters } from "@/lib/market/types";
-import { getSupplyPipeline } from "@/lib/market/fixtures";
+import { fetchSupplyPipeline } from "@/lib/market/queries";
+import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import SupplyStackedBars from "@/components/market/widgets/SupplyStackedBars";
 import SourceBadge from "@/components/market/SourceBadge";
+import LivePreviewTag from "@/components/market/LivePreviewTag";
 
 export default function SupplyTab({ filters }: { filters: Filters }) {
-  const data = useMemo(() => getSupplyPipeline(filters), [filters]);
+  const q = useFilteredQuery(fetchSupplyPipeline, filters, [] as const);
+
+  if (!q.data) {
+    return (
+      <div className="forest-surface p-6 text-sm text-forest-400">
+        Loading supply pipeline…
+      </div>
+    );
+  }
+  const data = q.data;
 
   return (
     <div className="space-y-4">
       <LockBanner />
 
       <section className="forest-surface p-5 opacity-95">
-        <header className="flex items-start gap-3">
-          <span
-            aria-hidden
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ready/10 text-ready ring-1 ring-inset ring-ready/30"
-          >
-            ⚘
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-forest-50">
-              Supply pipeline — projected hatchlings (9-month)
-            </h2>
-            <p className="mt-0.5 text-xs text-forest-400">
-              Forward-looking supply from Geck Inspect users&apos; own breeding
-              records — available nowhere else
-            </p>
+        <header className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ready/10 text-ready ring-1 ring-inset ring-ready/30"
+            >
+              ⚘
+            </span>
+            <div>
+              <h2 className="text-base font-semibold text-forest-50">
+                Supply pipeline — projected hatchlings (9-month)
+              </h2>
+              <p className="mt-0.5 text-xs text-forest-400">
+                Forward-looking supply from Geck Inspect users&apos; own breeding
+                records — available nowhere else
+              </p>
+            </div>
           </div>
+          <LivePreviewTag status={q.status} note={q.note} />
         </header>
 
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">

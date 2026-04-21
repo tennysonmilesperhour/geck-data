@@ -4,16 +4,26 @@
 //
 // KPIs up top. Axis toggle (by source / by region). Table with the pair of
 // legs + spread + confidence.
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { Filters } from "@/lib/market/types";
 import type { ArbitrageAxis } from "@/lib/market/fixtures";
-import { getArbitrage } from "@/lib/market/fixtures";
+import { fetchArbitrage } from "@/lib/market/queries";
+import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import LivePreviewTag from "@/components/market/LivePreviewTag";
 
 export default function ArbitrageTab({ filters }: { filters: Filters }) {
   const [axis, setAxis] = useState<ArbitrageAxis>("source");
-  const data = useMemo(() => getArbitrage(filters, axis), [filters, axis]);
+  const q = useFilteredQuery(fetchArbitrage, filters, [axis] as const, axis);
+  if (!q.data) {
+    return (
+      <div className="forest-surface p-6 text-sm text-forest-400">
+        Loading arbitrage…
+      </div>
+    );
+  }
+  const data = q.data;
 
   return (
     <div className="space-y-4">
@@ -59,7 +69,10 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
               </p>
             </div>
           </div>
-          <AxisToggle axis={axis} onChange={setAxis} />
+          <div className="flex items-center gap-2">
+            <LivePreviewTag status={q.status} note={q.note} />
+            <AxisToggle axis={axis} onChange={setAxis} />
+          </div>
         </header>
 
         <div className="overflow-x-auto">
