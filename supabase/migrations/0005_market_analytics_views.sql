@@ -12,6 +12,13 @@
 --
 -- Safe to re-run; every create is IF NOT EXISTS / CREATE OR REPLACE and
 -- every DROP uses IF EXISTS.
+--
+-- NOTE: all round(x, n) calls below cast to ::numeric first.
+-- percentile_cont(...) and exp()/ln() return double precision, and Postgres
+-- only implements round(numeric, int) — not round(double precision, int).
+-- If you see "function round(double precision, integer) does not exist",
+-- you're on the pre-cast version of this file; re-run it (everything here
+-- is CREATE OR REPLACE so it's safe to re-apply).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -182,18 +189,18 @@ select
   pc.combo_name,
   coalesce(pc.sold_count, 0)::int  as sold_count,
   coalesce(pc.live_count, 0)::int  as live_count,
-  pc.median_sold,
-  pc.median_ask,
+  pc.median_sold::numeric          as median_sold,
+  pc.median_ask::numeric           as median_ask,
   case
     when pc.median_sold is null or pc.median_sold = 0 then null
-    else round(((pc.median_ask - pc.median_sold) / pc.median_sold) * 100, 1)
+    else round((((pc.median_ask - pc.median_sold) / pc.median_sold) * 100)::numeric, 1)
   end as spread_pct,
-  round(pc.avg_days_to_sell, 1) as avg_days_to_sell,
+  round(pc.avg_days_to_sell::numeric, 1) as avg_days_to_sell,
   -- Confidence: start at 20, +2 per sold observation, +0.5 per live listing,
   -- capped at 99. Produces sensible gradient from thin to thick coverage.
   least(99,
     greatest(1,
-      round(20 + coalesce(pc.sold_count, 0) * 2 + coalesce(pc.live_count, 0) * 0.5)
+      round((20 + coalesce(pc.sold_count, 0) * 2 + coalesce(pc.live_count, 0) * 0.5)::numeric)
     )
   )::int as confidence_score
 from per_combo pc;
@@ -256,11 +263,11 @@ select
   combo_name,
   region,
   count(*)::int as n,
-  percentile_cont(0.5) within group (order by price_usd_equivalent)
-    filter (where sold_in_window and current_status = 'sold') as median_sold,
-  percentile_cont(0.5) within group (order by price_usd_equivalent)
-    filter (where current_status = 'live') as median_ask,
-  least(99, greatest(1, round(20 + count(*) * 5)))::int as confidence_score
+  (percentile_cont(0.5) within group (order by price_usd_equivalent)
+    filter (where sold_in_window and current_status = 'sold'))::numeric as median_sold,
+  (percentile_cont(0.5) within group (order by price_usd_equivalent)
+    filter (where current_status = 'live'))::numeric as median_ask,
+  least(99, greatest(1, round((20 + count(*) * 5)::numeric)))::int as confidence_score
 from regionalised
 group by combo_name, region;
 $$;
@@ -323,7 +330,7 @@ anchored as (
     (p.geo_avg / first_value(p.geo_avg) over (order by p.week_start)) * 1000 as value
   from per_week p
 )
-select week_start, round(value, 1) as value, combos_in
+select week_start, round(value::numeric, 1) as value, combos_in
 from anchored
 order by week_start;
 $$;
@@ -374,10 +381,10 @@ totals as (
 select
   ps.source,
   ps.n,
-  round(ps.avg_price, 2) as avg_price,
+  round(ps.avg_price::numeric, 2) as avg_price,
   case
-    when t.total_n = 0 then 0
-    else round((ps.n::numeric / t.total_n) * 100, 1)
+    when t.total_n = 0 then 0::numeric
+    else round(((ps.n::numeric / t.total_n) * 100)::numeric, 1)
   end as pct
 from per_source ps
 cross join totals t
