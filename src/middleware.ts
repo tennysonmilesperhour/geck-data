@@ -18,7 +18,9 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isProtected =
-    pathname.startsWith("/upload") || pathname.startsWith("/api/upload");
+    pathname.startsWith("/upload") ||
+    pathname.startsWith("/api/upload") ||
+    pathname.startsWith("/admin");
 
   if (!url || !key) {
     // No Supabase config visible to the edge runtime. We can't refresh the
