@@ -409,6 +409,118 @@ function timeLabel(i: number, n: number): string {
 }
 
 // ----------------------------------------------------------------------------
+// Regional tab — combo × market heatmap.
+//
+// Produces one cell per (combo, region). `value` is the chosen metric (median
+// sold by default), `confidence` 0..1 drives the cell's opacity, and `null`
+// means "no data" so the cell renders as "—" (thin supply).
+// ----------------------------------------------------------------------------
+export const REGION_COLUMNS = ["US", "EU", "UK", "CA", "AU", "JP", "SE", "SEA"] as const;
+export type RegionKey = (typeof REGION_COLUMNS)[number];
+
+export type HeatmapMetric = "medianSold" | "ask" | "spread";
+
+export type HeatmapCell = {
+  value: number;
+  confidence: number; // 0..1, drives opacity
+  n: number;
+} | null;
+
+export type HeatmapRow = {
+  combo: Combo;
+  cells: Record<RegionKey, HeatmapCell>;
+};
+
+export type RegionalHeatmap = {
+  metric: HeatmapMetric;
+  rows: HeatmapRow[];
+  range: [number, number];
+  attribution: Attribution;
+};
+
+export function getRegionalHeatmap(
+  f: Filters,
+  metric: HeatmapMetric = "medianSold",
+): RegionalHeatmap {
+  const rand = mulberry32(seedFor(f, `heatmap-${metric}`));
+  let lo = Infinity;
+  let hi = -Infinity;
+
+  const rows: HeatmapRow[] = COMBOS.map((combo) => {
+    // Empty shell first so the type checker sees every region key populated.
+    const cells: Record<RegionKey, HeatmapCell> = {
+      US: null, EU: null, UK: null, CA: null,
+      AU: null, JP: null, SE: null, SEA: null,
+    };
+    for (const region of REGION_COLUMNS) {
+      // ~15% of cells render as "—" so the grid reads as uneven real-world
+      // supply instead of a solid rectangle.
+      if (rand() < 0.15) {
+        cells[region] = null;
+        continue;
+      }
+      const base = metricBase(metric, rand);
+      const regional = base * regionMultiplier(region, rand);
+      const value = Math.round(Math.max(0, regional));
+      const confidence = Math.min(1, 0.25 + rand() * 0.7);
+      cells[region] = { value, confidence, n: 1 + Math.floor(rand() * 10) };
+      if (value < lo) lo = value;
+      if (value > hi) hi = value;
+    }
+    return { combo, cells };
+  });
+
+  if (!Number.isFinite(lo)) lo = 0;
+  if (!Number.isFinite(hi)) hi = 1;
+
+  return {
+    metric,
+    rows,
+    range: [lo, hi],
+    attribution: synthesizeAttribution(f, rand, 4, 50),
+  };
+}
+
+function metricBase(metric: HeatmapMetric, rand: () => number): number {
+  switch (metric) {
+    case "medianSold":
+      return 400 + Math.floor(rand() * 6000);
+    case "ask":
+      return 500 + Math.floor(rand() * 7000);
+    case "spread":
+      // Spread is a percent, not a dollar amount. Keep it small and signed.
+      return (rand() - 0.4) * 30;
+  }
+}
+
+function regionMultiplier(region: RegionKey, rand: () => number): number {
+  // Light regional bias on top of a per-cell random wobble. Keeps the map
+  // interpretable across metrics — UK tends higher, SEA tends lower, etc.
+  const base: Record<RegionKey, number> = {
+    US: 1.0,
+    EU: 1.05,
+    UK: 1.15,
+    CA: 0.95,
+    AU: 1.1,
+    JP: 1.0,
+    SE: 1.05,
+    SEA: 0.85,
+  };
+  return base[region] * (0.75 + rand() * 0.6);
+}
+
+export function heatmapMetricLabel(m: HeatmapMetric): string {
+  switch (m) {
+    case "medianSold":
+      return "Median sold";
+    case "ask":
+      return "Ask";
+    case "spread":
+      return "Ask→Sold spread";
+  }
+}
+
+// ----------------------------------------------------------------------------
 // Attribution synthesizer. Picks N sources honoring the filter, and assigns
 // each a contribution weight that sums to 100%.
 // ----------------------------------------------------------------------------
