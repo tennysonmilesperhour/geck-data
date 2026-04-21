@@ -12,6 +12,7 @@ import OverviewTab from "./tabs/OverviewTab";
 import CombosTab from "./tabs/CombosTab";
 import RegionalTab from "./tabs/RegionalTab";
 import ArbitrageTab from "./tabs/ArbitrageTab";
+import SupplyTab from "./tabs/SupplyTab";
 
 const DEFAULT_FILTERS: Filters = {
   timeframe: "12mo",
@@ -57,10 +58,13 @@ export default function MarketDashboard() {
 
       {tab === "arbitrage" && <ArbitrageTab filters={filters} />}
 
+      {tab === "supply" && <SupplyTab filters={filters} />}
+
       {tab !== "overview" &&
         tab !== "combos" &&
         tab !== "regional" &&
-        tab !== "arbitrage" && (
+        tab !== "arbitrage" &&
+        tab !== "supply" && (
         <div className="forest-surface p-10 text-center text-sm text-forest-300">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-forest-500">
             Coming soon
