@@ -116,7 +116,7 @@ export default async function StatusPage() {
         weekRes.error?.message ??
         newestRes.error?.message ??
         null;
-      const row = (newestRes.data ?? [])[0] as
+      const row = (newestRes.data ?? [])[0] as unknown as
         | Record<string, string | null>
         | undefined;
       return {
