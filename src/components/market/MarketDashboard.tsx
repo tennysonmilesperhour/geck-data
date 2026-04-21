@@ -1,8 +1,8 @@
 "use client";
 // Top-level shell for /market. Owns the filter + tab state and a
-// `selectedCombo` that lets widgets on one tab jump into the Combos tab
-// preloaded on a specific entry (e.g. clicking a Top Mover on Overview
-// deep-links into its Combos detail panel).
+// `selectedCombo` so widgets on one tab can jump into the Combos tab
+// preloaded on a specific entry (Top Movers → Combos; Breeders specialty
+// → Combos; etc.).
 import { useState } from "react";
 import type { Filters, Tab } from "@/lib/market/types";
 import PreviewBanner from "./PreviewBanner";
@@ -13,6 +13,7 @@ import CombosTab from "./tabs/CombosTab";
 import RegionalTab from "./tabs/RegionalTab";
 import ArbitrageTab from "./tabs/ArbitrageTab";
 import SupplyTab from "./tabs/SupplyTab";
+import BreedersTab from "./tabs/BreedersTab";
 
 const DEFAULT_FILTERS: Filters = {
   timeframe: "12mo",
@@ -55,27 +56,10 @@ export default function MarketDashboard() {
       )}
 
       {tab === "regional" && <RegionalTab filters={filters} />}
-
       {tab === "arbitrage" && <ArbitrageTab filters={filters} />}
-
       {tab === "supply" && <SupplyTab filters={filters} />}
-
-      {tab !== "overview" &&
-        tab !== "combos" &&
-        tab !== "regional" &&
-        tab !== "arbitrage" &&
-        tab !== "supply" && (
-        <div className="forest-surface p-10 text-center text-sm text-forest-300">
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-forest-500">
-            Coming soon
-          </p>
-          <p className="mt-2 text-forest-100">
-            The <span className="font-mono text-ready">{tab}</span> tab lands
-            in the next iteration. Current selection:{" "}
-            <span className="font-mono text-ready">{filters.timeframe}</span>{" "}
-            · <span className="font-mono text-ready">{filters.region}</span>.
-          </p>
-        </div>
+      {tab === "breeders" && (
+        <BreedersTab filters={filters} onSelectCombo={jumpToCombo} />
       )}
     </div>
   );
