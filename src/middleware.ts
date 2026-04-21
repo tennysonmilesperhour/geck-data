@@ -49,6 +49,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Match every path except static assets and Next internals.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // Match every path except static assets, Next internals, and the
+  // machine-to-machine /api/ingest endpoint (it has its own Bearer auth
+  // and does not need the Supabase session cookie refresh).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/ingest|.*\\..*).*)"],
 };
