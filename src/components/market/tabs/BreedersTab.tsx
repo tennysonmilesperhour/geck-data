@@ -6,11 +6,12 @@
 // KPI strip (breeders tracked / top region / avg sold price / avg days)
 // + ranked table with a per-row 12-week velocity sparkline, specialty
 // combo, and a lineage score pill.
-import { useMemo } from "react";
 import type { Filters } from "@/lib/market/types";
-import { getBreeders } from "@/lib/market/fixtures";
+import { fetchBreeders } from "@/lib/market/queries";
+import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import LivePreviewTag from "@/components/market/LivePreviewTag";
 import { Sparkline } from "@/components/market/charts/InlineCharts";
 
 export default function BreedersTab({
@@ -20,7 +21,15 @@ export default function BreedersTab({
   filters: Filters;
   onSelectCombo?: (combo: string) => void;
 }) {
-  const data = useMemo(() => getBreeders(filters), [filters]);
+  const q = useFilteredQuery(fetchBreeders, filters, [] as const);
+  if (!q.data) {
+    return (
+      <div className="forest-surface p-6 text-sm text-forest-400">
+        Loading breeders…
+      </div>
+    );
+  }
+  const data = q.data;
 
   return (
     <div className="space-y-4">
@@ -42,21 +51,24 @@ export default function BreedersTab({
       </section>
 
       <section className="forest-surface">
-        <header className="flex items-start gap-3 border-b border-forest-700/70 p-4">
-          <span
-            aria-hidden
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ready/10 text-ready ring-1 ring-inset ring-ready/30"
-          >
-            ☰
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-forest-50">Breeders</h2>
-            <p className="mt-0.5 max-w-lg text-xs text-forest-400">
-              Ranked by sold volume in the selected window. Sparkline shows
-              the last 12 weeks of new listings. Click a specialty combo to
-              jump into Combos detail.
-            </p>
+        <header className="flex items-start justify-between gap-3 border-b border-forest-700/70 p-4">
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ready/10 text-ready ring-1 ring-inset ring-ready/30"
+            >
+              ☰
+            </span>
+            <div>
+              <h2 className="text-base font-semibold text-forest-50">Breeders</h2>
+              <p className="mt-0.5 max-w-lg text-xs text-forest-400">
+                Ranked by sold volume in the selected window. Sparkline shows
+                the last 12 weeks of new listings. Click a specialty combo to
+                jump into Combos detail.
+              </p>
+            </div>
           </div>
+          <LivePreviewTag status={q.status} note={q.note} />
         </header>
 
         <div className="overflow-x-auto">
