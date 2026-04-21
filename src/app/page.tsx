@@ -37,7 +37,7 @@ async function latest(
   let q = supabase.from(table).select(col).order(col, { ascending: false }).limit(1);
   if (extra) q = extra(q);
   const { data } = await q;
-  const row = (data ?? [])[0] as Record<string, string> | undefined;
+  const row = (data ?? [])[0] as unknown as Record<string, string> | undefined;
   return row?.[col] ?? null;
 }
 

@@ -51,7 +51,7 @@ async function fetchBuckets(
   const { data, error } = await q;
   if (error || !data) return [];
   const map = new Map<string, Bucket>();
-  for (const row of data as Record<string, string>[]) {
+  for (const row of data as unknown as Record<string, string>[]) {
     const k = dayKey(row[timeCol]);
     if (!k) continue;
     const prev = map.get(k);
