@@ -1,25 +1,38 @@
 // Machine-to-machine ingest endpoint for the browser extension.
+//
 // Auth: Authorization: Bearer <INGEST_API_KEY> (constant-time compared).
-// Body: multipart/form-data with one or more files in the "files" field.
-// Routing matches /api/upload: .db -> SQLite parse, image/* -> listing-images,
-// .csv -> raw-uploads archive. Writes use the service role key.
+//
+// Two input shapes are accepted, chosen by Content-Type:
+//
+//   1) application/json   { events: [{ type, payload, occurred_at?, source? }] }
+//      Real-time event stream from the extension. Handlers in lib/ingest/events
+//      fan out to the right tables (market_listings, price_history, price_drops,
+//      listing_status_events, auction_results, seller_snapshots, show_mentions,
+//      cross_platform_listings, alert_matches).
+//
+//   2) multipart/form-data  files[]=<Blob>
+//      Bulk backfill. .db/.sqlite → parseSqlite; image/* → listing-images;
+//      .csv/.tsv → raw-uploads. Same logic as /api/upload but no session auth.
+//
+// All writes use the service role key.
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseMorphmarketDb, upsertBatched } from "@/lib/ingest/parseSqlite";
+import { handleEvent, parseEnvelopes } from "@/lib/ingest/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type ResultEntry = {
+type FileResult = {
   file: string;
   kind: "db" | "image" | "csv" | "unknown";
   ok: boolean;
   detail: string;
 };
 
-function classify(name: string, mime: string): ResultEntry["kind"] {
+function classify(name: string, mime: string): FileResult["kind"] {
   const lower = name.toLowerCase();
   if (lower.endsWith(".db") || lower.endsWith(".sqlite")) return "db";
   if (lower.endsWith(".csv") || lower.endsWith(".tsv")) return "csv";
@@ -53,6 +66,37 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const contentType = req.headers.get("content-type") ?? "";
+  const admin = createAdminClient();
+
+  if (contentType.includes("application/json")) {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+    }
+    const envelopes = parseEnvelopes(body);
+    if (envelopes.length === 0) {
+      return NextResponse.json(
+        { error: "no valid events in body; expected { events: [{ type, payload }] }" },
+        { status: 400 },
+      );
+    }
+    const results = [];
+    for (const env of envelopes) {
+      results.push(await handleEvent(admin, env));
+    }
+    const okCount = results.filter((r) => r.ok).length;
+    return NextResponse.json({
+      accepted: envelopes.length,
+      ok: okCount,
+      failed: envelopes.length - okCount,
+      results,
+    });
+  }
+
+  // Fall through: multipart file upload path.
   let form: FormData;
   try {
     form = await req.formData();
@@ -63,14 +107,13 @@ async function handle(req: NextRequest) {
       { status: 400 },
     );
   }
+
   const files = form.getAll("files").filter((v): v is File => v instanceof File);
   if (files.length === 0) {
     return NextResponse.json({ error: "no files uploaded" }, { status: 400 });
   }
 
-  const admin = createAdminClient();
-  const results: ResultEntry[] = [];
-
+  const results: FileResult[] = [];
   for (const file of files) {
     const kind = classify(file.name, file.type);
     try {
