@@ -15,6 +15,7 @@
 //   - Schema validation is intentionally lightweight — we reject obviously
 //     malformed envelopes, but we don't ship a validation library for v1.
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { adaptLegacyEvent } from "./legacyAdapter";
 
 export type EventType =
   | "listingSeen"
@@ -66,15 +67,25 @@ export function parseEnvelopes(body: unknown): EventEnvelope[] {
   for (const raw of arr) {
     if (!raw || typeof raw !== "object") continue;
     const rec = raw as Record<string, unknown>;
-    if (!isEventType(rec.type)) continue;
-    if (!rec.payload || typeof rec.payload !== "object") continue;
-    out.push({
-      type: rec.type,
-      payload: rec.payload as Record<string, unknown>,
-      occurred_at:
-        typeof rec.occurred_at === "string" ? rec.occurred_at : undefined,
-      source: typeof rec.source === "string" ? rec.source : undefined,
-    });
+    // Canonical envelope: { type: <EventType>, payload: {...} }.
+    if (
+      isEventType(rec.type) &&
+      rec.payload &&
+      typeof rec.payload === "object"
+    ) {
+      out.push({
+        type: rec.type,
+        payload: rec.payload as Record<string, unknown>,
+        occurred_at:
+          typeof rec.occurred_at === "string" ? rec.occurred_at : undefined,
+        source: typeof rec.source === "string" ? rec.source : undefined,
+      });
+      continue;
+    }
+    // Legacy envelope from the browser extension: different type names and
+    // fields nested under payload.data. Fan out through the adapter, which
+    // returns 0..N canonical envelopes.
+    for (const env of adaptLegacyEvent(raw)) out.push(env);
   }
   return out;
 }

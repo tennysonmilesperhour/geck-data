@@ -111,6 +111,31 @@ export default async function DashboardPage() {
   const rowsL = (listingsRes.data ?? []) as Listing[] & TraitInput[];
   const rowsS = (sellersRes.data ?? []) as Seller[];
 
+  const newestIngestIso = [
+    latestNew,
+    latestDrop,
+    latestSold,
+    latestPriceTick,
+    latestCross,
+    latestShow,
+  ]
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    .sort()
+    .pop() ?? null;
+
+  const ingestAgeMin = newestIngestIso
+    ? Math.max(0, (Date.now() - new Date(newestIngestIso).getTime()) / 60000)
+    : null;
+
+  const ingestPill: { status: "ready" | "busy" | "idle" | "info"; label: string } =
+    ingestAgeMin === null
+      ? { status: "idle", label: "No ingest yet" }
+      : ingestAgeMin < 15
+        ? { status: "ready", label: `Live · ${fmtRelative(newestIngestIso)}` }
+        : ingestAgeMin < 60 * 24
+          ? { status: "busy", label: `Lagging · ${fmtRelative(newestIngestIso)}` }
+          : { status: "idle", label: `Stale · ${fmtRelative(newestIngestIso)}` };
+
   // Market-wide summary stats for the hero strip.
   const prices = rowsL
     .map((r) => r.price_usd_equivalent ?? r.price)
@@ -190,7 +215,9 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <StatusPill status="ready" label="Data online" />
+          <Link href="/status" title="Ingest status detail">
+            <StatusPill status={ingestPill.status} label={ingestPill.label} />
+          </Link>
           <Link
             href="/daily-log"
             className="rounded-md border border-ink-700 bg-ink-850 px-3 py-1.5 text-xs text-ink-200 hover:border-ink-600 hover:text-ink-50"
