@@ -3,6 +3,7 @@
 // color = membership tier. Hover for full detail.
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
+import { chartTheme } from "./theme";
 
 export type Seller = {
   seller_id: string;
@@ -17,10 +18,10 @@ export type Seller = {
 };
 
 const MEMBERSHIP_COLOR: Record<string, string> = {
-  Basic: "#90a4ae",
-  Premium: "#2f7d32",
-  Pro: "#f57c00",
-  Elite: "#c62828",
+  Basic: "#6b6b6b",        // ink-500
+  Premium: "#60a5fa",       // info
+  Pro: "#d97757",           // claude
+  Elite: "#f87171",         // danger
 };
 
 export default function SellerLeaderboardScatter({ data }: { data: Seller[] }) {
@@ -77,7 +78,7 @@ export default function SellerLeaderboardScatter({ data }: { data: Seller[] }) {
       .attr("x", w)
       .attr("y", 32)
       .attr("text-anchor", "end")
-      .attr("fill", "#374151")
+      .attr("fill", chartTheme.label)
       .text("feedback count (log)");
 
     g.append("g")
@@ -85,7 +86,7 @@ export default function SellerLeaderboardScatter({ data }: { data: Seller[] }) {
       .append("text")
       .attr("x", 4)
       .attr("y", -6)
-      .attr("fill", "#374151")
+      .attr("fill", chartTheme.label)
       .text("avg listing price");
 
     g.append("g")
@@ -98,9 +99,9 @@ export default function SellerLeaderboardScatter({ data }: { data: Seller[] }) {
       )
       .attr("cy", (d) => y(d.avg_price!))
       .attr("r", (d) => r(d.total_listings!))
-      .attr("fill", (d) => MEMBERSHIP_COLOR[d.membership ?? ""] ?? "#90a4ae")
-      .attr("fill-opacity", 0.7)
-      .attr("stroke", "white")
+      .attr("fill", (d) => MEMBERSHIP_COLOR[d.membership ?? ""] ?? "#6b6b6b")
+      .attr("fill-opacity", 0.75)
+      .attr("stroke", chartTheme.markerStroke)
       .attr("stroke-width", 1)
       .append("title")
       .text(
@@ -116,7 +117,12 @@ export default function SellerLeaderboardScatter({ data }: { data: Seller[] }) {
     Object.entries(MEMBERSHIP_COLOR).forEach(([label, color], i) => {
       const gg = legend.append("g").attr("transform", `translate(0, ${i * 16})`);
       gg.append("circle").attr("r", 5).attr("fill", color).attr("cx", 6).attr("cy", 6);
-      gg.append("text").attr("x", 16).attr("y", 10).attr("font-size", 11).text(label);
+      gg.append("text")
+        .attr("x", 16)
+        .attr("y", 10)
+        .attr("font-size", 11)
+        .attr("fill", chartTheme.label)
+        .text(label);
     });
   }, [data]);
 

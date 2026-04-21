@@ -3,6 +3,7 @@
 // Pure D3 — uses a useRef + useEffect "render-on-data-change" pattern.
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
+import { chartTheme } from "./theme";
 
 export type Listing = {
   id: string;
@@ -81,7 +82,7 @@ export default function PriceHistogram({ data }: { data: Listing[] }) {
       .attr("y", (b) => y(b.length))
       .attr("width", (b) => Math.max(0, x(b.x1!) - x(b.x0!) - 1))
       .attr("height", (b) => h - y(b.length))
-      .attr("fill", "#2f7d32")
+      .attr("fill", chartTheme.primary)
       .attr("opacity", 0.85);
 
     // Median line
@@ -92,14 +93,14 @@ export default function PriceHistogram({ data }: { data: Listing[] }) {
         .attr("x2", x(median))
         .attr("y1", 0)
         .attr("y2", h)
-        .attr("stroke", "#f57c00")
+        .attr("stroke", chartTheme.secondary)
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "4 3");
       g.append("text")
         .attr("x", x(median) + 4)
         .attr("y", 12)
         .attr("font-size", 11)
-        .attr("fill", "#f57c00")
+        .attr("fill", chartTheme.secondary)
         .text(`median $${d3.format(",.0f")(median)}`);
     }
   }, [prices]);
@@ -107,35 +108,35 @@ export default function PriceHistogram({ data }: { data: Listing[] }) {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-neutral-600">Maturity:</span>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-ink-400">Maturity</span>
         {MATURITIES.map((m) => (
           <button
             key={m}
             onClick={() => setMaturity(m)}
-            className={`rounded-full px-3 py-1 ${
+            className={`rounded-full border px-2.5 py-1 text-xs transition ${
               maturity === m
-                ? "bg-gecko text-white"
-                : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                ? "border-claude bg-claude/15 text-claude-glow"
+                : "border-ink-700 bg-ink-850 text-ink-300 hover:border-ink-600 hover:text-ink-100"
             }`}
           >
             {m}
           </button>
         ))}
-        <span className="ml-4 text-neutral-600">Sex:</span>
+        <span className="ml-4 font-mono text-[10px] uppercase tracking-wider text-ink-400">Sex</span>
         {SEXES.map((s) => (
           <button
             key={s}
             onClick={() => setSex(s)}
-            className={`rounded-full px-3 py-1 ${
+            className={`rounded-full border px-2.5 py-1 text-xs transition ${
               sex === s
-                ? "bg-gecko text-white"
-                : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                ? "border-claude bg-claude/15 text-claude-glow"
+                : "border-ink-700 bg-ink-850 text-ink-300 hover:border-ink-600 hover:text-ink-100"
             }`}
           >
             {s}
           </button>
         ))}
-        <span className="ml-auto text-neutral-500">{prices.length} listings</span>
+        <span className="ml-auto font-mono text-[11px] text-ink-500">{prices.length} listings</span>
       </div>
       <svg ref={svgRef} className="h-80 w-full" />
     </div>

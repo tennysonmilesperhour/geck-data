@@ -9,7 +9,7 @@ export default function Sparkline({
   values,
   width = 120,
   height = 24,
-  color = "#2f7d32",
+  color = "#d97757",
 }: {
   values: number[];
   width?: number;

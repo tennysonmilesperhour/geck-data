@@ -3,6 +3,7 @@
 // median line overlay to show the "typical" time on market.
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
+import { chartTheme } from "./theme";
 
 export default function DaysToSellHistogram({ days }: { days: number[] }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -54,7 +55,7 @@ export default function DaysToSellHistogram({ days }: { days: number[] }) {
       .attr("y", (b) => y(b.length))
       .attr("width", (b) => Math.max(0, x(b.x1!) - x(b.x0!) - 1))
       .attr("height", (b) => h - y(b.length))
-      .attr("fill", "#1b5e20")
+      .attr("fill", chartTheme.primary)
       .attr("opacity", 0.85);
 
     const median = d3.median(clamped);
@@ -64,14 +65,14 @@ export default function DaysToSellHistogram({ days }: { days: number[] }) {
         .attr("x2", x(median))
         .attr("y1", 0)
         .attr("y2", h)
-        .attr("stroke", "#f57c00")
+        .attr("stroke", chartTheme.secondary)
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "4 3");
       g.append("text")
         .attr("x", x(median) + 4)
         .attr("y", 12)
         .attr("font-size", 11)
-        .attr("fill", "#f57c00")
+        .attr("fill", chartTheme.secondary)
         .text(`median ${Math.round(median)} days`);
     }
   }, [days]);
