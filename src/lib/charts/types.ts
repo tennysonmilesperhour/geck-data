@@ -34,6 +34,8 @@ export type PageContexts = {
     listings: any[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sellers: any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    soldEvents: any[];
   };
 };
 

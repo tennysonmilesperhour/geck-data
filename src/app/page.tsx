@@ -56,6 +56,7 @@ export default async function DashboardPage() {
     latestPriceTick,
     latestCross,
     latestShow,
+    soldEventsRes,
   ] = await Promise.all([
     supabase
       .from("market_listings")
@@ -85,6 +86,12 @@ export default async function DashboardPage() {
     latest(supabase, "price_history", "observed_at"),
     latest(supabase, "cross_platform_listings", "last_seen_at"),
     latest(supabase, "show_mentions", "observed_at"),
+    supabase
+      .from("listing_status_events")
+      .select("id, observed_at")
+      .eq("status", "sold")
+      .order("observed_at", { ascending: true })
+      .limit(20000),
   ]);
 
   if (listingsRes.error || sellersRes.error) {
@@ -105,6 +112,10 @@ export default async function DashboardPage() {
 
   const rowsL = (listingsRes.data ?? []) as Listing[] & TraitInput[];
   const rowsS = (sellersRes.data ?? []) as Seller[];
+  const rowsSold = (soldEventsRes.data ?? []) as Array<{
+    id: string;
+    observed_at: string;
+  }>;
 
   const newestIngestIso = [
     latestNew,
@@ -269,7 +280,7 @@ export default async function DashboardPage() {
 
       <ChartGrid
         page="home"
-        ctx={{ listings: rowsL, sellers: rowsS }}
+        ctx={{ listings: rowsL, sellers: rowsS, soldEvents: rowsSold }}
       />
     </div>
   );
