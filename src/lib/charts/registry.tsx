@@ -27,6 +27,9 @@ import ForceGraph, { type ForceInput } from "@/components/charts/ForceGraph";
 import CalendarHeatmap, {
   type CalendarInput,
 } from "@/components/charts/CalendarHeatmap";
+import PriceHeatmap, {
+  type PriceHeatmapInput,
+} from "@/components/charts/PriceHeatmap";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -150,6 +153,19 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <CalendarHeatmap data={ctx.listings as CalendarInput[]} />,
   },
+  "price-heatmap-hour-weekday": {
+    id: "price-heatmap-hour-weekday",
+    title: "Post-activity heatmap",
+    subtitle:
+      "When new listings actually appear — hour of day vs. day of week.",
+    description:
+      "7×24 grid of new-listing counts bucketed by weekday and hour (local time of the viewer). Useful for spotting seller posting rhythms.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => (
+      <PriceHeatmap data={ctx.listings as PriceHeatmapInput[]} />
+    ),
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
@@ -161,14 +177,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
     description: "Stacked area chart showing cumulative sold listings by seller tier.",
     category: "activity",
     pages: ["home", "sold"],
-  },
-  {
-    id: "price-heatmap-hour-weekday",
-    title: "Post-activity heatmap",
-    description:
-      "Hour of day × day of week grid showing when new listings typically appear.",
-    category: "activity",
-    pages: ["home", "trends"],
   },
 ];
 
