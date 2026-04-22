@@ -23,6 +23,7 @@ import BubbleChart, {
 } from "@/components/charts/BubbleChart";
 import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
 import RidgePlot, { type RidgeInput } from "@/components/charts/RidgePlot";
+import ForceGraph, { type ForceInput } from "@/components/charts/ForceGraph";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -125,19 +126,22 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <RidgePlot data={ctx.listings as RidgeInput[]} />,
   },
+  "force-graph-trait-cooccurrence": {
+    id: "force-graph-trait-cooccurrence",
+    title: "Trait co-occurrence network",
+    subtitle:
+      "Force-directed graph: nodes are traits, edges link traits that share listings.",
+    description:
+      "D3 force simulation of the top 30 traits, with edges weighted by how often the two traits co-appear on the same listing (minimum 5).",
+    category: "relationships",
+    pages: ["home"],
+    render: (ctx) => <ForceGraph data={ctx.listings as ForceInput[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
 export const PLANNED_CHARTS: PlannedChart[] = [
-  {
-    id: "force-graph-trait-cooccurrence",
-    title: "Trait co-occurrence network",
-    description:
-      "Force-directed graph of which traits tend to appear together on the same listings.",
-    category: "relationships",
-    pages: ["home"],
-  },
   {
     id: "calendar-heatmap",
     title: "Listing activity calendar",
