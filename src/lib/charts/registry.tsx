@@ -18,6 +18,9 @@ import SellerLeaderboardScatter, {
 import BoxPlot, { type BoxPlotInput } from "@/components/charts/BoxPlot";
 import Treemap, { type TreemapSeller } from "@/components/charts/Treemap";
 import Sunburst, { type SunburstInput } from "@/components/charts/Sunburst";
+import BubbleChart, {
+  type BubbleSeller,
+} from "@/components/charts/BubbleChart";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -87,6 +90,17 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <Sunburst data={ctx.listings as SunburstInput[]} />,
   },
+  "bubble-chart-sellers": {
+    id: "bubble-chart-sellers",
+    title: "Seller inventory vs price",
+    subtitle:
+      "Per-seller bubbles: x = live listings, y = avg price, size = feedback count.",
+    description:
+      "Companion view to the seller leaderboard scatter — linear listings axis makes the long-tail more legible. Bubble size uses feedback count as a rough stand-in for sold volume.",
+    category: "sellers",
+    pages: ["home"],
+    render: (ctx) => <BubbleChart data={ctx.sellers as BubbleSeller[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
@@ -120,14 +134,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
     description: "Stacked area chart showing cumulative sold listings by seller tier.",
     category: "activity",
     pages: ["home", "sold"],
-  },
-  {
-    id: "bubble-chart-sellers",
-    title: "Seller inventory vs price bubble chart",
-    description:
-      "Per-seller bubbles: x = listings live, y = avg price, size = sold count.",
-    category: "sellers",
-    pages: ["home", "sellers"],
   },
   {
     id: "price-heatmap-hour-weekday",
