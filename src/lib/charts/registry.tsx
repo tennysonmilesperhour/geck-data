@@ -21,6 +21,7 @@ import Sunburst, { type SunburstInput } from "@/components/charts/Sunburst";
 import BubbleChart, {
   type BubbleSeller,
 } from "@/components/charts/BubbleChart";
+import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -101,18 +102,22 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <BubbleChart data={ctx.sellers as BubbleSeller[]} />,
   },
+  "geo-map-sellers": {
+    id: "geo-map-sellers",
+    title: "Seller geography",
+    subtitle:
+      "US choropleth of seller counts, parsed from free-form seller_location strings.",
+    description:
+      "Albers USA choropleth shaded by seller count. Non-US / unparsed locations are surfaced in a footer caption rather than plotted.",
+    category: "geo",
+    pages: ["home"],
+    render: (ctx) => <GeoMap data={ctx.sellers as GeoSeller[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
 export const PLANNED_CHARTS: PlannedChart[] = [
-  {
-    id: "geo-map-sellers",
-    title: "Seller geo map",
-    description: "Choropleth of sellers by US state / country.",
-    category: "geo",
-    pages: ["home", "sellers"],
-  },
   {
     id: "force-graph-trait-cooccurrence",
     title: "Trait co-occurrence network",
