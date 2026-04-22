@@ -46,12 +46,16 @@ export default function Treemap({
     svg.attr("viewBox", `0 0 ${W} ${H}`);
 
     type Node = { name: string; value?: number; children?: Leaf[] };
-    const root = d3
+    const hier = d3
       .hierarchy<Node>({ name: "market", children: leaves })
       .sum((d) => d.value ?? 0)
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
-    d3.treemap<Node>().size([W, H]).padding(2).round(true)(root);
+    const root = d3
+      .treemap<Node>()
+      .size([W, H])
+      .padding(2)
+      .round(true)(hier);
 
     const total = root.value ?? 1;
 
