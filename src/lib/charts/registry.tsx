@@ -30,6 +30,9 @@ import CalendarHeatmap, {
 import PriceHeatmap, {
   type PriceHeatmapInput,
 } from "@/components/charts/PriceHeatmap";
+import CumulativeSales, {
+  type SoldEvent,
+} from "@/components/charts/CumulativeSales";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -166,19 +169,21 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
       <PriceHeatmap data={ctx.listings as PriceHeatmapInput[]} />
     ),
   },
+  "cumulative-sales": {
+    id: "cumulative-sales",
+    title: "Cumulative sales",
+    subtitle: "Running total of sold listings over the trailing 26 weeks.",
+    description:
+      "Single-series cumulative area of sold-status listing_status_events bucketed weekly. Hover any week dot for that week's incremental + running total.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => <CumulativeSales data={ctx.soldEvents as SoldEvent[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
-export const PLANNED_CHARTS: PlannedChart[] = [
-  {
-    id: "cumulative-sales",
-    title: "Cumulative sales over time",
-    description: "Stacked area chart showing cumulative sold listings by seller tier.",
-    category: "activity",
-    pages: ["home", "sold"],
-  },
-];
+export const PLANNED_CHARTS: PlannedChart[] = [];
 
 export function isImplemented(id: string): boolean {
   return id in CHART_REGISTRY;
