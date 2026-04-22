@@ -15,6 +15,7 @@ import TraitFrequencyAndPrice, {
 import SellerLeaderboardScatter, {
   type Seller,
 } from "@/components/charts/SellerLeaderboardScatter";
+import BoxPlot, { type BoxPlotInput } from "@/components/charts/BoxPlot";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -52,6 +53,17 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <SellerLeaderboardScatter data={ctx.sellers as Seller[]} />,
   },
+  "box-plot-price-by-trait": {
+    id: "box-plot-price-by-trait",
+    title: "Price distribution by trait",
+    subtitle:
+      "Box-and-whisker plots showing price spread for the most common traits.",
+    description:
+      "Box-and-whisker plots of price distribution per major trait — surfaces premium traits.",
+    category: "traits",
+    pages: ["home"],
+    render: (ctx) => <BoxPlot data={ctx.listings as BoxPlotInput[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
@@ -63,14 +75,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
     description: "Choropleth of sellers by US state / country.",
     category: "geo",
     pages: ["home", "sellers"],
-  },
-  {
-    id: "box-plot-price-by-trait",
-    title: "Price box plot by trait",
-    description:
-      "Box-and-whisker plots of price distribution per major trait — surfaces premium traits.",
-    category: "traits",
-    pages: ["home"],
   },
   {
     id: "treemap-market-share",
