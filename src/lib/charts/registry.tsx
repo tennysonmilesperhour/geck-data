@@ -17,6 +17,7 @@ import SellerLeaderboardScatter, {
 } from "@/components/charts/SellerLeaderboardScatter";
 import BoxPlot, { type BoxPlotInput } from "@/components/charts/BoxPlot";
 import Treemap, { type TreemapSeller } from "@/components/charts/Treemap";
+import Sunburst, { type SunburstInput } from "@/components/charts/Sunburst";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -75,6 +76,17 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <Treemap data={ctx.sellers as TreemapSeller[]} />,
   },
+  "sunburst-taxonomy": {
+    id: "sunburst-taxonomy",
+    title: "Trait family sunburst",
+    subtitle:
+      "Radial drilldown grouping individual traits under a shared first-word family.",
+    description:
+      "Two-level sunburst: outer ring = individual trait, inner ring = trait family (first token of the trait name).",
+    category: "traits",
+    pages: ["home"],
+    render: (ctx) => <Sunburst data={ctx.listings as SunburstInput[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
@@ -86,13 +98,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
     description: "Choropleth of sellers by US state / country.",
     category: "geo",
     pages: ["home", "sellers"],
-  },
-  {
-    id: "sunburst-taxonomy",
-    title: "Species → morph sunburst",
-    description: "Radial drilldown from species through morphs to individual traits.",
-    category: "traits",
-    pages: ["home"],
   },
   {
     id: "force-graph-trait-cooccurrence",
