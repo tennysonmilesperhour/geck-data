@@ -60,7 +60,7 @@ export default async function DashboardPage() {
     supabase
       .from("market_listings")
       .select(
-        "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits",
+        "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits, first_seen_at",
       )
       .limit(10000),
     supabase
