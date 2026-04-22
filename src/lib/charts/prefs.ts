@@ -15,11 +15,18 @@ function buildFromPreset(presetId: string): ChartPrefs {
   return { pages: { ...preset.pages }, preset: preset.id };
 }
 
-function readPrefs(): ChartPrefs {
-  if (typeof window === "undefined") return buildFromPreset(DEFAULT_PRESET_ID);
+const SERVER_SNAPSHOT: ChartPrefs = buildFromPreset(DEFAULT_PRESET_ID);
+
+// useSyncExternalStore compares snapshots with Object.is, so readPrefs must
+// return a referentially stable value until the underlying storage changes.
+// Returning a fresh object each call (as JSON.parse / buildFromPreset do)
+// produces infinite re-renders (React error #185).
+let cachedRaw: string | null = null;
+let cachedPrefs: ChartPrefs | null = null;
+
+function parseStoredPrefs(raw: string | null): ChartPrefs {
+  if (!raw) return buildFromPreset(DEFAULT_PRESET_ID);
   try {
-    const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
-    if (!raw) return buildFromPreset(DEFAULT_PRESET_ID);
     const parsed = JSON.parse(raw) as ChartPrefs;
     if (!parsed || typeof parsed !== "object" || !parsed.pages) {
       return buildFromPreset(DEFAULT_PRESET_ID);
@@ -28,6 +35,15 @@ function readPrefs(): ChartPrefs {
   } catch {
     return buildFromPreset(DEFAULT_PRESET_ID);
   }
+}
+
+function readPrefs(): ChartPrefs {
+  if (typeof window === "undefined") return SERVER_SNAPSHOT;
+  const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
+  if (cachedPrefs && raw === cachedRaw) return cachedPrefs;
+  cachedRaw = raw;
+  cachedPrefs = parseStoredPrefs(raw);
+  return cachedPrefs;
 }
 
 function writePrefs(prefs: ChartPrefs) {
@@ -50,8 +66,6 @@ function subscribe(cb: () => void): () => void {
     window.removeEventListener("geck-prefs-changed", onCustom);
   };
 }
-
-const SERVER_SNAPSHOT: ChartPrefs = buildFromPreset(DEFAULT_PRESET_ID);
 
 export function useChartPrefs() {
   const prefs = useSyncExternalStore(
