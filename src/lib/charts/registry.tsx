@@ -16,6 +16,7 @@ import SellerLeaderboardScatter, {
   type Seller,
 } from "@/components/charts/SellerLeaderboardScatter";
 import BoxPlot, { type BoxPlotInput } from "@/components/charts/BoxPlot";
+import Treemap, { type TreemapSeller } from "@/components/charts/Treemap";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -64,6 +65,16 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <BoxPlot data={ctx.listings as BoxPlotInput[]} />,
   },
+  "treemap-market-share": {
+    id: "treemap-market-share",
+    title: "Market share by seller",
+    subtitle: "Nested rectangles sized by total live listings per seller.",
+    description:
+      "Treemap of the top 30 sellers by inventory, with a remainder bucket for the long tail.",
+    category: "sellers",
+    pages: ["home"],
+    render: (ctx) => <Treemap data={ctx.sellers as TreemapSeller[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
@@ -74,13 +85,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
     title: "Seller geo map",
     description: "Choropleth of sellers by US state / country.",
     category: "geo",
-    pages: ["home", "sellers"],
-  },
-  {
-    id: "treemap-market-share",
-    title: "Market share treemap",
-    description: "Nested rectangles sized by listings or revenue per seller.",
-    category: "sellers",
     pages: ["home", "sellers"],
   },
   {
