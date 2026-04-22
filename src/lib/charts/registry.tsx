@@ -24,6 +24,9 @@ import BubbleChart, {
 import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
 import RidgePlot, { type RidgeInput } from "@/components/charts/RidgePlot";
 import ForceGraph, { type ForceInput } from "@/components/charts/ForceGraph";
+import CalendarHeatmap, {
+  type CalendarInput,
+} from "@/components/charts/CalendarHeatmap";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -137,18 +140,21 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <ForceGraph data={ctx.listings as ForceInput[]} />,
   },
+  "calendar-heatmap": {
+    id: "calendar-heatmap",
+    title: "Listing activity calendar",
+    subtitle: "Daily new-listing counts over the trailing 52 weeks.",
+    description:
+      "GitHub-style calendar heatmap. Cell color encodes count of listings whose first_seen_at falls on that day; deeper Claude-orange = busier day.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => <CalendarHeatmap data={ctx.listings as CalendarInput[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
 export const PLANNED_CHARTS: PlannedChart[] = [
-  {
-    id: "calendar-heatmap",
-    title: "Listing activity calendar",
-    description: "GitHub-style calendar heatmap of daily listing activity.",
-    category: "activity",
-    pages: ["home", "trends"],
-  },
   {
     id: "cumulative-sales",
     title: "Cumulative sales over time",
