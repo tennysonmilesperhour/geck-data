@@ -8,5 +8,23 @@ const nextConfig = {
     config.resolve.fallback = { ...config.resolve.fallback, fs: false };
     return config;
   },
+  // CORS for the public market snapshot under /data/*. geck-inspect fetches
+  // /data/market.json cross-origin; static files bypass middleware (matcher
+  // excludes paths with dots), so headers have to be declared here. The
+  // snapshot is fully public, read-only, and carries no credentials —
+  // `Access-Control-Allow-Origin: *` is the right level of openness.
+  async headers() {
+    return [
+      {
+        source: "/data/:path*",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "Access-Control-Allow-Methods", value: "GET, OPTIONS" },
+          { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+          { key: "Cache-Control", value: "public, max-age=300, s-maxage=900, stale-while-revalidate=3600" },
+        ],
+      },
+    ];
+  },
 };
 export default nextConfig;
