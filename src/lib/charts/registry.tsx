@@ -22,6 +22,7 @@ import BubbleChart, {
   type BubbleSeller,
 } from "@/components/charts/BubbleChart";
 import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
+import RidgePlot, { type RidgeInput } from "@/components/charts/RidgePlot";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -113,6 +114,17 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <GeoMap data={ctx.sellers as GeoSeller[]} />,
   },
+  "ridge-plot-price-by-trait": {
+    id: "ridge-plot-price-by-trait",
+    title: "Price ridge plot",
+    subtitle:
+      "Overlapping density curves of price distribution across the top traits.",
+    description:
+      "Kernel-density ridges per trait, stacked with overlap for easy shape comparison — complements the box plot when distributions are multi-modal.",
+    category: "price",
+    pages: ["home"],
+    render: (ctx) => <RidgePlot data={ctx.listings as RidgeInput[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
@@ -147,14 +159,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
       "Hour of day × day of week grid showing when new listings typically appear.",
     category: "activity",
     pages: ["home", "trends"],
-  },
-  {
-    id: "ridge-plot-price-by-trait",
-    title: "Price ridge plot",
-    description:
-      "Overlapping density curves of price distributions across traits — easier to compare shape than box plots.",
-    category: "price",
-    pages: ["home"],
   },
 ];
 
