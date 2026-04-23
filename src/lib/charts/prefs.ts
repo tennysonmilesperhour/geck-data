@@ -15,18 +15,32 @@ function buildFromPreset(presetId: string): ChartPrefs {
   return { pages: { ...preset.pages }, preset: preset.id };
 }
 
+// useSyncExternalStore requires getSnapshot to return a referentially stable
+// value when the store hasn't changed. We cache by the raw localStorage
+// string and only re-parse when it differs.
+let cachedRaw: string | null | undefined = undefined;
+let cachedPrefs: ChartPrefs | null = null;
+
 function readPrefs(): ChartPrefs {
   if (typeof window === "undefined") return buildFromPreset(DEFAULT_PRESET_ID);
   try {
     const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
-    if (!raw) return buildFromPreset(DEFAULT_PRESET_ID);
+    if (cachedPrefs !== null && raw === cachedRaw) return cachedPrefs;
+    cachedRaw = raw;
+    if (!raw) {
+      cachedPrefs = buildFromPreset(DEFAULT_PRESET_ID);
+      return cachedPrefs;
+    }
     const parsed = JSON.parse(raw) as ChartPrefs;
     if (!parsed || typeof parsed !== "object" || !parsed.pages) {
-      return buildFromPreset(DEFAULT_PRESET_ID);
+      cachedPrefs = buildFromPreset(DEFAULT_PRESET_ID);
+      return cachedPrefs;
     }
-    return parsed;
+    cachedPrefs = parsed;
+    return cachedPrefs;
   } catch {
-    return buildFromPreset(DEFAULT_PRESET_ID);
+    cachedPrefs = buildFromPreset(DEFAULT_PRESET_ID);
+    return cachedPrefs;
   }
 }
 
