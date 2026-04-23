@@ -58,7 +58,7 @@ export default function Treemap({
     const nodes = svg
       .append("g")
       .selectAll("g")
-      .data(root.leaves())
+      .data(laidOut.leaves())
       .join("g")
       .attr("transform", (d) => `translate(${d.x0},${d.y0})`);
 
