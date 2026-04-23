@@ -14,6 +14,7 @@
 //     server-side (coalesce current value, now()).
 //   - Schema validation is intentionally lightweight — we reject obviously
 //     malformed envelopes, but we don't ship a validation library for v1.
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adaptLegacyEvent } from "./legacyAdapter";
 
@@ -27,7 +28,8 @@ export type EventType =
   | "showMention"
   | "sellerSnapshot"
   | "crossPlatform"
-  | "alertMatch";
+  | "alertMatch"
+  | "listingImage";
 
 export type EventEnvelope = {
   type: EventType;
@@ -53,6 +55,7 @@ const ALL_TYPES: EventType[] = [
   "sellerSnapshot",
   "crossPlatform",
   "alertMatch",
+  "listingImage",
 ];
 
 function isEventType(s: unknown): s is EventType {
@@ -556,6 +559,118 @@ async function handleAlertMatch(
   return { type: env.type, ok: true, detail: `match for alert ${alertId}` };
 }
 
+// Extracts a stable, filesystem-safe hash from a URL for use in the storage
+// path. Two re-captures of the same image end up at the same path, which pairs
+// with the unique index on (listing_id, image_url) to make the flow idempotent.
+function urlHash(url: string): string {
+  return createHash("sha1").update(url).digest("hex").slice(0, 16);
+}
+
+function extFromMime(mime: string): string {
+  const raw = mime.split(";")[0].trim().toLowerCase().split("/")[1] ?? "bin";
+  const clean = raw.replace(/[^a-z0-9]/g, "").slice(0, 6);
+  if (clean === "jpeg") return "jpg";
+  return clean || "bin";
+}
+
+async function handleListingImage(
+  admin: Admin,
+  env: EventEnvelope,
+): Promise<EventResult> {
+  const listingId = str(env.payload.listing_id);
+  const imageUrl = str(env.payload.image_url);
+  if (!listingId || !imageUrl) {
+    return { type: env.type, ok: false, detail: "missing listing_id or image_url" };
+  }
+  await ensureListingStub(admin, listingId);
+
+  const hash = urlHash(imageUrl);
+  // Placeholder file_name that matches the extension's local-download convention
+  // (mm_<id>_<hash>.<ext>) once we know the mime; stays null until we fetch.
+  const observed = toIso(env.occurred_at, nowIso());
+
+  // Insert the URL-only row first. The partial unique index on
+  // (listing_id, image_url) silently drops duplicates from re-captures.
+  const { error: upErr } = await admin.from("listing_images").upsert(
+    {
+      listing_id: listingId,
+      image_url: imageUrl,
+      storage_bucket: "listing-images",
+      uploaded_at: observed,
+    },
+    { onConflict: "listing_id,image_url", ignoreDuplicates: true },
+  );
+  if (upErr) {
+    return { type: env.type, ok: false, detail: `url upsert: ${upErr.message}` };
+  }
+
+  // Skip fetch if the binary is already in storage (prior ingest or manual upload).
+  const { data: existing } = await admin
+    .from("listing_images")
+    .select("id, storage_path")
+    .eq("listing_id", listingId)
+    .eq("image_url", imageUrl)
+    .maybeSingle();
+  if (existing?.storage_path) {
+    return { type: env.type, ok: true, detail: `already stored at ${existing.storage_path}` };
+  }
+
+  // Server-side fetch. Best-effort: on any failure we still report ok=true
+  // because the URL row was persisted, which is the main guarantee.
+  try {
+    const res = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(6000),
+      headers: { "User-Agent": "geck-inspect-ingest/1.0" },
+    });
+    if (!res.ok) {
+      return {
+        type: env.type,
+        ok: true,
+        detail: `url stored, fetch failed ${res.status}`,
+      };
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) {
+      return { type: env.type, ok: true, detail: "url stored, fetch empty body" };
+    }
+    const mime = res.headers.get("content-type")?.split(";")[0].trim() ?? "application/octet-stream";
+    const ext = extFromMime(mime);
+    const fileName = `${hash}.${ext}`;
+    const path = `${listingId}/${fileName}`;
+
+    const { error: storeErr } = await admin.storage
+      .from("listing-images")
+      .upload(path, buf, { contentType: mime, upsert: false });
+    if (storeErr && !/already exists|duplicate/i.test(storeErr.message)) {
+      return {
+        type: env.type,
+        ok: true,
+        detail: `url stored, storage upload failed: ${storeErr.message}`,
+      };
+    }
+
+    await admin
+      .from("listing_images")
+      .update({
+        storage_path: path,
+        file_name: fileName,
+        file_size: buf.length,
+        mime_type: mime,
+      })
+      .eq("listing_id", listingId)
+      .eq("image_url", imageUrl);
+
+    return {
+      type: env.type,
+      ok: true,
+      detail: `fetched ${buf.length}B to ${path}`,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { type: env.type, ok: true, detail: `url stored, fetch failed: ${msg}` };
+  }
+}
+
 // ----- dispatcher -----------------------------------------------------------
 
 export async function handleEvent(
@@ -583,6 +698,8 @@ export async function handleEvent(
         return await handleCrossPlatform(admin, env);
       case "alertMatch":
         return await handleAlertMatch(admin, env);
+      case "listingImage":
+        return await handleListingImage(admin, env);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

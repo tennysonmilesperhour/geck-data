@@ -267,11 +267,33 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
     // we've seen them, we're choosing not to store them today.
     //   auction      — partial auction state; value arrives via auction_outcome
     //   lineage      — no destination table yet
-    //   gallery      — images go through /api/upload, not /api/ingest
     case "auction":
     case "lineage":
-    case "gallery":
       return [];
+
+    case "gallery": {
+      const images = Array.isArray(data.images) ? data.images : [];
+      const listingId = asId(data.key) ?? key;
+      if (!listingId || images.length === 0) return [];
+      const out: EventEnvelope[] = [];
+      for (const img of images) {
+        const imgObj = obj(img);
+        const url = str(imgObj?.url);
+        if (!url) continue;
+        out.push(
+          wrap(
+            "listingImage",
+            compact({
+              listing_id: listingId,
+              image_url: url,
+              caption: str(imgObj?.caption),
+            }),
+            capturedAt,
+          ),
+        );
+      }
+      return out;
+    }
 
     default:
       return [];
