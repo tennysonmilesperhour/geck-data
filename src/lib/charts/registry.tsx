@@ -15,6 +15,13 @@ import TraitFrequencyAndPrice, {
 import SellerLeaderboardScatter, {
   type Seller,
 } from "@/components/charts/SellerLeaderboardScatter";
+import BoxPlot, { type BoxPlotInput } from "@/components/charts/BoxPlot";
+import Treemap, { type TreemapSeller } from "@/components/charts/Treemap";
+import Sunburst, { type SunburstInput } from "@/components/charts/Sunburst";
+import BubbleChart, {
+  type BubbleSeller,
+} from "@/components/charts/BubbleChart";
+import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -52,40 +59,65 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <SellerLeaderboardScatter data={ctx.sellers as Seller[]} />,
   },
+  "box-plot-price-by-trait": {
+    id: "box-plot-price-by-trait",
+    title: "Price distribution by trait",
+    subtitle:
+      "Box-and-whisker plots showing price spread for the most common traits.",
+    description:
+      "Box-and-whisker plots of price distribution per major trait — surfaces premium traits.",
+    category: "traits",
+    pages: ["home"],
+    render: (ctx) => <BoxPlot data={ctx.listings as BoxPlotInput[]} />,
+  },
+  "treemap-market-share": {
+    id: "treemap-market-share",
+    title: "Market share by seller",
+    subtitle: "Nested rectangles sized by total live listings per seller.",
+    description:
+      "Treemap of the top 30 sellers by inventory, with a remainder bucket for the long tail.",
+    category: "sellers",
+    pages: ["home"],
+    render: (ctx) => <Treemap data={ctx.sellers as TreemapSeller[]} />,
+  },
+  "sunburst-taxonomy": {
+    id: "sunburst-taxonomy",
+    title: "Trait family sunburst",
+    subtitle:
+      "Radial drilldown grouping individual traits under a shared first-word family.",
+    description:
+      "Two-level sunburst: outer ring = individual trait, inner ring = trait family (first token of the trait name).",
+    category: "traits",
+    pages: ["home"],
+    render: (ctx) => <Sunburst data={ctx.listings as SunburstInput[]} />,
+  },
+  "bubble-chart-sellers": {
+    id: "bubble-chart-sellers",
+    title: "Seller inventory vs price",
+    subtitle:
+      "Per-seller bubbles: x = live listings, y = avg price, size = feedback count.",
+    description:
+      "Companion view to the seller leaderboard scatter — linear listings axis makes the long-tail more legible. Bubble size uses feedback count as a rough stand-in for sold volume.",
+    category: "sellers",
+    pages: ["home"],
+    render: (ctx) => <BubbleChart data={ctx.sellers as BubbleSeller[]} />,
+  },
+  "geo-map-sellers": {
+    id: "geo-map-sellers",
+    title: "Seller geography",
+    subtitle:
+      "US choropleth of seller counts, parsed from free-form seller_location strings.",
+    description:
+      "Albers USA choropleth shaded by seller count. Non-US / unparsed locations are surfaced in a footer caption rather than plotted.",
+    category: "geo",
+    pages: ["home"],
+    render: (ctx) => <GeoMap data={ctx.sellers as GeoSeller[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
 export const PLANNED_CHARTS: PlannedChart[] = [
-  {
-    id: "geo-map-sellers",
-    title: "Seller geo map",
-    description: "Choropleth of sellers by US state / country.",
-    category: "geo",
-    pages: ["home", "sellers"],
-  },
-  {
-    id: "box-plot-price-by-trait",
-    title: "Price box plot by trait",
-    description:
-      "Box-and-whisker plots of price distribution per major trait — surfaces premium traits.",
-    category: "traits",
-    pages: ["home"],
-  },
-  {
-    id: "treemap-market-share",
-    title: "Market share treemap",
-    description: "Nested rectangles sized by listings or revenue per seller.",
-    category: "sellers",
-    pages: ["home", "sellers"],
-  },
-  {
-    id: "sunburst-taxonomy",
-    title: "Species → morph sunburst",
-    description: "Radial drilldown from species through morphs to individual traits.",
-    category: "traits",
-    pages: ["home"],
-  },
   {
     id: "force-graph-trait-cooccurrence",
     title: "Trait co-occurrence network",
@@ -107,14 +139,6 @@ export const PLANNED_CHARTS: PlannedChart[] = [
     description: "Stacked area chart showing cumulative sold listings by seller tier.",
     category: "activity",
     pages: ["home", "sold"],
-  },
-  {
-    id: "bubble-chart-sellers",
-    title: "Seller inventory vs price bubble chart",
-    description:
-      "Per-seller bubbles: x = listings live, y = avg price, size = sold count.",
-    category: "sellers",
-    pages: ["home", "sellers"],
   },
   {
     id: "price-heatmap-hour-weekday",
