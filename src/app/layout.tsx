@@ -7,6 +7,11 @@ import TelemetryClient from "@/components/TelemetryClient";
 export const metadata: Metadata = {
   title: "Geck Inspect — Crested Gecko Market Intelligence",
   description: "Live pricing, trait economics, and seller analytics from MorphMarket.",
+  icons: {
+    icon: "/geck-logo.png",
+    shortcut: "/geck-logo.png",
+    apple: "/geck-logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
