@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SettingsDrawer from "@/components/settings/SettingsDrawer";
+import Logo from "@/components/ui/Logo";
 
 type Tab = { href: string; label: string; group?: "core" | "analysis" | "ops" };
 
@@ -75,7 +76,7 @@ export default function Header() {
     <header className="sticky top-0 z-30 border-b border-ink-700/70 bg-ink-900/80 backdrop-blur">
       <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-6 px-6 py-3">
         <Link href="/" className="flex items-center gap-2 text-ink-50">
-          <span className="claude-star text-xl leading-none">✷</span>
+          <Logo size={28} />
           <span className="text-sm font-semibold tracking-tight">Geck Inspect</span>
           <span className="ml-1 rounded border border-ink-700 bg-ink-800 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-ink-400">
             market

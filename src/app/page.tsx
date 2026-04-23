@@ -8,6 +8,7 @@ import type { TraitInput } from "@/components/charts/TraitFrequencyAndPrice";
 import type { Seller } from "@/components/charts/SellerLeaderboardScatter";
 import ChartGrid from "@/components/charts/ChartGrid";
 import KpiCard from "@/components/ui/KpiCard";
+import Logo from "@/components/ui/Logo";
 import { SectionHeader, StatusPill } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
@@ -206,7 +207,7 @@ export default async function DashboardPage() {
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <span className="claude-star text-2xl leading-none">✷</span>
+            <Logo size={28} />
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400">
               Welcome back
             </span>
