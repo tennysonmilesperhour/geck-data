@@ -68,6 +68,11 @@ function wrap(
 
 // Flatten the MorphMarket animal/listing response into the columns
 // market_listings accepts. Only fields we can confidently map are included.
+//
+// The animal response sometimes omits a numeric `id` at the top level and
+// carries only the string `key` slug — fall back to that so we don't silently
+// drop the event (which manifests as parseEnvelopes returning [] and the
+// whole POST 400'ing with "no valid events in body").
 function flattenAnimal(data: Record<string, unknown>): Record<string, unknown> {
   const owner = obj(data.owner);
   const auction = obj(data.auction);
@@ -75,7 +80,7 @@ function flattenAnimal(data: Record<string, unknown>): Record<string, unknown> {
   const firstImageSrc = images.length ? obj(images[0])?.image : undefined;
 
   return compact({
-    id: asId(data.id),
+    id: asId(data.id) ?? asId(data.key),
     title: data.clean_title ?? data.title,
     description: data.desc ?? data.description,
     price: data.price,
@@ -131,8 +136,12 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
   switch (type) {
     case "animal": {
       const flat = flattenAnimal(data);
-      if (!flat.id) return [];
-      return [wrap("listingSeen", flat, capturedAt)];
+      // Last-resort fallback: if neither data.id nor data.key yielded an id,
+      // use the envelope's payload.key. Mirrors what seller_profile /
+      // price_drop / inferred_sold / cross_platform already do.
+      const id = flat.id ?? key;
+      if (!id) return [];
+      return [wrap("listingSeen", { ...flat, id }, capturedAt)];
     }
 
     case "listings_page":
@@ -174,7 +183,7 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
         wrap(
           "auctionClose",
           compact({
-            listing_id: asId(data.listing_key),
+            listing_id: asId(data.listing_key) ?? asId(data.key) ?? key,
             final_price: data.final_price,
             bid_count: data.bid_count,
             closed_at: isoOrUndef(data.end_time),
