@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import SettingsDrawer from "@/components/settings/SettingsDrawer";
 
 type Tab = { href: string; label: string; group?: "core" | "analysis" | "ops" };
 
@@ -137,6 +138,7 @@ export default function Header() {
             <span className="status-dot" />
             <span className="font-mono text-[11px] uppercase tracking-wider">Ready</span>
           </span>
+          <SettingsDrawer />
           {loaded && user ? (
             <>
               <Link

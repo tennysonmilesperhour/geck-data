@@ -3,17 +3,12 @@
 // Claude-Code-style welcome header, a "recent sessions" strip of per-source
 // ingest cards, KPI tiles, and three D3 chart panels.
 import Link from "next/link";
-import PriceHistogram, {
-  type Listing,
-} from "@/components/charts/PriceHistogram";
-import TraitFrequencyAndPrice, {
-  type TraitInput,
-} from "@/components/charts/TraitFrequencyAndPrice";
-import SellerLeaderboardScatter, {
-  type Seller,
-} from "@/components/charts/SellerLeaderboardScatter";
+import type { Listing } from "@/components/charts/PriceHistogram";
+import type { TraitInput } from "@/components/charts/TraitFrequencyAndPrice";
+import type { Seller } from "@/components/charts/SellerLeaderboardScatter";
+import ChartGrid from "@/components/charts/ChartGrid";
 import KpiCard from "@/components/ui/KpiCard";
-import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
+import { SectionHeader, StatusPill } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -272,27 +267,10 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <Panel
-        title="Price distribution"
-        subtitle="Distribution of current listing prices across the full market."
-        right={<span className="font-mono text-[11px]">USD equivalent</span>}
-      >
-        <PriceHistogram data={rowsL as Listing[]} />
-      </Panel>
-
-      <Panel
-        title="Trait frequency & median price"
-        subtitle="Top 25 traits by count, with the median price of listings where the trait appears."
-      >
-        <TraitFrequencyAndPrice data={rowsL as TraitInput[]} topN={25} />
-      </Panel>
-
-      <Panel
-        title="Seller leaderboard"
-        subtitle="Feedback count versus listings live — scale of reach vs. scale of inventory."
-      >
-        <SellerLeaderboardScatter data={rowsS} />
-      </Panel>
+      <ChartGrid
+        page="home"
+        ctx={{ listings: rowsL, sellers: rowsS }}
+      />
     </div>
   );
 }
