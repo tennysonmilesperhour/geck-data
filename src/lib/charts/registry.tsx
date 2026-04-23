@@ -22,6 +22,17 @@ import BubbleChart, {
   type BubbleSeller,
 } from "@/components/charts/BubbleChart";
 import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
+import RidgePlot, { type RidgeInput } from "@/components/charts/RidgePlot";
+import ForceGraph, { type ForceInput } from "@/components/charts/ForceGraph";
+import CalendarHeatmap, {
+  type CalendarInput,
+} from "@/components/charts/CalendarHeatmap";
+import PriceHeatmap, {
+  type PriceHeatmapInput,
+} from "@/components/charts/PriceHeatmap";
+import CumulativeSales, {
+  type SoldEvent,
+} from "@/components/charts/CumulativeSales";
 import type { ChartDef, PlannedChart } from "./types";
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
@@ -113,50 +124,66 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     pages: ["home"],
     render: (ctx) => <GeoMap data={ctx.sellers as GeoSeller[]} />,
   },
+  "ridge-plot-price-by-trait": {
+    id: "ridge-plot-price-by-trait",
+    title: "Price ridge plot",
+    subtitle:
+      "Overlapping density curves of price distribution across the top traits.",
+    description:
+      "Kernel-density ridges per trait, stacked with overlap for easy shape comparison — complements the box plot when distributions are multi-modal.",
+    category: "price",
+    pages: ["home"],
+    render: (ctx) => <RidgePlot data={ctx.listings as RidgeInput[]} />,
+  },
+  "force-graph-trait-cooccurrence": {
+    id: "force-graph-trait-cooccurrence",
+    title: "Trait co-occurrence network",
+    subtitle:
+      "Force-directed graph: nodes are traits, edges link traits that share listings.",
+    description:
+      "D3 force simulation of the top 30 traits, with edges weighted by how often the two traits co-appear on the same listing (minimum 5).",
+    category: "relationships",
+    pages: ["home"],
+    render: (ctx) => <ForceGraph data={ctx.listings as ForceInput[]} />,
+  },
+  "calendar-heatmap": {
+    id: "calendar-heatmap",
+    title: "Listing activity calendar",
+    subtitle: "Daily new-listing counts over the trailing 52 weeks.",
+    description:
+      "GitHub-style calendar heatmap. Cell color encodes count of listings whose first_seen_at falls on that day; deeper Claude-orange = busier day.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => <CalendarHeatmap data={ctx.listings as CalendarInput[]} />,
+  },
+  "price-heatmap-hour-weekday": {
+    id: "price-heatmap-hour-weekday",
+    title: "Post-activity heatmap",
+    subtitle:
+      "When new listings actually appear — hour of day vs. day of week.",
+    description:
+      "7×24 grid of new-listing counts bucketed by weekday and hour (local time of the viewer). Useful for spotting seller posting rhythms.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => (
+      <PriceHeatmap data={ctx.listings as PriceHeatmapInput[]} />
+    ),
+  },
+  "cumulative-sales": {
+    id: "cumulative-sales",
+    title: "Cumulative sales",
+    subtitle: "Running total of sold listings over the trailing 26 weeks.",
+    description:
+      "Single-series cumulative area of sold-status listing_status_events bucketed weekly. Hover any week dot for that week's incremental + running total.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => <CumulativeSales data={ctx.soldEvents as SoldEvent[]} />,
+  },
 };
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
-export const PLANNED_CHARTS: PlannedChart[] = [
-  {
-    id: "force-graph-trait-cooccurrence",
-    title: "Trait co-occurrence network",
-    description:
-      "Force-directed graph of which traits tend to appear together on the same listings.",
-    category: "relationships",
-    pages: ["home"],
-  },
-  {
-    id: "calendar-heatmap",
-    title: "Listing activity calendar",
-    description: "GitHub-style calendar heatmap of daily listing activity.",
-    category: "activity",
-    pages: ["home", "trends"],
-  },
-  {
-    id: "cumulative-sales",
-    title: "Cumulative sales over time",
-    description: "Stacked area chart showing cumulative sold listings by seller tier.",
-    category: "activity",
-    pages: ["home", "sold"],
-  },
-  {
-    id: "price-heatmap-hour-weekday",
-    title: "Post-activity heatmap",
-    description:
-      "Hour of day × day of week grid showing when new listings typically appear.",
-    category: "activity",
-    pages: ["home", "trends"],
-  },
-  {
-    id: "ridge-plot-price-by-trait",
-    title: "Price ridge plot",
-    description:
-      "Overlapping density curves of price distributions across traits — easier to compare shape than box plots.",
-    category: "price",
-    pages: ["home"],
-  },
-];
+export const PLANNED_CHARTS: PlannedChart[] = [];
 
 export function isImplemented(id: string): boolean {
   return id in CHART_REGISTRY;
