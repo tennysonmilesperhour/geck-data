@@ -51,9 +51,9 @@ export default function Treemap({
       .sum((d) => d.value ?? 0)
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
-    d3.treemap<Node>().size([W, H]).padding(2).round(true)(root);
+    const laidOut = d3.treemap<Node>().size([W, H]).padding(2).round(true)(root);
 
-    const total = root.value ?? 1;
+    const total = laidOut.value ?? 1;
 
     const nodes = svg
       .append("g")
