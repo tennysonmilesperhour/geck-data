@@ -20,6 +20,7 @@ const TABS: Tab[] = [
   { href: "/market",         label: "Market",        group: "analysis" },
   { href: "/trends",         label: "Trends",        group: "analysis" },
   { href: "/compare",        label: "Compare",       group: "analysis" },
+  { href: "/images",         label: "Images",        group: "analysis" },
   { href: "/shows",          label: "Shows",         group: "ops" },
   { href: "/cross-platform", label: "Cross-platform", group: "ops" },
 ];
