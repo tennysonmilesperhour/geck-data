@@ -31,6 +31,7 @@ export const PRESETS: Preset[] = [
       home: [
         "price-histogram",
         "cumulative-sales",
+        "stacked-area-listings",
         "calendar-heatmap",
         "treemap-market-share",
       ],

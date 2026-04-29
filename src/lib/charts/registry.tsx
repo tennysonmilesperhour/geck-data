@@ -34,6 +34,9 @@ import CumulativeSales, {
   type SoldEvent,
 } from "@/components/charts/CumulativeSales";
 import DaysToSellHistogram from "@/components/charts/DaysToSellHistogram";
+import StackedArea, {
+  type StackedAreaInput,
+} from "@/components/charts/StackedArea";
 import type { ChartDef, PlannedChart } from "./types";
 
 // Helper: extract the `days_to_sell` series from a /sold ctx so charts
@@ -177,6 +180,17 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     render: (ctx) => (
       <PriceHeatmap data={ctx.listings as PriceHeatmapInput[]} />
     ),
+  },
+  "stacked-area-listings": {
+    id: "stacked-area-listings",
+    title: "New listings by maturity",
+    subtitle:
+      "Weekly new listings stacked by maturity bucket — Juvenile / Subadult / Adult / Unknown.",
+    description:
+      "Stacked area (d3-shape) of weekly new-listing counts over the trailing 26 weeks, partitioned by maturity. Complements the calendar heatmap (per-day total) and cumulative sales (sold side) by exposing the maturity mix of inflow.",
+    category: "activity",
+    pages: ["home"],
+    render: (ctx) => <StackedArea data={ctx.listings as StackedAreaInput[]} />,
   },
   "cumulative-sales": {
     id: "cumulative-sales",
