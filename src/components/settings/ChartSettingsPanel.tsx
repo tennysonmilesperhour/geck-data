@@ -29,7 +29,7 @@ const PAGE_LABEL: Record<PageId, string> = {
 
 // Pages wired to ChartGrid so far. Others surface as disabled in the settings
 // tree so users can see the roadmap.
-const WIRED_PAGES: PageId[] = ["home"];
+const WIRED_PAGES: PageId[] = ["home", "sellers", "sold"];
 
 type Row = {
   id: string;

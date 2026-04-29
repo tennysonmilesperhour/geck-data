@@ -33,7 +33,16 @@ import PriceHeatmap, {
 import CumulativeSales, {
   type SoldEvent,
 } from "@/components/charts/CumulativeSales";
+import DaysToSellHistogram from "@/components/charts/DaysToSellHistogram";
 import type { ChartDef, PlannedChart } from "./types";
+
+// Helper: extract the `days_to_sell` series from a /sold ctx so charts
+// that registered for both /home and /sold can stay agnostic.
+function pickDays(ctx: { soldRows?: { days_to_sell: number | null }[] }): number[] {
+  return (ctx.soldRows ?? [])
+    .map((r) => r.days_to_sell)
+    .filter((v): v is number => typeof v === "number" && v >= 0 && v <= 365);
+}
 
 export const CHART_REGISTRY: Record<string, ChartDef> = {
   "price-histogram": {
@@ -67,7 +76,7 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     description:
       "Scatter plot where x = feedback count (log scale), y = avg listing price, size = total listings, color = membership tier.",
     category: "sellers",
-    pages: ["home"],
+    pages: ["home", "sellers"],
     render: (ctx) => <SellerLeaderboardScatter data={ctx.sellers as Seller[]} />,
   },
   "box-plot-price-by-trait": {
@@ -88,7 +97,7 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     description:
       "Treemap of the top 30 sellers by inventory, with a remainder bucket for the long tail.",
     category: "sellers",
-    pages: ["home"],
+    pages: ["home", "sellers"],
     render: (ctx) => <Treemap data={ctx.sellers as TreemapSeller[]} />,
   },
   "sunburst-taxonomy": {
@@ -110,7 +119,7 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     description:
       "Companion view to the seller leaderboard scatter — linear listings axis makes the long-tail more legible. Bubble size uses feedback count as a rough stand-in for sold volume.",
     category: "sellers",
-    pages: ["home"],
+    pages: ["home", "sellers"],
     render: (ctx) => <BubbleChart data={ctx.sellers as BubbleSeller[]} />,
   },
   "geo-map-sellers": {
@@ -121,7 +130,7 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     description:
       "Albers USA choropleth shaded by seller count. Non-US / unparsed locations are surfaced in a footer caption rather than plotted.",
     category: "geo",
-    pages: ["home"],
+    pages: ["home", "sellers"],
     render: (ctx) => <GeoMap data={ctx.sellers as GeoSeller[]} />,
   },
   "ridge-plot-price-by-trait": {
@@ -176,8 +185,18 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     description:
       "Single-series cumulative area of sold-status listing_status_events bucketed weekly. Hover any week dot for that week's incremental + running total.",
     category: "activity",
-    pages: ["home"],
+    pages: ["home", "sold"],
     render: (ctx) => <CumulativeSales data={ctx.soldEvents as SoldEvent[]} />,
+  },
+  "days-to-sell": {
+    id: "days-to-sell",
+    title: "Days-to-sell distribution",
+    subtitle: "How long sold listings sat on the market before flipping.",
+    description:
+      "Histogram of `days_to_sell` from the sold_listings_v view, clamped to 0–365 days. Median line overlaid.",
+    category: "activity",
+    pages: ["sold"],
+    render: (ctx) => <DaysToSellHistogram days={pickDays(ctx)} />,
   },
 };
 
