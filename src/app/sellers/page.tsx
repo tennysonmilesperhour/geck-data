@@ -1,12 +1,12 @@
-// Seller leaderboard index. Reuses the existing scatter chart and adds a
-// sortable/linkable table below.
+// Seller leaderboard index. Charts (scatter / bubble / treemap / geo) are
+// driven by the registry + user prefs through <ChartGrid>; the table below
+// stays page-owned because it's the navigational entry point.
 import Link from "next/link";
-import SellerLeaderboardScatter, {
-  type Seller,
-} from "@/components/charts/SellerLeaderboardScatter";
+import { type Seller } from "@/components/charts/SellerLeaderboardScatter";
+import ChartGrid from "@/components/charts/ChartGrid";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
-import { Panel, SectionHeader } from "@/components/ui/Panel";
+import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
@@ -99,9 +99,7 @@ export default async function SellersPage() {
         />
       </div>
 
-      <Panel title="Leaderboard scatter" subtitle="Listings vs feedback">
-        <SellerLeaderboardScatter data={rows} />
-      </Panel>
+      <ChartGrid page="sellers" ctx={{ sellers: rows }} />
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink-50">All sellers</h2>

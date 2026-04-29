@@ -3,7 +3,7 @@
 // top; the API here doesn't change.
 "use client";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { DEFAULT_PRESET_ID, presetById, PRESETS } from "./presets";
+import { DEFAULT_PRESET_ID, PRESETS, presetById } from "./presets";
 import {
   PREFS_STORAGE_KEY,
   type ChartPrefs,
@@ -101,7 +101,7 @@ export function getPrefsSnapshot(): ChartPrefs {
   return readPrefs();
 }
 
-export { PRESETS, DEFAULT_PRESET_ID };
+export { PRESETS, DEFAULT_PRESET_ID, presetById };
 
 // Warm-start: ensure first-time users get the default preset written so their
 // settings panel renders toggles in a meaningful state.

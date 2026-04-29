@@ -18,6 +18,8 @@ export const PRESETS: Preset[] = [
       "Broad overview of pricing, traits, and seller distribution — the classic dashboard.",
     pages: {
       home: ["price-histogram", "trait-freq-price", "seller-scatter"],
+      sellers: ["seller-scatter", "bubble-chart-sellers"],
+      sold: ["cumulative-sales", "days-to-sell"],
     },
   },
   {
@@ -32,6 +34,8 @@ export const PRESETS: Preset[] = [
         "calendar-heatmap",
         "treemap-market-share",
       ],
+      sellers: ["bubble-chart-sellers", "treemap-market-share"],
+      sold: ["days-to-sell", "cumulative-sales"],
     },
   },
   {
@@ -46,6 +50,13 @@ export const PRESETS: Preset[] = [
         "geo-map-sellers",
         "calendar-heatmap",
       ],
+      sellers: [
+        "seller-scatter",
+        "bubble-chart-sellers",
+        "treemap-market-share",
+        "geo-map-sellers",
+      ],
+      sold: ["cumulative-sales"],
     },
   },
   {
@@ -61,6 +72,8 @@ export const PRESETS: Preset[] = [
         "sunburst-taxonomy",
         "force-graph-trait-cooccurrence",
       ],
+      sellers: ["seller-scatter"],
+      sold: ["cumulative-sales"],
     },
   },
 ];

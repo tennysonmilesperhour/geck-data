@@ -1,10 +1,12 @@
 // Sold listings — the primary outcome view. Pulls from the sold_listings_v
 // view (market_listings JOIN listing_status_events where status='sold').
+// Charts above the table come from <ChartGrid>; the table itself stays
+// page-owned as the navigational entry point.
 import Link from "next/link";
-import DaysToSellHistogram from "@/components/charts/DaysToSellHistogram";
+import ChartGrid from "@/components/charts/ChartGrid";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
-import { Panel, SectionHeader } from "@/components/ui/Panel";
+import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -26,13 +28,21 @@ type SoldRow = {
 
 export default async function SoldPage() {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from("sold_listings_v")
-    .select(
-      "id, seller_id, title, price, price_usd_equivalent, maturity, sex, first_seen_at, sold_at, days_to_sell, sold_source",
-    )
-    .order("sold_at", { ascending: false })
-    .limit(500);
+  const [{ data, error }, soldEventsRes] = await Promise.all([
+    supabase
+      .from("sold_listings_v")
+      .select(
+        "id, seller_id, title, price, price_usd_equivalent, maturity, sex, first_seen_at, sold_at, days_to_sell, sold_source",
+      )
+      .order("sold_at", { ascending: false })
+      .limit(500),
+    supabase
+      .from("listing_status_events")
+      .select("id, observed_at")
+      .eq("status", "sold")
+      .order("observed_at", { ascending: true })
+      .limit(20000),
+  ]);
 
   if (error) {
     return (
@@ -43,6 +53,7 @@ export default async function SoldPage() {
   }
 
   const rows = (data ?? []) as SoldRow[];
+  const soldEvents = (soldEventsRes.data ?? []) as { observed_at: string }[];
 
   const days = rows
     .map((r) => r.days_to_sell)
@@ -126,20 +137,13 @@ export default async function SoldPage() {
         <KpiCard label="Median sold price" value={fmtUsd(medianPrice)} />
       </div>
 
-      <Panel title="Time on market" subtitle="Distribution of days-to-sell">
-        {days.length > 0 ? (
-          <DaysToSellHistogram days={days} />
-        ) : (
-          <p className="py-6 text-center text-sm text-ink-400">
-            No days-to-sell data yet.
-          </p>
-        )}
-        {inferredCount > 0 ? (
-          <p className="mt-2 text-xs text-ink-400">
-            {fmtInt(inferredCount)} sold events inferred from absence (14d rule).
-          </p>
-        ) : null}
-      </Panel>
+      <ChartGrid page="sold" ctx={{ soldRows: rows, soldEvents }} />
+
+      {inferredCount > 0 ? (
+        <p className="text-xs text-ink-400">
+          {fmtInt(inferredCount)} sold events inferred from absence (14d rule).
+        </p>
+      ) : null}
 
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink-50">Recently sold</h2>

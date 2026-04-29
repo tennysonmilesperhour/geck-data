@@ -4,7 +4,11 @@
 // switching presets doesn't trigger a re-query.
 import { Panel } from "@/components/ui/Panel";
 import { CHART_REGISTRY } from "@/lib/charts/registry";
-import { useChartPrefs, useEnsurePrefsInitialized } from "@/lib/charts/prefs";
+import {
+  presetById,
+  useChartPrefs,
+  useEnsurePrefsInitialized,
+} from "@/lib/charts/prefs";
 import type { PageId } from "@/lib/charts/types";
 
 export default function ChartGrid<P extends PageId>({
@@ -18,7 +22,17 @@ export default function ChartGrid<P extends PageId>({
 }) {
   useEnsurePrefsInitialized();
   const { prefs } = useChartPrefs();
-  const enabledIds = prefs.pages[page] ?? [];
+
+  // Fall back to the active preset's defaults when this page hasn't been
+  // explicitly customized yet — covers users who set up Phase 1 with only
+  // the home page wired and now visit /sellers or /sold for the first
+  // time. "custom" presets stay sticky and don't fall back.
+  const presetDefaults =
+    prefs.preset !== "custom"
+      ? presetById(prefs.preset)?.pages[page]
+      : undefined;
+  const enabledIds = prefs.pages[page] ?? presetDefaults ?? [];
+
   const entries = enabledIds
     .map((id) => CHART_REGISTRY[id])
     .filter((def): def is NonNullable<typeof def> => Boolean(def));

@@ -37,6 +37,16 @@ export type PageContexts = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     soldEvents: any[];
   };
+  sellers: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sellers: any[];
+  };
+  sold: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    soldRows: any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    soldEvents: any[];
+  };
 };
 
 // A ChartDef<P> is keyed to a single page's context. In the registry we
