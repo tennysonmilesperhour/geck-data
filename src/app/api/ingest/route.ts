@@ -336,15 +336,33 @@ async function handle(req: NextRequest, audit: AuditRow): Promise<NextResponse> 
           detail: `listings: ${lUp.sent}/${parsed.listings.length}, sellers: ${sUp.sent}/${parsed.sellers.length}${failed ? ` — ${failed} failed batches` : ""}`,
         });
       } else if (kind === "image") {
-        const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        // Caller can override the inferred listing_id with an explicit form
+        // field. Cross-platform listings don't match the `mm_\d+` convention,
+        // and the extension also uses btoa-derived keys; trusting the
+        // filename alone meant those rows were never linked. We accept the
+        // first non-empty `listing_id` field across the form as the override.
+        const explicitListingId =
+          (form.get("listing_id") as string | null)?.trim() || null;
+        const explicitImageUrl =
+          (form.get("image_url") as string | null)?.trim() || null;
+        const fnameMatch = file.name.match(/(mm_\d+|listing_[A-Za-z0-9_-]{3,})/);
+        const listingId = explicitListingId ?? (fnameMatch ? fnameMatch[1] : null);
+
+        // Path under {listing_id}/ when known so the bucket layout matches
+        // listingImage event-handler uploads. Falls back to a flat
+        // timestamped filename for unlinked uploads (still archived, just
+        // without a listing FK).
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = listingId
+          ? `${listingId}/${Date.now()}-${safeName}`
+          : `${Date.now()}-${safeName}`;
         const { error: upErr } = await admin.storage
           .from("listing-images")
           .upload(path, file, { contentType: file.type, upsert: false });
         if (upErr) throw upErr;
-        const m = file.name.match(/(mm_\d+)/);
-        const listingId = m ? m[1] : null;
         const { error: insErr } = await admin.from("listing_images").insert({
           listing_id: listingId,
+          image_url: explicitImageUrl,
           storage_bucket: "listing-images",
           storage_path: path,
           file_name: file.name,

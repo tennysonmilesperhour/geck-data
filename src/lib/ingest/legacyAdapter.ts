@@ -141,7 +141,79 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
       // price_drop / inferred_sold / cross_platform already do.
       const id = flat.id ?? key;
       if (!id) return [];
-      return [wrap("listingSeen", { ...flat, id }, capturedAt)];
+
+      const envelopes: EventEnvelope[] = [
+        wrap("listingSeen", { ...flat, id, first_listed_at: isoOrUndef(data.first_listed) }, capturedAt),
+      ];
+
+      // Emit one listingImage event per image. The animal payload already
+      // includes the full gallery; previously single-image listings produced
+      // no image record at all because the extension's separate `gallery`
+      // event was gated on `images.length > 1`. Going through the canonical
+      // event handler means server-side fetch + Supabase Storage upload
+      // happen automatically, regardless of whether the extension also sends
+      // a gallery event.
+      const images = Array.isArray(data.images) ? data.images : [];
+      for (const img of images) {
+        const imgObj = obj(img);
+        const url = str(imgObj?.image) ?? str(imgObj?.url);
+        if (!url) continue;
+        envelopes.push(
+          wrap(
+            "listingImage",
+            compact({
+              listing_id: String(id),
+              image_url: url,
+              caption: str(imgObj?.caption),
+            }),
+            capturedAt,
+          ),
+        );
+      }
+
+      // Lineage: dams + sires arrays carry parent listing references when the
+      // breeder linked them on MorphMarket. Fan out into a single
+      // listingLineage event so events.ts can write to listing_lineage.
+      const dams = Array.isArray(data.dams) ? data.dams : [];
+      const sires = Array.isArray(data.sires) ? data.sires : [];
+      const parents: Array<Record<string, unknown>> = [];
+      for (const d of dams) {
+        const o = obj(d);
+        if (!o) continue;
+        parents.push(
+          compact({
+            role: "dam",
+            parent_id: asId(o.id) ?? asId(o.key),
+            parent_label: str(o.title) ?? str(o.clean_title) ?? str(o.name),
+            parent_traits: o.cached_traits ?? o.traits,
+            parent_url: str(o.path) ?? str(o.share_url),
+          }),
+        );
+      }
+      for (const s of sires) {
+        const o = obj(s);
+        if (!o) continue;
+        parents.push(
+          compact({
+            role: "sire",
+            parent_id: asId(o.id) ?? asId(o.key),
+            parent_label: str(o.title) ?? str(o.clean_title) ?? str(o.name),
+            parent_traits: o.cached_traits ?? o.traits,
+            parent_url: str(o.path) ?? str(o.share_url),
+          }),
+        );
+      }
+      if (parents.length) {
+        envelopes.push(
+          wrap(
+            "listingLineage",
+            { listing_id: String(id), parents },
+            capturedAt,
+          ),
+        );
+      }
+
+      return envelopes;
     }
 
     case "listings_page":
@@ -219,7 +291,7 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
       const platform = str(data.platform);
       const externalId = asId(data.external_id) ?? key;
       if (!platform || !externalId) return [];
-      return [
+      const out: EventEnvelope[] = [
         wrap(
           "crossPlatform",
           compact({
@@ -238,6 +310,29 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
           capturedAt,
         ),
       ];
+
+      // Fan out images. The crossPlatform handler upserts the parent listing,
+      // so by the time these events run the FK target exists. Each image
+      // triggers a server-side fetch + storage upload via
+      // handleCrossPlatformImage.
+      const images = Array.isArray(data.images) ? data.images : [];
+      for (const img of images) {
+        const url = typeof img === "string" ? img : str(obj(img)?.url);
+        if (!url) continue;
+        out.push(
+          wrap(
+            "crossPlatformImage",
+            compact({
+              platform,
+              external_id: externalId,
+              image_url: url,
+              caption: typeof img === "string" ? undefined : str(obj(img)?.caption),
+            }),
+            capturedAt,
+          ),
+        );
+      }
+      return out;
     }
 
     case "show_mentions": {
@@ -262,14 +357,60 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
       return out;
     }
 
-    // Known legacy types with no canonical destination. Returning [] here
-    // (rather than falling through to `default`) keeps the intent explicit:
-    // we've seen them, we're choosing not to store them today.
-    //   auction      — partial auction state; value arrives via auction_outcome
-    //   lineage      — no destination table yet
-    case "auction":
-    case "lineage":
-      return [];
+    case "auction": {
+      // Mid-auction snapshot. auction_outcome covers the close; this covers
+      // bid count / current price progress while the auction is still live.
+      const listingId = asId(data.listing_key) ?? asId(data.key) ?? key;
+      if (!listingId) return [];
+      return [
+        wrap(
+          "auctionState",
+          compact({
+            listing_id: listingId,
+            current_price: data.current_price ?? data.price,
+            current_price_usd: data.current_price_usd ?? data.price_usd_equivalent,
+            currency: data.currency,
+            bid_count: data.bid_count,
+            ends_at: isoOrUndef(data.end_time),
+          }),
+          capturedAt,
+        ),
+      ];
+    }
+
+    case "lineage": {
+      // Lineage events come from the dedicated lineage scrape (parents
+      // reachable from the listing detail page even when the animal payload
+      // didn't include dams/sires inline). Shape: { key, parents: [{ role,
+      // id|label, traits, url }, ...] }.
+      const listingId = asId(data.key) ?? key;
+      if (!listingId) return [];
+      const parents = Array.isArray(data.parents) ? data.parents : [];
+      const cleaned: Array<Record<string, unknown>> = [];
+      for (const p of parents) {
+        const o = obj(p);
+        if (!o) continue;
+        const role = str(o.role);
+        if (!role || !["dam", "sire", "parent"].includes(role)) continue;
+        cleaned.push(
+          compact({
+            role,
+            parent_id: asId(o.parent_id) ?? asId(o.id) ?? asId(o.key),
+            parent_label: str(o.parent_label) ?? str(o.label) ?? str(o.title),
+            parent_traits: o.parent_traits ?? o.traits,
+            parent_url: str(o.parent_url) ?? str(o.url) ?? str(o.path),
+          }),
+        );
+      }
+      if (!cleaned.length) return [];
+      return [
+        wrap(
+          "listingLineage",
+          { listing_id: listingId, parents: cleaned },
+          capturedAt,
+        ),
+      ];
+    }
 
     case "gallery": {
       const images = Array.isArray(data.images) ? data.images : [];
