@@ -25,11 +25,14 @@ export type EventType =
   | "priceDrop"
   | "soldInferred"
   | "auctionClose"
+  | "auctionState"
   | "showMention"
   | "sellerSnapshot"
   | "crossPlatform"
+  | "crossPlatformImage"
   | "alertMatch"
-  | "listingImage";
+  | "listingImage"
+  | "listingLineage";
 
 export type EventEnvelope = {
   type: EventType;
@@ -51,11 +54,14 @@ const ALL_TYPES: EventType[] = [
   "priceDrop",
   "soldInferred",
   "auctionClose",
+  "auctionState",
   "showMention",
   "sellerSnapshot",
   "crossPlatform",
+  "crossPlatformImage",
   "alertMatch",
   "listingImage",
+  "listingLineage",
 ];
 
 function isEventType(s: unknown): s is EventType {
@@ -149,6 +155,7 @@ const LISTING_COLUMNS = [
   "is_auction",
   "bid_count",
   "auction_end_at",
+  "first_listed_at",
   "created_at",
   "updated_at",
 ] as const;
@@ -671,6 +678,198 @@ async function handleListingImage(
   }
 }
 
+async function handleListingLineage(
+  admin: Admin,
+  env: EventEnvelope,
+): Promise<EventResult> {
+  const listingId = str(env.payload.listing_id);
+  if (!listingId) {
+    return { type: env.type, ok: false, detail: "missing listing_id" };
+  }
+  await ensureListingStub(admin, listingId);
+
+  const observed = toIso(env.occurred_at, nowIso());
+  const parents = Array.isArray(env.payload.parents) ? env.payload.parents : [];
+  if (parents.length === 0) {
+    return { type: env.type, ok: false, detail: "no parents in payload" };
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  for (const p of parents) {
+    if (!p || typeof p !== "object") continue;
+    const rec = p as Record<string, unknown>;
+    const role = str(rec.role);
+    if (!role || !["dam", "sire", "parent"].includes(role)) continue;
+    rows.push({
+      listing_id: listingId,
+      role,
+      parent_id: str(rec.parent_id),
+      parent_label: str(rec.parent_label),
+      parent_traits: rec.parent_traits ?? null,
+      parent_url: str(rec.parent_url),
+      observed_at: observed,
+    });
+  }
+  if (rows.length === 0) {
+    return { type: env.type, ok: false, detail: "no valid parent rows" };
+  }
+
+  const { error } = await admin
+    .from("listing_lineage")
+    .upsert(rows, {
+      onConflict: "listing_id,role,parent_id,parent_label",
+      ignoreDuplicates: true,
+    });
+  if (error) return { type: env.type, ok: false, detail: error.message };
+  return {
+    type: env.type,
+    ok: true,
+    detail: `${rows.length} parent rows for ${listingId}`,
+  };
+}
+
+async function handleAuctionState(
+  admin: Admin,
+  env: EventEnvelope,
+): Promise<EventResult> {
+  const listingId = str(env.payload.listing_id);
+  if (!listingId) {
+    return { type: env.type, ok: false, detail: "missing listing_id" };
+  }
+  await ensureListingStub(admin, listingId);
+
+  const row = {
+    listing_id: listingId,
+    current_price: num(env.payload.current_price),
+    current_price_usd: num(env.payload.current_price_usd),
+    currency: str(env.payload.currency),
+    bid_count: int(env.payload.bid_count),
+    ends_at: str(env.payload.ends_at)
+      ? toIso(env.payload.ends_at, nowIso())
+      : null,
+    observed_at: toIso(env.occurred_at, nowIso()),
+    source: env.source ?? "extension",
+  };
+  const { error } = await admin.from("auction_state").insert(row);
+  if (error) return { type: env.type, ok: false, detail: error.message };
+
+  await admin
+    .from("market_listings")
+    .update({
+      is_auction: true,
+      bid_count: row.bid_count,
+      auction_end_at: row.ends_at,
+    })
+    .eq("id", listingId);
+
+  return { type: env.type, ok: true, detail: `auction snapshot for ${listingId}` };
+}
+
+async function handleCrossPlatformImage(
+  admin: Admin,
+  env: EventEnvelope,
+): Promise<EventResult> {
+  const platform = str(env.payload.platform);
+  const externalId = str(env.payload.external_id);
+  const imageUrl = str(env.payload.image_url);
+  if (!platform || !externalId || !imageUrl) {
+    return {
+      type: env.type,
+      ok: false,
+      detail: "missing platform/external_id/image_url",
+    };
+  }
+
+  const { data: parent, error: parentErr } = await admin
+    .from("cross_platform_listings")
+    .select("id")
+    .eq("platform", platform)
+    .eq("external_id", externalId)
+    .maybeSingle();
+  if (parentErr) {
+    return { type: env.type, ok: false, detail: parentErr.message };
+  }
+  if (!parent) {
+    return {
+      type: env.type,
+      ok: false,
+      detail: `cross_platform_listing not found for ${platform}/${externalId}`,
+    };
+  }
+
+  const observed = toIso(env.occurred_at, nowIso());
+  const { error: upErr } = await admin
+    .from("cross_platform_listing_images")
+    .upsert(
+      {
+        cross_platform_listing_id: parent.id,
+        image_url: imageUrl,
+        caption: str(env.payload.caption),
+        storage_bucket: "listing-images",
+        uploaded_at: observed,
+      },
+      {
+        onConflict: "cross_platform_listing_id,image_url",
+        ignoreDuplicates: true,
+      },
+    );
+  if (upErr) return { type: env.type, ok: false, detail: upErr.message };
+
+  // Best-effort server-side fetch + storage upload, mirroring listingImage.
+  const { data: existing } = await admin
+    .from("cross_platform_listing_images")
+    .select("storage_path")
+    .eq("cross_platform_listing_id", parent.id)
+    .eq("image_url", imageUrl)
+    .maybeSingle();
+  if (existing?.storage_path) {
+    return { type: env.type, ok: true, detail: `already stored at ${existing.storage_path}` };
+  }
+
+  try {
+    const res = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(6000),
+      headers: { "User-Agent": "geck-inspect-ingest/1.0" },
+    });
+    if (!res.ok) {
+      return { type: env.type, ok: true, detail: `url stored, fetch ${res.status}` };
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) {
+      return { type: env.type, ok: true, detail: "url stored, empty body" };
+    }
+    const mime = res.headers.get("content-type")?.split(";")[0].trim() ?? "application/octet-stream";
+    const ext = extFromMime(mime);
+    const hash = urlHash(imageUrl);
+    const fileName = `${hash}.${ext}`;
+    const path = `xpl/${platform}/${externalId}/${fileName}`;
+    const { error: storeErr } = await admin.storage
+      .from("listing-images")
+      .upload(path, buf, { contentType: mime, upsert: false });
+    if (storeErr && !/already exists|duplicate/i.test(storeErr.message)) {
+      return {
+        type: env.type,
+        ok: true,
+        detail: `url stored, storage upload failed: ${storeErr.message}`,
+      };
+    }
+    await admin
+      .from("cross_platform_listing_images")
+      .update({
+        storage_path: path,
+        file_name: fileName,
+        file_size: buf.length,
+        mime_type: mime,
+      })
+      .eq("cross_platform_listing_id", parent.id)
+      .eq("image_url", imageUrl);
+    return { type: env.type, ok: true, detail: `fetched ${buf.length}B to ${path}` };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { type: env.type, ok: true, detail: `url stored, fetch failed: ${msg}` };
+  }
+}
+
 // ----- dispatcher -----------------------------------------------------------
 
 export async function handleEvent(
@@ -690,16 +889,22 @@ export async function handleEvent(
         return await handleSoldInferred(admin, env);
       case "auctionClose":
         return await handleAuctionClose(admin, env);
+      case "auctionState":
+        return await handleAuctionState(admin, env);
       case "showMention":
         return await handleShowMention(admin, env);
       case "sellerSnapshot":
         return await handleSellerSnapshot(admin, env);
       case "crossPlatform":
         return await handleCrossPlatform(admin, env);
+      case "crossPlatformImage":
+        return await handleCrossPlatformImage(admin, env);
       case "alertMatch":
         return await handleAlertMatch(admin, env);
       case "listingImage":
         return await handleListingImage(admin, env);
+      case "listingLineage":
+        return await handleListingLineage(admin, env);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
