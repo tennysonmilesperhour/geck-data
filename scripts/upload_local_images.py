@@ -121,8 +121,11 @@ def main() -> int:
         files = files[: args.limit]
         log(f"limited to first {len(files)} files for this run")
 
+    # Listing the bucket is read-only, so we do it for dry-runs too. That
+    # lets --dry-run accurately report how many files would actually be
+    # uploaded vs skipped.
     existing: set[str] = set()
-    if not args.force and not args.dry_run:
+    if not args.force:
         existing = list_storage_objects(supabase)
 
     storage = supabase.storage.from_(BUCKET)
@@ -137,6 +140,9 @@ def main() -> int:
 
         if target_name in existing and not args.force:
             skipped += 1
+            if args.dry_run:
+                log(f"DRY: would skip {target_name} (already in bucket)")
+                continue
             if args.no_update_rows:
                 continue
             # Still update the row in case it points at the MM CDN.

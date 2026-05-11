@@ -86,6 +86,19 @@ def finalise_scrape_run(
     ).eq("id", run_id).execute()
 
 
+# Map common image content-types to predictable extensions. mimetypes
+# returns '.jpe' for 'image/jpeg' on some Linux runners, which would
+# yield ugly filenames like '12345.jpe'. Pin the common ones.
+CONTENT_TYPE_EXT = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/avif": ".avif",
+}
+
+
 def pick_extension(url: str, content_type: Optional[str]) -> str:
     """Return a sensible file extension for the downloaded image."""
     parsed = urlparse(url)
@@ -94,7 +107,10 @@ def pick_extension(url: str, content_type: Optional[str]) -> str:
     if ext and len(ext) <= 5:
         return ext.lower()
     if content_type:
-        guess = mimetypes.guess_extension(content_type.split(";")[0].strip())
+        clean = content_type.split(";")[0].strip().lower()
+        if clean in CONTENT_TYPE_EXT:
+            return CONTENT_TYPE_EXT[clean]
+        guess = mimetypes.guess_extension(clean)
         if guess:
             return guess
     return DEFAULT_EXTENSION

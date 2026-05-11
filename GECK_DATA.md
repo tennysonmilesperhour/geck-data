@@ -89,18 +89,25 @@ repository secret. The workflows reference `SUPABASE_URL`,
    into `ADMIN_USER_ID` in `.env.local`, restart `npm run dev`.
 5. Visit `/data-admin`. You should see four empty cards and three
    "Trigger run" buttons.
-6. Land your historical data:
+6. Run the preflight to confirm you are pointed at the right project:
+   ```bash
+   cd scripts
+   python check_env.py
+   ```
+   Stop if it does not say "connected to Geck Data".
+7. Land your historical data:
    - Run `python scripts/upload_local_images.py` (one time, from your
      Mac). This uploads ~5,849 images from `~/Desktop/geckscrape/images/`
      into Supabase Storage and rewrites every `listings.primary_image_url`.
    - Run `python migrate_to_supabase.py` from your local
      `~/Desktop/geckscrape/` to load the CSV rows into `listings` and
      `listings_history`. (The CSV migration script is your original
-     local one; we did not duplicate it here.)
-7. Add the three secrets to GitHub Actions (Settings > Secrets and
+     local one; we did not duplicate it here.) Confirm the `.env` /
+     credentials it reads point at the Geck Data project URL above.
+8. Add the three secrets to GitHub Actions (Settings > Secrets and
    variables > Actions): `DECODO_AUTH`, `SUPABASE_URL`,
    `SUPABASE_SERVICE_KEY`.
-8. Go to the Actions tab on GitHub. Click each workflow > "Run workflow".
+9. Go to the Actions tab on GitHub. Click each workflow > "Run workflow".
    Watch the logs. When all three succeed once, uncomment the
    `schedule:` block in each `.github/workflows/*.yml` and push.
 

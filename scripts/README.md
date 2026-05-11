@@ -28,6 +28,22 @@ In GitHub Actions, those are wired up from repository secrets; see
 
 ## Scripts
 
+### check_env.py
+
+Preflight check. Run this BEFORE any other script. It prints which
+Supabase project you are connected to, what role your service key has,
+whether the required tables/functions/buckets exist, and whether
+DECODO_AUTH works. The most common silent failure on this pipeline is
+pointing at the wrong Supabase project, and this script makes that
+impossible to miss.
+
+```bash
+cd scripts
+python check_env.py
+```
+
+Exits 0 if everything looks healthy.
+
 ### scrape_listings.py
 
 Walks the MorphMarket crested gecko grid (~264 pages) through Decodo,
