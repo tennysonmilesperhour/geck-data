@@ -123,26 +123,80 @@ def listing_grid_url(base: str, page: int) -> str:
 def extract_listings_from_html(html: str) -> list[dict[str, Any]]:
     """Pull listing summary rows from a grid page HTML response.
 
-    The MorphMarket grid embeds one JSON-LD <script> per listing card.
-    Each card has a Product object with name, offers.price, image, url.
-    We parse them all and surface what is useful for the summary upsert.
+    The MorphMarket grid currently embeds JSON-LD as ItemList blocks. The
+    page contains two such blocks at the time this comment was written:
+
+      1) ItemList of Product objects with url, name, image, offers.
+      2) ItemList of ListItem objects with url, name, description.
+
+    Older revisions of MorphMarket emitted one standalone Product JSON-LD
+    per card; we keep that shape working too so a future site rev that
+    flips back does not silently break us.
+
+    The grid no longer ships seller/sex/weight/traits. Those land via the
+    weekly detail scrape; here we surface what the grid still gives us.
     """
-    listings: list[dict[str, Any]] = []
+    # Step 1: collect every candidate object the page exposes, regardless
+    # of whether it lives at top level, inside an ItemList, or in a JSON-LD
+    # array. Keyed by listing URL so the two ItemList passes merge cleanly.
+    by_url: dict[str, dict[str, Any]] = {}
+
+    def _consume_item(item: Any) -> None:
+        if not isinstance(item, dict):
+            return
+        item_type = item.get("@type")
+        if item_type == "ItemList":
+            for child in item.get("itemListElement") or []:
+                _consume_item(child)
+            return
+        if item_type == "ListItem":
+            inner = item.get("item")
+            if isinstance(inner, dict):
+                _consume_item(inner)
+                return
+            # Some pages flatten ListItem fields onto the wrapper itself.
+            url = item.get("url")
+            if isinstance(url, str):
+                merge = by_url.setdefault(url, {})
+                for k in ("name", "description", "image"):
+                    if item.get(k) and not merge.get(k):
+                        merge[k] = item[k]
+            return
+        if item_type in {"Product", "Offer"}:
+            url = item.get("url") or item.get("@id")
+            if not isinstance(url, str):
+                return
+            merge = by_url.setdefault(url, {})
+            # New fields win unless they are blank; ItemList of Products
+            # carries the most info so we copy aggressively.
+            for k, v in item.items():
+                if v in (None, "", []):
+                    continue
+                merge.setdefault(k, v)
+                if k in {"name", "image", "offers", "additionalProperty",
+                         "seller", "description"}:
+                    merge[k] = v
+            return
+
     for raw in JSONLD_PRODUCT_RE.findall(html):
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        # JSON-LD blocks can be a single object or an array.
-        candidates = data if isinstance(data, list) else [data]
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
-            if item.get("@type") not in {"Product", "Offer"}:
-                continue
-            listing = _flatten_product_jsonld(item)
-            if listing and listing.get("listing_id"):
-                listings.append(listing)
+        if isinstance(data, list):
+            for item in data:
+                _consume_item(item)
+        else:
+            _consume_item(data)
+
+    listings: list[dict[str, Any]] = []
+    for url, item in by_url.items():
+        item.setdefault("url", url)
+        # Pretend it is a Product so the existing flattener works.
+        item.setdefault("@type", "Product")
+        listing = _flatten_product_jsonld(item)
+        if listing and listing.get("listing_id"):
+            listings.append(listing)
     return listings
 
 
@@ -291,6 +345,13 @@ def main() -> int:
     base = os.environ.get("MM_BASE_URL", DEFAULT_BASE_URL)
     max_pages_env = os.environ.get("MAX_PAGES")
     max_pages = int(max_pages_env) if max_pages_env else 400
+    # When MAX_PAGES is set we are in a smoke test or a partial walk. The
+    # mark_unseen_listings_inactive sweep at the end would flip every
+    # listing that did not happen to land on the first N pages to
+    # is_active=false, which destroys the rest of the catalog. Only run
+    # the sweep when we are doing a real full pass (no cap, or cap >= the
+    # default ceiling).
+    is_smoke_run = max_pages_env is not None
 
     supabase = get_supabase()
     decodo = DecodoClient()
@@ -340,15 +401,23 @@ def main() -> int:
             consecutive_empty = 0
             succeeded += upsert_listings(supabase, run_id, listings)
 
-        # Mark anything we did not see during this run as inactive.
-        try:
-            result = supabase.rpc(
-                "mark_unseen_listings_inactive",
-                {"target_run_id": run_id},
-            ).execute()
-            log(f"mark_unseen_listings_inactive returned {result.data}")
-        except Exception as exc:  # noqa: BLE001
-            log(f"WARN: mark_unseen_listings_inactive failed: {exc}")
+        # Mark anything we did not see during this run as inactive. Skip
+        # this on a capped smoke run, otherwise a 2-page test would flip
+        # every listing on pages 3..N to inactive and corrupt the catalog.
+        if is_smoke_run:
+            log(
+                f"skipping mark_unseen_listings_inactive (MAX_PAGES={max_pages_env}); "
+                "smoke runs do not represent a full catalog walk"
+            )
+        else:
+            try:
+                result = supabase.rpc(
+                    "mark_unseen_listings_inactive",
+                    {"target_run_id": run_id},
+                ).execute()
+                log(f"mark_unseen_listings_inactive returned {result.data}")
+            except Exception as exc:  # noqa: BLE001
+                log(f"WARN: mark_unseen_listings_inactive failed: {exc}")
 
         status = "success" if failed == 0 else "partial"
         finalise_scrape_run(
