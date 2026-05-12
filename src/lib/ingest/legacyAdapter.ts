@@ -24,6 +24,7 @@
 // next deploy, without an extension re-release.
 
 import type { EventEnvelope, EventType } from "./events";
+import { speciesFromAnimal, speciesFromCrossPlatform } from "./species";
 
 function obj(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v)
@@ -142,8 +143,17 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
       const id = flat.id ?? key;
       if (!id) return [];
 
+      // Species tag stays on the listing row and every child row. Geck
+      // Inspect filters species = 'crested' on the read side; everything
+      // else is preserved but archived.
+      const species = speciesFromAnimal(data);
+
       const envelopes: EventEnvelope[] = [
-        wrap("listingSeen", { ...flat, id, first_listed_at: isoOrUndef(data.first_listed) }, capturedAt),
+        wrap(
+          "listingSeen",
+          { ...flat, id, species, first_listed_at: isoOrUndef(data.first_listed) },
+          capturedAt,
+        ),
       ];
 
       // Emit one listingImage event per image. The animal payload already
@@ -165,6 +175,7 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
               listing_id: String(id),
               image_url: url,
               caption: str(imgObj?.caption),
+              species,
             }),
             capturedAt,
           ),
@@ -291,6 +302,7 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
       const platform = str(data.platform);
       const externalId = asId(data.external_id) ?? key;
       if (!platform || !externalId) return [];
+      const species = speciesFromCrossPlatform(data);
       const out: EventEnvelope[] = [
         wrap(
           "crossPlatform",
@@ -306,6 +318,7 @@ export function adaptLegacyEvent(raw: unknown): EventEnvelope[] {
             seller_location: data.seller_location,
             url: data.url,
             traits_raw: data.traits_raw,
+            species,
           }),
           capturedAt,
         ),
