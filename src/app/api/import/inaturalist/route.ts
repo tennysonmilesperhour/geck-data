@@ -1,11 +1,15 @@
-// iNaturalist importer.
+// iNaturalist importer (crested gecko only).
 //
-// Pulls research-grade observations of Eublepharis macularius (leopard gecko)
-// and Correlophus ciliatus (crested gecko) and stores their CC-licensed photos
-// as wild-type / non-morph reference images. iNat photos are not morph-labeled
-// in any structured way, so these rows are intentionally morph_label=null;
-// they serve as a wild-type negative class for the morph ID model so it stops
-// hallucinating named morphs on plain captive-bred yellow geckos.
+// Pulls research-grade observations of Correlophus ciliatus (crested gecko)
+// and stores their CC-licensed photos as wild-type / non-morph reference
+// images. iNat photos are not morph-labeled in any structured way, so these
+// rows are intentionally morph_label=null; they serve as a wild-type
+// negative class for the morph ID model so it stops hallucinating named
+// morphs on plain wild-pattern animals.
+//
+// This importer is locked to the crested gecko taxon. Geck Inspect is
+// crested-gecko-first; non-crested species are deliberately excluded from
+// imports so the reference dataset stays on-target.
 //
 // API: https://api.inaturalist.org/v1/observations
 // Terms: photos are individually licensed; we filter to CC-licensed only and
@@ -22,11 +26,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Taxon IDs from iNat; cheaper than name resolution per call.
-const TAXA: Array<{ taxon_id: number; species: string }> = [
-  { taxon_id: 36116, species: "Eublepharis macularius" },
-  { taxon_id: 36161, species: "Correlophus ciliatus" },
-];
+// Locked to crested. Taxon 36161 is Correlophus ciliatus on iNaturalist.
+const CRESTED_TAXON = { taxon_id: 36161, species: "Correlophus ciliatus" } as const;
 
 const PER_PAGE = 50; // bounded so each cron tick is short
 const ALLOWED_LICENSES = new Set(["cc0", "cc-by", "cc-by-nc", "cc-by-sa", "cc-by-nc-sa"]);
@@ -60,13 +61,11 @@ export async function GET(req: NextRequest) {
   }
   const url = new URL(req.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
-  const taxonIdParam = url.searchParams.get("taxon_id");
-  const targets = taxonIdParam
-    ? TAXA.filter((t) => String(t.taxon_id) === taxonIdParam)
-    : TAXA;
-  if (targets.length === 0) {
-    return NextResponse.json({ error: "unknown taxon_id" }, { status: 400 });
-  }
+
+  // Locked to crested. A taxon_id query parameter would be misleading: this
+  // route is intentionally crested-only and ignores any override so a stray
+  // curl can't accidentally seed leopard or other-species photos.
+  const targets = [CRESTED_TAXON];
 
   const admin = createAdminClient();
   let inserted = 0;

@@ -120,13 +120,17 @@ export async function GET(_req: NextRequest) {
 
   const generatedAt = new Date().toISOString();
 
-  // 1. Pull recent listings. Sort by last_seen_at desc so the most active
-  //    rows fill the bounded window even when older listings outnumber them.
+  // 1. Pull recent crested listings only. Geck Inspect is crested-gecko-first;
+  //    other species (leopards, gargoyles, etc.) get ingested and archived
+  //    via migration 0010 but never surface in user-facing analytics. The
+  //    'unknown' default applies to legacy rows ingested before 0010 — those
+  //    show up too because the extension was crested-focused in practice.
   const { data: listings, error: lErr } = (await admin
     .from("market_listings")
     .select(
       "id, title, price, price_usd_equivalent, cached_traits, norm_traits, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
     )
+    .in("species", ["crested", "unknown"])
     .order("last_seen_at", { ascending: false, nullsFirst: false })
     .limit(SNAPSHOT_LISTING_LIMIT)) as { data: ListingRow[] | null; error: { message: string } | null };
 

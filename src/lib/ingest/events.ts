@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adaptLegacyEvent } from "./legacyAdapter";
+import { isCrested } from "./species";
 
 export type EventType =
   | "listingSeen"
@@ -156,6 +157,7 @@ const LISTING_COLUMNS = [
   "bid_count",
   "auction_end_at",
   "first_listed_at",
+  "species",
   "created_at",
   "updated_at",
 ] as const;
@@ -517,6 +519,7 @@ async function handleCrossPlatform(
     seller_location: str(env.payload.seller_location),
     url: str(env.payload.url),
     traits_raw: str(env.payload.traits_raw),
+    species: str(env.payload.species) ?? "unknown",
     first_seen_at: (existing?.first_seen_at as string | undefined) ?? observed,
     last_seen_at: observed,
     payload: env.payload,
@@ -591,18 +594,31 @@ async function handleListingImage(
   }
   await ensureListingStub(admin, listingId);
 
+  // Resolve species: prefer the value the adapter put on this event; fall
+  // back to the parent listing's stored species. Anything not 'crested'
+  // routes the binary upload to the private archive bucket.
+  let species = str(env.payload.species);
+  if (!species) {
+    const { data: parent } = await admin
+      .from("market_listings")
+      .select("species")
+      .eq("id", listingId)
+      .maybeSingle();
+    species = (parent?.species as string | null) ?? "unknown";
+  }
+  const bucket = isCrested(species) ? "listing-images" : "archive-listing-images";
+
   const hash = urlHash(imageUrl);
-  // Placeholder file_name that matches the extension's local-download convention
-  // (mm_<id>_<hash>.<ext>) once we know the mime; stays null until we fetch.
   const observed = toIso(env.occurred_at, nowIso());
 
-  // Insert the URL-only row first. The partial unique index on
+  // Insert the URL-only row first. The unique constraint on
   // (listing_id, image_url) silently drops duplicates from re-captures.
   const { error: upErr } = await admin.from("listing_images").upsert(
     {
       listing_id: listingId,
       image_url: imageUrl,
-      storage_bucket: "listing-images",
+      storage_bucket: bucket,
+      species,
       uploaded_at: observed,
     },
     { onConflict: "listing_id,image_url", ignoreDuplicates: true },
@@ -646,7 +662,7 @@ async function handleListingImage(
     const path = `${listingId}/${fileName}`;
 
     const { error: storeErr } = await admin.storage
-      .from("listing-images")
+      .from(bucket)
       .upload(path, buf, { contentType: mime, upsert: false });
     if (storeErr && !/already exists|duplicate/i.test(storeErr.message)) {
       return {
@@ -670,7 +686,7 @@ async function handleListingImage(
     return {
       type: env.type,
       ok: true,
-      detail: `fetched ${buf.length}B to ${path}`,
+      detail: `fetched ${buf.length}B to ${bucket}/${path}`,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -843,8 +859,19 @@ async function handleCrossPlatformImage(
     const hash = urlHash(imageUrl);
     const fileName = `${hash}.${ext}`;
     const path = `xpl/${platform}/${externalId}/${fileName}`;
+
+    // Same crested-vs-archive routing as listing images. cross_platform_listings
+    // stores species at ingest time (see legacyAdapter), so we look it up here.
+    const { data: xplParent } = await admin
+      .from("cross_platform_listings")
+      .select("species")
+      .eq("id", parent.id)
+      .maybeSingle();
+    const species = (xplParent?.species as string | null) ?? "unknown";
+    const bucket = isCrested(species) ? "listing-images" : "archive-listing-images";
+
     const { error: storeErr } = await admin.storage
-      .from("listing-images")
+      .from(bucket)
       .upload(path, buf, { contentType: mime, upsert: false });
     if (storeErr && !/already exists|duplicate/i.test(storeErr.message)) {
       return {
@@ -857,13 +884,14 @@ async function handleCrossPlatformImage(
       .from("cross_platform_listing_images")
       .update({
         storage_path: path,
+        storage_bucket: bucket,
         file_name: fileName,
         file_size: buf.length,
         mime_type: mime,
       })
       .eq("cross_platform_listing_id", parent.id)
       .eq("image_url", imageUrl);
-    return { type: env.type, ok: true, detail: `fetched ${buf.length}B to ${path}` };
+    return { type: env.type, ok: true, detail: `fetched ${buf.length}B to ${bucket}/${path}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { type: env.type, ok: true, detail: `url stored, fetch failed: ${msg}` };
