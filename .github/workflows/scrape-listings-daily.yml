@@ -1,0 +1,35 @@
+name: Daily Listings Scrape
+
+# IMPORTANT: schedule is intentionally commented out. Enable only after a
+# successful workflow_dispatch run so a misconfigured workflow does not
+# burn Decodo credits at 9 AM every day.
+on:
+  # schedule:
+  #   - cron: '0 9 * * *'   # 9 AM UTC daily
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_listings.py
+        env:
+          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action
+        working-directory: scripts
+        run: python scrape_listings.py

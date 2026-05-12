@@ -1,0 +1,33 @@
+name: Weekly Details Scrape
+
+# Schedule disabled until manual workflow_dispatch confirms the job works.
+on:
+  # schedule:
+  #   - cron: '0 10 * * 1'   # Mondays 10 AM UTC
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_details.py
+        env:
+          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action
+        working-directory: scripts
+        run: python scrape_details.py

@@ -9,3 +9,9 @@ out/
 .vercel
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# Python (scripts/)
+__pycache__/
+*.pyc
+scripts/.venv/
+scripts/venv/
