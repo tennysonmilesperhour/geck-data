@@ -241,7 +241,12 @@ def transform_price_observation(row: dict[str, Any]) -> Optional[dict[str, Any]]
     except (TypeError, ValueError):
         return None
     return {
-        "listing_id": listing_id,  # bare numeric; FK pattern in 0002 stores bare
+        # FK references market_listings.id. The canonical helper writes the
+        # listing as id="mm_<numeric>", so price_history must use the same
+        # prefixed form. Legacy price_history rows from the 2026-04 bulk
+        # upload use bare numeric and reference the ~21 legacy bare-id
+        # market_listings rows; both conventions coexist.
+        "listing_id": canonical_id(listing_id),
         "observed_at": row.get("first_seen_at") or row.get("last_seen_at")
             or dt.datetime.now(dt.timezone.utc).isoformat(),
         "price": price_int,
