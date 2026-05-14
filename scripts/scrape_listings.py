@@ -115,9 +115,27 @@ def finalise_scrape_run(
 
 
 def listing_grid_url(base: str, page: int) -> str:
-    """Build the listing grid URL for page N. Sorted by newest first."""
-    qs = urlencode({"sort": "search-newest", "page": page})
+    """Build the listing grid URL for page N. Sorted by newest first.
+
+    Uses ?ordering=-first_posted (a server-side Django REST ordering
+    parameter) rather than the React app's ?sort=search-newest, because
+    only the former drives MorphMarket's SSR pagination. With
+    sort=search-newest the SSR returns the same 24 listings regardless
+    of ?page=N.
+    """
+    qs = urlencode({"ordering": "-first_posted", "page": page})
     return f"{base}?{qs}"
+
+
+# MorphMarket's React grid needs time after initial render to paint the
+# full set of listing cards. These browser_actions are the recipe that
+# the original /Users/tennyson/Desktop/geckscrape archive proved out
+# while scraping 5,800+ listings across 259 pages.
+LISTING_GRID_ACTIONS = [
+    {"type": "wait", "wait_time_s": 5},
+    {"type": "scroll_to_bottom", "timeout_s": 10},
+    {"type": "wait", "wait_time_s": 3},
+]
 
 
 def extract_listings_from_html(html: str) -> list[dict[str, Any]]:
@@ -368,20 +386,58 @@ def upsert_listings(supabase, run_id: int, rows: list[dict[str, Any]]) -> int:
     return succeeded
 
 
+def _load_known_listing_ids(supabase) -> set[str]:
+    """Pull every active listing_id once at startup so the walk can
+    cheaply detect when a page is fully already-known and bail.
+
+    Uses paginated Supabase queries because PostgREST defaults to a
+    1000-row response cap.
+    """
+    known: set[str] = set()
+    page_size = 1000
+    offset = 0
+    while True:
+        chunk = (
+            supabase.table("listings")
+            .select("listing_id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+            or []
+        )
+        if not chunk:
+            break
+        known.update(str(r["listing_id"]) for r in chunk if r.get("listing_id"))
+        if len(chunk) < page_size:
+            break
+        offset += page_size
+    return known
+
+
 def main() -> int:
     base = os.environ.get("MM_BASE_URL", DEFAULT_BASE_URL)
     max_pages_env = os.environ.get("MAX_PAGES")
     max_pages = int(max_pages_env) if max_pages_env else 400
-    # When MAX_PAGES is set we are in a smoke test or a partial walk. The
-    # mark_unseen_listings_inactive sweep at the end would flip every
-    # listing that did not happen to land on the first N pages to
-    # is_active=false, which destroys the rest of the catalog. Only run
-    # the sweep when we are doing a real full pass (no cap, or cap >= the
-    # default ceiling).
-    is_smoke_run = max_pages_env is not None
+    # DELTA_WALK=1 means "walk until we hit a fully-already-known page,
+    # then stop." This is the daily-cron mode. A delta walk does not
+    # represent a full catalog sweep, so mark_unseen_listings_inactive
+    # is skipped (same as on a MAX_PAGES smoke run). Run-of-the-mill
+    # full re-syncs leave DELTA_WALK unset and let the script crawl to
+    # natural end.
+    delta_mode = os.environ.get("DELTA_WALK") == "1"
+
+    # Any constrained walk (smoke cap OR delta bail) must skip the
+    # mark_unseen_listings_inactive sweep, otherwise listings on
+    # un-walked pages get flagged inactive and the catalog rots.
+    is_smoke_run = max_pages_env is not None or delta_mode
 
     supabase = get_supabase()
     decodo = DecodoClient()
+
+    known_ids: set[str] = set()
+    if delta_mode:
+        known_ids = _load_known_listing_ids(supabase)
+        log(f"delta mode: loaded {len(known_ids)} known listing_ids")
 
     run_id = start_scrape_run(supabase)
     attempted = 0
@@ -395,7 +451,13 @@ def main() -> int:
             log(f"GET page {page}: {url}")
             attempted += 1
             try:
-                resp = decodo.fetch(url, headless="html")
+                resp = decodo.fetch(
+                    url,
+                    headless="html",
+                    proxy_pool="premium",
+                    browser_actions=LISTING_GRID_ACTIONS,
+                    timeout_seconds=180,
+                )
             except Exception as exc:  # noqa: BLE001
                 log(f"ERROR fetching page {page}: {exc}")
                 failed += 1
@@ -427,6 +489,22 @@ def main() -> int:
 
             consecutive_empty = 0
             succeeded += upsert_listings(supabase, run_id, listings)
+
+            if delta_mode:
+                page_ids = {
+                    str(item["listing_id"])
+                    for item in listings
+                    if item.get("listing_id")
+                }
+                new_on_page = page_ids - known_ids
+                if not new_on_page:
+                    log(
+                        f"delta-exit: all {len(page_ids)} listings on page {page} "
+                        "were already in the DB; assuming the rest of the catalog "
+                        "is unchanged"
+                    )
+                    break
+                known_ids.update(page_ids)
 
         # Mark anything we did not see during this run as inactive. Skip
         # this on a capped smoke run, otherwise a 2-page test would flip
