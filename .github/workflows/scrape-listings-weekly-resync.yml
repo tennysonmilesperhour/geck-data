@@ -1,0 +1,57 @@
+name: Weekly Listings Full Re-sync
+
+# Walks the entire MorphMarket crested-geckos catalog (no DELTA_WALK,
+# no MAX_PAGES) so the mark_unseen_listings_inactive sweep runs and
+# flags any listings that left the catalog without an explicit 404 on
+# their detail page.
+#
+# The daily delta walk in scrape-listings-daily.yml deliberately skips
+# the sweep (a partial walk would mis-flag everything past its early
+# exit), so this weekly run is the only place where catalog hygiene
+# actually happens. Without it, sold-but-never-404'd listings would
+# accumulate at is_active=true forever.
+#
+# Sunday 03:00 UTC was picked to sit comfortably away from the daily
+# cron at 09:00 UTC: this job typically takes 60-120 min, so 03:00
+# leaves a 4+ hour safety buffer before the next daily delta starts.
+on:
+  schedule:
+    - cron: '0 3 * * 0'   # Sundays 03:00 UTC
+  workflow_dispatch:
+
+# Keep this resync serialised with the daily delta. The cron times don't
+# overlap today, but a manual dispatch or a Decodo retry storm could
+# push them into each other; the daily would corrupt the resync's view
+# of "what we've seen this run" if both wrote simultaneously.
+concurrency:
+  group: scrape-listings
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # Each grid page through Decodo is ~20-30s wall (browser_actions
+    # wait + render). 270 pages * 30s = 135 min worst case. The 240
+    # ceiling protects against Decodo retry storms on a bad day.
+    timeout-minutes: 240
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_listings.py (full sweep)
+        env:
+          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action_weekly_resync
+        working-directory: scripts
+        run: python scrape_listings.py

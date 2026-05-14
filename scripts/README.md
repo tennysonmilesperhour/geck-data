@@ -46,22 +46,44 @@ Exits 0 if everything looks healthy.
 
 ### scrape_listings.py
 
-Walks the MorphMarket crested gecko grid (~264 pages) through Decodo,
+Walks the MorphMarket crested gecko grid (~270 pages) through Decodo,
 parses the JSON-LD product blocks from each card, and upserts a summary
 row per listing into `public.listings`. Appends one row per listing to
 `public.listings_history` keyed to the current `scrape_runs.id`.
 
-At the end of the run it calls the SQL function
-`mark_unseen_listings_inactive(target_run_id)` which flips
-`is_active=false` and `sold_at=now()` on any listing whose
-`last_seen_at` is older than this run's `started_at`. That is how we
-detect sold/removed listings without ever issuing a DELETE.
+**Working Decodo recipe (load-bearing — don't drop any of these):**
 
-Tunables (env vars):
-- `MAX_PAGES` cap for smoke tests (default 400).
-- `MM_BASE_URL` override the grid URL.
+| Knob | Value | Why |
+|---|---|---|
+| URL param | `?ordering=-first_posted&page=N` | Server-side Django REST ordering — this is what drives SSR pagination. The React app's `?sort=search-newest` is client-side only; SSR will return the same first 24 listings on every page=N if you use it. |
+| `proxy_pool` | `"premium"` | Default residential tier gets soft-throttled into returning page-1 content for every `page=N` call. Premium tier hands back the actual paginated HTML. |
+| `browser_actions` | `[wait 5s, scroll_to_bottom, wait 3s]` | MorphMarket's React grid needs hydration time. Without these post-render steps Decodo snapshots before the listing cards are laid out. |
+| `headless` | `"html"` | Standard JS render. Required (the page is React). |
 
-Cost: ~265 Decodo Premium+JS credits per full run, ~15 min wall time.
+If pagination breaks again in the future, check that these three knobs
+are still in place before assuming MorphMarket changed anything.
+
+**Modes:**
+
+- **Default (full sweep)**: walk to natural end (~270 pages, ~90 min wall),
+  then call `mark_unseen_listings_inactive(target_run_id)` which flips
+  `is_active=false` on any listing whose `last_seen_at` predates the
+  run. Used by `scrape-listings-weekly-resync.yml` for catalog hygiene.
+- **`DELTA_WALK=1`**: load every active `listing_id` at startup, walk
+  newest-first, stop as soon as one page contains zero new listings.
+  Used by `scrape-listings-daily.yml` for the daily cron. Skips the
+  inactive sweep (a partial walk would otherwise corrupt the catalog).
+- **`MAX_PAGES=N`**: smoke-test cap. Walks at most N pages. Skips the
+  sweep for the same reason.
+
+Other tunables:
+- `MM_BASE_URL` overrides the grid URL.
+
+Cost per run:
+- Daily delta on a quiet day: 1 Decodo Premium+JS credit (~30s wall).
+- Daily delta on a busy day: 1 credit per page until the early-exit
+  fires; typically 1–3 credits.
+- Weekly full sweep: ~270 credits (~90 min wall).
 
 ### scrape_details.py
 
