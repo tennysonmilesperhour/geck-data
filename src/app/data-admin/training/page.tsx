@@ -229,6 +229,50 @@ export default async function MorphIdTrainingPage() {
 
       <section>
         <h3 className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400">
+          Connect to geck-inspect Morph ID
+        </h3>
+        <div className="rounded-xl border border-ink-700 bg-ink-850 p-5 text-sm">
+          <p className="text-ink-300">
+            The Morph ID tool lives in the <code className="text-ink-100">geck-inspect</code> repo
+            as a Supabase edge function (<code className="text-ink-100">recognize-gecko-morph</code>)
+            powered by Claude Vision. It reads its &quot;ground truth&quot; from{" "}
+            <code className="text-ink-100">geck-inspect.gecko_images</code>, a separate Supabase
+            project. Two scripts bridge the two databases:
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-ink-700/60 bg-ink-900/40 p-3">
+              <div className="font-mono text-xs text-emerald-300">
+                scripts/seed_geck_inspect.py
+              </div>
+              <p className="mt-1 text-xs text-ink-400">
+                Pushes wild scraper images into <code>gecko_images</code> with
+                {" "}<code>verified=false</code>, taxonomy-aligned labels, and
+                provenance tags. They land in the reviewer queue for expert
+                verification.
+              </p>
+            </div>
+            <div className="rounded-lg border border-ink-700/60 bg-ink-900/40 p-3">
+              <div className="font-mono text-xs text-sky-300">
+                scripts/eval_morph_id.py
+              </div>
+              <p className="mt-1 text-xs text-ink-400">
+                Runs the edge function over our test split and reports
+                top-1 accuracy on primary_morph plus Jaccard on
+                genetic_traits.
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-ink-400">
+            Both scripts require <code>GECK_INSPECT_SUPABASE_URL</code> +{" "}
+            <code>GECK_INSPECT_SUPABASE_SERVICE_KEY</code> for the seeder and{" "}
+            <code>GECK_INSPECT_FUNCTION_URL</code> +{" "}
+            <code>GECK_INSPECT_ANON_KEY</code> for the eval.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400">
           Taxonomy
         </h3>
         <div className="overflow-hidden rounded-xl border border-ink-700">
