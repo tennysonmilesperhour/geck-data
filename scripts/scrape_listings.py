@@ -300,9 +300,20 @@ def _extract_traits(props: Any) -> list[str]:
 
 
 def upsert_listings(supabase, run_id: int, rows: list[dict[str, Any]]) -> int:
-    """UPSERT a batch of listings and append history rows. Returns succeeded count."""
+    """UPSERT a batch of listings and append history rows. Returns succeeded count.
+
+    Also mirrors each chunk into the canonical market_listings / market_sellers
+    / price_history tables that the public web app reads, when the
+    CANONICAL_DUAL_WRITE env var is set to a truthy value. Canonical write
+    failures never block the primary listings upsert — they log a warning and
+    move on.
+    """
     if not rows:
         return 0
+
+    dual_write = os.environ.get("CANONICAL_DUAL_WRITE", "1").lower() not in (
+        "0", "false", "no", ""
+    )
 
     # Make sure every row has first_seen_at on insert. The DB default
     # handles new rows; for re-upserts the column is left alone because
@@ -338,6 +349,22 @@ def upsert_listings(supabase, run_id: int, rows: list[dict[str, Any]]) -> int:
         except Exception as exc:  # noqa: BLE001
             log(f"WARN: listings_history insert failed: {exc}")
         succeeded += len(chunk)
+
+        if dual_write:
+            try:
+                from lib.canonical import upsert_canonical_from_listings
+                stats = upsert_canonical_from_listings(supabase, chunk)
+                if stats.listings_failed or stats.sellers_failed:
+                    log(
+                        f"  canonical mirror: listings+={stats.listings_upserted} "
+                        f"sellers+={stats.sellers_upserted} "
+                        f"price_history+={stats.price_history_inserted} "
+                        f"(failures: {stats.listings_failed} listings, "
+                        f"{stats.sellers_failed} sellers)"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                log(f"WARN: canonical dual-write failed for chunk: {exc}")
+
     return succeeded
 
 

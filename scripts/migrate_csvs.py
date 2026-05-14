@@ -386,8 +386,25 @@ def main() -> int:
             except Exception as exc:  # surface and keep going
                 failed += len(batch)
                 log(f"  ERROR upserting batch: {exc}")
-            finally:
-                listings_buffer.clear()
+
+            # Mirror into the canonical schema the public web app reads from.
+            # Gated by env so a flaky canonical write never blocks a CSV run.
+            dual_write = os.environ.get("CANONICAL_DUAL_WRITE", "1").lower() not in (
+                "0", "false", "no", ""
+            )
+            if dual_write:
+                try:
+                    from lib.canonical import upsert_canonical_from_listings
+                    stats = upsert_canonical_from_listings(supabase, batch)
+                    log(
+                        f"  canonical mirror: listings+={stats.listings_upserted} "
+                        f"sellers+={stats.sellers_upserted} "
+                        f"price_history+={stats.price_history_inserted}"
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log(f"  WARN: canonical dual-write failed: {exc}")
+
+            listings_buffer.clear()
 
         def flush_history() -> None:
             if args.skip_history or not history_buffer:
