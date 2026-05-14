@@ -13,6 +13,13 @@ on:
     - cron: '0 9 * * *'   # 9 AM UTC daily
   workflow_dispatch:
 
+# Serialise with scrape-listings-weekly-resync.yml so a manual dispatch
+# or retry storm can't have both running against the same listings rows
+# at the same time.
+concurrency:
+  group: scrape-listings
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
