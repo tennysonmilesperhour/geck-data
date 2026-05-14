@@ -1,0 +1,60 @@
+name: Hourly Listings Delta
+
+# Runs the same DELTA_WALK as scrape-listings-daily.yml, just on an
+# hourly cadence. New listings now show up in `/data-admin` within ~1
+# hour of being posted on MorphMarket instead of ~24 hours.
+#
+# Most hourly runs delta-exit on page 1 (~30s wall, 1 Decodo credit)
+# because no new listings have appeared since the previous hour. On a
+# spike day with >24 listings/hour the walk continues to page 2 or 3
+# until it sees a known listing, costing 2-3 credits for that hour.
+#
+# Cost envelope: ~720-900 credits/month at the steady state we have
+# today (~10-20 new listings/day). Well inside the 19k Decodo cap.
+#
+# Conflicts with scrape-listings-daily.yml at 09:00 UTC and with
+# scrape-listings-weekly-resync.yml at 03:00 UTC Sunday. The shared
+# `scrape-listings` concurrency group serialises them so the second
+# arrival waits its turn; the dupe walks just delta-exit immediately
+# because the first run already bumped last_seen_at on page-1
+# listings. Net waste is ~1 credit/day.
+on:
+  schedule:
+    - cron: '0 * * * *'   # top of every hour, UTC
+  workflow_dispatch:
+
+# Stay grouped with the daily and weekly listings workflows so we
+# never have two scrape_listings runs writing to listings/scrape_runs
+# in parallel.
+concurrency:
+  group: scrape-listings
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # Most runs finish in <60s. The 15-min ceiling fails fast if
+    # Decodo wedges or MorphMarket breaks the recipe again.
+    timeout-minutes: 15
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_listings.py
+        env:
+          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action_hourly
+          DELTA_WALK: '1'
+        working-directory: scripts
+        run: python scrape_listings.py
