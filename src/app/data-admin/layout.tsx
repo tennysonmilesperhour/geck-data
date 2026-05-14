@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/data-admin/morphs", label: "Morphs" },
   { href: "/data-admin/sellers", label: "Sellers" },
   { href: "/data-admin/runs", label: "Scrape runs" },
+  { href: "/data-admin/training", label: "Morph ID training" },
 ];
 
 export default async function DataAdminLayout({
