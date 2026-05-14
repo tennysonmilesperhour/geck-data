@@ -11,7 +11,10 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Decodo headless renders take 30-50s per page; a full ~240-page walk
+    # needs more than 60 min on a single thread. Bumped to 180 until the
+    # script grows concurrency or smart early-exit on already-seen listings.
+    timeout-minutes: 180
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
