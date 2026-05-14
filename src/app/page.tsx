@@ -11,29 +11,44 @@ import WhatsHotPanel from "@/components/landing/WhatsHotPanel";
 import OpportunitiesPanel from "@/components/landing/OpportunitiesPanel";
 import TopSellersPanel from "@/components/landing/TopSellersPanel";
 import DeepDiveCta from "@/components/landing/DeepDiveCta";
+import ScrollytellingSection from "@/components/landing/ScrollytellingSection";
+import { LandingFiltersProvider } from "@/components/landing/LandingFilters";
+import FilterChips from "@/components/landing/FilterChips";
 import { getMarketSnapshot } from "@/lib/landing/snapshot";
+import { getScrollytellingData } from "@/lib/landing/scrollytelling";
 
 export const dynamic = "force-dynamic";
 
 export default async function LandingPage() {
-  const snapshot = await getMarketSnapshot();
+  const [snapshot, scrolly] = await Promise.all([
+    getMarketSnapshot(),
+    getScrollytellingData(),
+  ]);
 
   return (
-    <div className="space-y-8">
-      <HeroBand snapshot={snapshot} />
+    <LandingFiltersProvider>
+      <div className="space-y-12">
+        <HeroBand snapshot={snapshot} />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <WhatsHotPanel combos={snapshot.combos} />
+        <FilterChips />
+
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+          <div className="lg:col-span-3">
+            <WhatsHotPanel combos={snapshot.combos} />
+          </div>
+          <div className="lg:col-span-2">
+            <OpportunitiesPanel opportunities={snapshot.opportunities} />
+          </div>
         </div>
-        <div className="lg:col-span-2">
-          <OpportunitiesPanel opportunities={snapshot.opportunities} />
+
+        <TopSellersPanel sellers={snapshot.top_sellers} />
+
+        <div className="border-y border-ink-700/60 py-12">
+          <ScrollytellingSection data={scrolly} />
         </div>
+
+        <DeepDiveCta />
       </div>
-
-      <TopSellersPanel sellers={snapshot.top_sellers} />
-
-      <DeepDiveCta />
-    </div>
+    </LandingFiltersProvider>
   );
 }
