@@ -15,12 +15,20 @@ type Props = {
 export default function OpportunitiesPanel({ opportunities }: Props) {
   const { selectedCombos, hoveredCombo } = useLandingFilters();
 
+  const { priceBand } = useLandingFilters();
   const filtered = useMemo(() => {
-    if (selectedCombos.size === 0) return opportunities;
-    return opportunities.filter(
-      (o) => o.combo_name && selectedCombos.has(o.combo_name),
-    );
-  }, [opportunities, selectedCombos]);
+    let list = opportunities;
+    if (selectedCombos.size > 0) {
+      list = list.filter(
+        (o) => o.combo_name && selectedCombos.has(o.combo_name),
+      );
+    }
+    if (priceBand) {
+      const [lo, hi] = priceBand;
+      list = list.filter((o) => o.price >= lo && o.price <= hi);
+    }
+    return list;
+  }, [opportunities, selectedCombos, priceBand]);
 
   return (
     <section className="rounded-2xl border border-ink-700 bg-ink-850 p-5 shadow-panel">

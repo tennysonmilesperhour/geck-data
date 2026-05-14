@@ -20,6 +20,8 @@ type SellerDetail = {
   seller_rating_score: number | null;
   total_listings: number | null;
   avg_price: number | null;
+  morph_specialization: string | null;
+  five_star_rating: number | null;
 };
 
 type ListingRow = {
@@ -61,7 +63,7 @@ export default async function SellerDetailPage({
     supabase
       .from("market_sellers")
       .select(
-        "seller_id, seller_name, seller_location, membership, feedback_count, seller_rating_score, total_listings, avg_price",
+        "seller_id, seller_name, seller_location, membership, feedback_count, seller_rating_score, total_listings, avg_price, morph_specialization, five_star_rating",
       )
       .eq("seller_id", sellerId)
       .maybeSingle(),
@@ -119,6 +121,24 @@ export default async function SellerDetailPage({
   const liveCount = listings.filter((l) => l.current_status === "live").length;
   const soldCount = sold.length;
   const medianDays = median(sold.map((s) => s.days_to_sell));
+
+  // Pull recent photos from market_listings → listings join. The scraper
+  // writes primary_image_url onto the listings table (keyed on the raw
+  // numeric listing_id). market_listings.id is the mm_-prefixed form so
+  // we strip the prefix to match.
+  const photoIds = listings.slice(0, 12).map((l) =>
+    l.id.startsWith("mm_") ? l.id.slice(3) : l.id,
+  );
+  let photos: Array<{ listing_id: string; primary_image_url: string | null; name: string | null }> = [];
+  if (photoIds.length > 0) {
+    const photoRes = await supabase
+      .from("listings")
+      .select("listing_id, primary_image_url, name")
+      .in("listing_id", photoIds)
+      .not("primary_image_url", "is", null)
+      .limit(12);
+    photos = (photoRes.data ?? []) as typeof photos;
+  }
 
   const listingColumns: Column<ListingRow>[] = [
     {
@@ -182,14 +202,55 @@ export default async function SellerDetailPage({
         <Link href="/sellers" className="text-sm text-claude hover:underline">
           ← All sellers
         </Link>
-        <h1 className="mt-2 text-xl font-semibold tracking-tight text-ink-50">
-          {seller.seller_name ?? seller.seller_id}
-        </h1>
+        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+          <h1 className="text-xl font-semibold tracking-tight text-ink-50">
+            {seller.seller_name ?? seller.seller_id}
+          </h1>
+          {seller.five_star_rating != null ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
+              ★ {seller.five_star_rating.toFixed(1)}
+            </span>
+          ) : null}
+        </div>
         <p className="mt-1 text-sm text-ink-400">
           {[seller.seller_location, seller.membership].filter(Boolean).join(" · ") ||
             "—"}
         </p>
+        {seller.morph_specialization ? (
+          <p className="mt-1 text-xs text-ink-500">
+            <span className="text-ink-400">Specializes in</span>{" "}
+            <span className="text-ink-200">{seller.morph_specialization}</span>
+          </p>
+        ) : null}
       </div>
+
+      {photos.length > 0 ? (
+        <section>
+          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400">
+            Recent stock
+          </h2>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
+            {photos.map((p) => (
+              <a
+                key={p.listing_id}
+                href={`https://www.morphmarket.com/us/c/reptiles/lizards/crested-geckos/${p.listing_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group relative aspect-square overflow-hidden rounded-md border border-ink-700/60"
+                title={p.name ?? p.listing_id}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.primary_image_url ?? ""}
+                  alt={p.name ?? p.listing_id}
+                  loading="lazy"
+                  className="h-full w-full object-cover transition group-hover:scale-105"
+                />
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Live listings" value={liveCount} tone="positive" />

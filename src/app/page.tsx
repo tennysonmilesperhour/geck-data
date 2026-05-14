@@ -14,6 +14,8 @@ import DeepDiveCta from "@/components/landing/DeepDiveCta";
 import ScrollytellingSection from "@/components/landing/ScrollytellingSection";
 import { LandingFiltersProvider } from "@/components/landing/LandingFilters";
 import FilterChips from "@/components/landing/FilterChips";
+import PriceBandSlider from "@/components/landing/PriceBandSlider";
+import ComboFilter from "@/components/landing/ComboFilter";
 import { getMarketSnapshot } from "@/lib/landing/snapshot";
 import { getScrollytellingData } from "@/lib/landing/scrollytelling";
 
@@ -31,6 +33,16 @@ export default async function LandingPage() {
         <HeroBand snapshot={snapshot} />
 
         <FilterChips />
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <ComboFilter allCombos={snapshot.combos.map((c) => c.combo_name)} />
+          <PriceBandSlider
+            maxPrice={Math.max(
+              snapshot.totals.p75_price ? snapshot.totals.p75_price * 4 : 2500,
+              2500,
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
           <div className="lg:col-span-3">
