@@ -16,10 +16,8 @@ name: Daily Listings Scrape
 # as inactive. Keeping MAX_PAGES=1 is therefore load-bearing for data
 # integrity, not just performance.
 #
-# TODO: Add a separate stale-detection job. scrape_details.py currently
-# only logs a WARN on 404; it should mark listings inactive when their
-# detail page is gone. Without that, listings that sell off page 1 will
-# linger at is_active=true.
+# Stale-detection for listings that sell off page 1 is handled by
+# scrape_details.py: a 404/410 on the detail page flips is_active=false.
 on:
   schedule:
     - cron: '0 9 * * *'   # 9 AM UTC daily
