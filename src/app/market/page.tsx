@@ -30,7 +30,7 @@ export default function MarketPage() {
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-ready/40 bg-ready/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-ready">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-ready shadow-[0_0_0_3px_rgba(74,222,128,0.15)]" />
-            Preview
+            Live
           </span>
         </header>
         <MarketDashboard />

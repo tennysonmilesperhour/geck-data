@@ -5,7 +5,6 @@
 // → Combos; etc.).
 import { useState } from "react";
 import type { Filters, Tab } from "@/lib/market/types";
-import PreviewBanner from "./PreviewBanner";
 import FilterBar from "./FilterBar";
 import TabNav from "./TabNav";
 import OverviewTab from "./tabs/OverviewTab";
@@ -35,7 +34,6 @@ export default function MarketDashboard() {
 
   return (
     <div className="space-y-4">
-      <PreviewBanner />
       <FilterBar filters={filters} onChange={setFilters} />
       <TabNav tab={tab} onChange={setTab} />
 

@@ -191,6 +191,12 @@ def transform_listing(row: dict[str, Any]) -> Optional[dict[str, Any]]:
         "item_origin": _normalize_origin(row.get("origin")),
         "is_sold": is_sold_from_availability(row.get("availability"))
             or (row.get("is_active") is False),
+        "current_status": (
+            "sold"
+            if is_sold_from_availability(row.get("availability"))
+                or (row.get("is_active") is False)
+            else "live"
+        ),
         "is_auction": False,
         "is_on_hold": False,
         "is_renewed": False,
