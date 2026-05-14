@@ -1,7 +1,11 @@
+"use client";
 // Landing hero — the first thing a paying client sees. Four live KPIs
 // (median, count, sellers, hottest combo) plus a one-line market summary.
 // Numbers animate in on first paint via CountUp so the page feels alive,
 // then sit still — no scrolling tickers, no churn.
+//
+// Marked "use client" because CountUp accepts a `format` function prop;
+// passing functions across the server→client boundary isn't allowed.
 import Link from "next/link";
 import CountUp from "./CountUp";
 import { fmtUsd, fmtInt } from "@/lib/format";
