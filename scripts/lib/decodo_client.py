@@ -18,7 +18,7 @@ import random
 import sys
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -85,15 +85,33 @@ class DecodoClient:
         geo: str = "United States",
         max_retries: int = 5,
         timeout_seconds: int = 60,
+        proxy_pool: Optional[str] = None,
+        browser_actions: Optional[list[dict[str, Any]]] = None,
     ) -> DecodoResponse:
         """Fetch one URL through Decodo with retries on 429 and 5xx.
 
         headless='html' triggers a real browser render (Premium+JS quota).
         For pages that work without JS, pass headless=None to save credits.
+
+        proxy_pool='premium' upgrades to the premium proxy tier. Required
+        for MorphMarket's listing grid; the default residential tier gets
+        soft-blocked into returning page-1 content for every ?page=N URL.
+
+        browser_actions is a list of post-render Decodo steps, e.g.:
+            [{"type": "wait", "wait_time_s": 5},
+             {"type": "scroll_to_bottom", "timeout_s": 10},
+             {"type": "wait", "wait_time_s": 3}]
+        Required for MorphMarket's grid so the React app has time to
+        hydrate and lay out the full set of listings before Decodo
+        snapshots the DOM.
         """
-        payload: dict = {"url": url, "geo": geo}
+        payload: dict[str, Any] = {"url": url, "geo": geo}
         if headless:
             payload["headless"] = headless
+        if proxy_pool:
+            payload["proxy_pool"] = proxy_pool
+        if browser_actions:
+            payload["browser_actions"] = browser_actions
 
         attempt = 0
         last_exc: Optional[Exception] = None

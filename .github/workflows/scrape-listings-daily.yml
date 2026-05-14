@@ -1,23 +1,13 @@
 name: Daily Listings Scrape
 
-# MAX_PAGES is pinned to 1 because MorphMarket's grid SSR no longer
-# paginates by ?page=N: the JSON-LD ItemList on every grid URL contains
-# the same first 24 listings regardless of which page was requested.
-# Pagination is React + a CSRF-protected /api/v1/animals/ call that
-# Decodo can't replay (it gets a 613 "could not scrape" response).
-#
-# Page 1 is sorted newest-first, so a daily delta against page 1 still
-# captures every freshly listed animal as long as MorphMarket adds
-# fewer than ~24 new listings/day. Recent rate has been 5-20/day.
-#
-# The script's MAX_PAGES env var also disables the
-# `mark_unseen_listings_inactive` sweep at the end of the run, which
-# otherwise would flag every listing beyond page 1 (the entire catalog)
-# as inactive. Keeping MAX_PAGES=1 is therefore load-bearing for data
-# integrity, not just performance.
-#
-# Stale-detection for listings that sell off page 1 is handled by
-# scrape_details.py: a 404/410 on the detail page flips is_active=false.
+# Walks the MorphMarket crested-geckos grid in delta mode: scan pages
+# newest-first, upsert each, stop once a whole page is already in the
+# DB. Mirrors the recipe that the original Desktop/geckscrape archive
+# proved out (ordering=-first_posted URL + premium proxy + the
+# wait/scroll_to_bottom/wait browser_actions sequence). The
+# mark_unseen_listings_inactive sweep stays off in delta mode; sold
+# listings get flipped to is_active=false by scrape_details.py when
+# their detail page returns 404 or 410.
 on:
   schedule:
     - cron: '0 9 * * *'   # 9 AM UTC daily
@@ -26,7 +16,10 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Most daily walks stop after 1-3 pages once the early-exit hits.
+    # The ceiling protects us if MorphMarket changes their grid again
+    # and the script can't recognise already-seen rows.
+    timeout-minutes: 60
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -46,6 +39,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TRIGGERED_BY: github_action
-          MAX_PAGES: '1'
+          DELTA_WALK: '1'
         working-directory: scripts
         run: python scrape_listings.py
