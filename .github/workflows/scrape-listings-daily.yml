@@ -1,8 +1,28 @@
 name: Daily Listings Scrape
 
-# IMPORTANT: schedule is intentionally commented out. Enable only after a
-# successful workflow_dispatch run so a misconfigured workflow does not
-# burn Decodo credits at 9 AM every day.
+# IMPORTANT: schedule stays commented out until a workflow_dispatch run
+# against main has succeeded under the current configuration.
+#
+# MAX_PAGES is pinned to 1 because MorphMarket's grid SSR no longer
+# paginates by ?page=N: the JSON-LD ItemList on every grid URL contains
+# the same first 24 listings regardless of which page was requested.
+# Pagination is React + a CSRF-protected /api/v1/animals/ call that
+# Decodo can't replay (it gets a 613 "could not scrape" response).
+#
+# Page 1 is sorted newest-first, so a daily delta against page 1 still
+# captures every freshly listed animal as long as MorphMarket adds
+# fewer than ~24 new listings/day. Recent rate has been 5-20/day.
+#
+# The script's MAX_PAGES env var also disables the
+# `mark_unseen_listings_inactive` sweep at the end of the run, which
+# otherwise would flag every listing beyond page 1 (the entire catalog)
+# as inactive. Keeping MAX_PAGES=1 is therefore load-bearing for data
+# integrity, not just performance.
+#
+# TODO: Add a separate stale-detection job. scrape_details.py currently
+# only logs a WARN on 404; it should mark listings inactive when their
+# detail page is gone. Without that, listings that sell off page 1 will
+# linger at is_active=true.
 on:
   # schedule:
   #   - cron: '0 9 * * *'   # 9 AM UTC daily
@@ -11,10 +31,7 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    # Decodo headless renders take 30-50s per page; a full ~240-page walk
-    # needs more than 60 min on a single thread. Bumped to 180 until the
-    # script grows concurrency or smart early-exit on already-seen listings.
-    timeout-minutes: 180
+    timeout-minutes: 15
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -34,5 +51,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TRIGGERED_BY: github_action
+          MAX_PAGES: '1'
         working-directory: scripts
         run: python scrape_listings.py
