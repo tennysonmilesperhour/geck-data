@@ -24,7 +24,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lib.decodo_client import DecodoClient
 from lib.supabase_client import get_supabase
@@ -38,10 +38,25 @@ from transform_and_load import (
 WORKER_COUNT = 3
 PER_WORKER_DELAY_SECONDS = 2.0
 
+# Detail page status codes that mean the listing is permanently gone
+# (sold, removed, expired). Anything else — 403 bot block, 5xx hiccup —
+# is treated as transient and the listing stays active for a retry on
+# the next pass.
+DEACTIVATE_STATUSES = frozenset({404, 410})
+
 JSONLD_RE = re.compile(
     r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
     re.DOTALL,
 )
+
+
+class FetchResult(NamedTuple):
+    """One of: upsert a refreshed row, deactivate a gone listing, or skip."""
+
+    action: str  # "upsert" | "deactivate" | "skip"
+    listing_id: str
+    row: Optional[dict[str, Any]] = None
+    reason: Optional[str] = None
 
 
 def log(message: str) -> None:
@@ -92,28 +107,44 @@ def finalise_scrape_run(
 def fetch_listing_detail(
     decodo: DecodoClient,
     listing: dict[str, Any],
-) -> Optional[dict[str, Any]]:
-    """Scrape one listing's detail page. Returns the parsed row or None.
+) -> FetchResult:
+    """Scrape one listing's detail page.
+
+    Returns a FetchResult describing what the caller should do:
+      - upsert:     the listing is still up; payload row is in `.row`
+      - deactivate: MorphMarket returned 404/410 — listing is gone
+      - skip:       transient error; leave the row alone, try next pass
 
     The per-worker delay is implemented here (time.sleep before fetch) so
     each worker pauses individually; the global rate cap in DecodoClient
     keeps total throughput safe.
     """
     time.sleep(PER_WORKER_DELAY_SECONDS)
+    listing_id = str(listing.get("listing_id") or "")
     url = listing.get("listing_url")
     if not url:
-        log(f"skip {listing.get('listing_id')}: no listing_url")
-        return None
+        log(f"skip {listing_id}: no listing_url")
+        return FetchResult(action="skip", listing_id=listing_id, reason="no_url")
     resp = decodo.fetch(url, headless="html")
-    if resp.status_code != 200:
-        log(
-            f"WARN listing {listing.get('listing_id')} status={resp.status_code}"
+    if resp.status_code in DEACTIVATE_STATUSES:
+        log(f"listing {listing_id} status={resp.status_code}; marking inactive")
+        return FetchResult(
+            action="deactivate",
+            listing_id=listing_id,
+            reason=f"status_{resp.status_code}",
         )
-        return None
+    if resp.status_code != 200:
+        log(f"WARN listing {listing_id} status={resp.status_code}")
+        return FetchResult(
+            action="skip",
+            listing_id=listing_id,
+            reason=f"status_{resp.status_code}",
+        )
     parsed = parse_detail_html(resp.html, listing_id=listing["listing_id"])
-    if parsed:
-        parsed["listing_url"] = url
-    return parsed
+    if not parsed:
+        return FetchResult(action="skip", listing_id=listing_id, reason="no_jsonld")
+    parsed["listing_url"] = url
+    return FetchResult(action="upsert", listing_id=listing_id, row=parsed)
 
 
 def parse_detail_html(html: str, *, listing_id: str) -> Optional[dict[str, Any]]:
@@ -211,6 +242,35 @@ def parse_detail_html(html: str, *, listing_id: str) -> Optional[dict[str, Any]]
     return {k: v for k, v in row.items() if v is not None}
 
 
+def deactivate_listing(supabase, run_id: int, listing_id: str, reason: str) -> None:
+    """Mark a listing inactive and append a history row noting the cause.
+
+    Both writes are best-effort: a transient Supabase failure during
+    deactivation should not block the rest of the run. The listing will
+    show up again in listings_needing_detail_scrape next time and we'll
+    retry the deactivation then.
+    """
+    now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+    try:
+        supabase.table("listings").update(
+            {"is_active": False, "last_updated_at": now_iso}
+        ).eq("listing_id", listing_id).execute()
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN deactivate update failed for {listing_id}: {exc}")
+        return
+    try:
+        supabase.table("listings_history").insert(
+            {
+                "listing_id": listing_id,
+                "scrape_run_id": run_id,
+                "is_active": False,
+                "raw_snapshot": {"reason": reason},
+            }
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN deactivate history insert failed for {listing_id}: {exc}")
+
+
 def main() -> int:
     max_listings_env = os.environ.get("MAX_LISTINGS")
     max_listings = int(max_listings_env) if max_listings_env else None
@@ -222,6 +282,7 @@ def main() -> int:
     attempted = 0
     succeeded = 0
     failed = 0
+    deactivated = 0
 
     try:
         log("calling listings_needing_detail_scrape()")
@@ -253,42 +314,53 @@ def main() -> int:
                 listing = futures[future]
                 attempted += 1
                 try:
-                    row = future.result()
+                    result = future.result()
                 except Exception as exc:  # noqa: BLE001
                     log(f"ERROR listing {listing.get('listing_id')}: {exc}")
                     failed += 1
                     continue
 
-                if not row:
-                    failed += 1
-                    continue
-
-                try:
-                    supabase.table("listings").upsert(
-                        row, on_conflict="listing_id"
-                    ).execute()
-                    supabase.table("listings_history").insert(
-                        {
-                            "listing_id": row["listing_id"],
-                            "scrape_run_id": run_id,
-                            "price": row.get("price"),
-                            "is_active": True,
-                            "raw_snapshot": row,
-                        }
-                    ).execute()
-                    succeeded += 1
-                except Exception as exc:  # noqa: BLE001
-                    log(
-                        f"WARN write failed for {row.get('listing_id')}: {exc}"
+                if result.action == "deactivate":
+                    deactivate_listing(
+                        supabase, run_id, result.listing_id, result.reason or "gone"
                     )
+                    deactivated += 1
+                    succeeded += 1
+                elif result.action == "upsert" and result.row:
+                    row = result.row
+                    try:
+                        supabase.table("listings").upsert(
+                            row, on_conflict="listing_id"
+                        ).execute()
+                        supabase.table("listings_history").insert(
+                            {
+                                "listing_id": row["listing_id"],
+                                "scrape_run_id": run_id,
+                                "price": row.get("price"),
+                                "is_active": True,
+                                "raw_snapshot": row,
+                            }
+                        ).execute()
+                        succeeded += 1
+                    except Exception as exc:  # noqa: BLE001
+                        log(
+                            f"WARN write failed for {row.get('listing_id')}: {exc}"
+                        )
+                        failed += 1
+                else:
+                    # skip: transient error or unparseable page; try next pass
                     failed += 1
 
                 if attempted % 25 == 0:
                     log(
                         f"progress: attempted={attempted} succeeded={succeeded} "
-                        f"failed={failed}"
+                        f"deactivated={deactivated} failed={failed}"
                     )
 
+        log(
+            f"final tally: attempted={attempted} succeeded={succeeded} "
+            f"deactivated={deactivated} failed={failed}"
+        )
         status = "success" if failed == 0 else "partial"
         finalise_scrape_run(
             supabase,
