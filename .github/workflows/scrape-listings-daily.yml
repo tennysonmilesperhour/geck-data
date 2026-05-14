@@ -1,8 +1,5 @@
 name: Daily Listings Scrape
 
-# IMPORTANT: schedule stays commented out until a workflow_dispatch run
-# against main has succeeded under the current configuration.
-#
 # MAX_PAGES is pinned to 1 because MorphMarket's grid SSR no longer
 # paginates by ?page=N: the JSON-LD ItemList on every grid URL contains
 # the same first 24 listings regardless of which page was requested.
@@ -24,8 +21,8 @@ name: Daily Listings Scrape
 # detail page is gone. Without that, listings that sell off page 1 will
 # linger at is_active=true.
 on:
-  # schedule:
-  #   - cron: '0 9 * * *'   # 9 AM UTC daily
+  schedule:
+    - cron: '0 9 * * *'   # 9 AM UTC daily
   workflow_dispatch:
 
 jobs:
