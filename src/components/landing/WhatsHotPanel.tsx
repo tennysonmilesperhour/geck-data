@@ -1,10 +1,13 @@
+"use client";
 // What's Hot — top combos ranked by current activity (live + sold count).
-// Visual rank bars proportional to total volume so the eye can scan the
-// distribution at a glance. Each row deep-links into the Combos tab on
-// /market preloaded with that combo selected.
+// Visual rank bars proportional to total volume. Click a row to pin it as
+// an active filter; the Opportunities panel listens to the same context.
+// Hovering a row writes hoveredCombo into the shared filter state for
+// cross-widget linking.
 import Link from "next/link";
 import { fmtUsd, fmtInt } from "@/lib/format";
 import type { ComboSnapshot } from "@/lib/landing/snapshot";
+import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
   combos: ComboSnapshot[];
@@ -12,6 +15,9 @@ type Props = {
 };
 
 export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
+  const { hoveredCombo, selectedCombos, toggleCombo, setHoveredCombo } =
+    useLandingFilters();
+
   const rows = combos.slice(0, limit);
   const maxVolume = Math.max(
     ...rows.map((c) => c.live_count + c.sold_count),
@@ -29,7 +35,7 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
             What&apos;s hot
           </h2>
           <p className="mt-1 text-xs text-ink-400">
-            Top combos by current activity — live listings plus recent sales.
+            Top combos by current activity. <span className="text-ink-300">Click</span> to filter the page.
           </p>
         </div>
         <Link
@@ -49,15 +55,30 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
           rows.map((combo, idx) => {
             const total = combo.live_count + combo.sold_count;
             const widthPct = Math.max(4, (total / maxVolume) * 100);
+            const isSelected = selectedCombos.has(combo.combo_name);
+            const isHovered = hoveredCombo === combo.combo_name;
             return (
               <li key={combo.combo_name}>
-                <Link
-                  href={`/market?combo=${encodeURIComponent(combo.combo_name)}`}
-                  className="group relative block overflow-hidden rounded-md border border-ink-700/60 bg-ink-900/40 px-3 py-2.5 transition hover:border-emerald-500/40 hover:bg-ink-800/60"
+                <button
+                  type="button"
+                  onClick={() => toggleCombo(combo.combo_name)}
+                  onMouseEnter={() => setHoveredCombo(combo.combo_name)}
+                  onMouseLeave={() => setHoveredCombo(null)}
+                  className={`group relative block w-full overflow-hidden rounded-md border px-3 py-2.5 text-left transition ${
+                    isSelected
+                      ? "border-emerald-500/60 bg-emerald-500/[0.08]"
+                      : isHovered
+                        ? "border-emerald-500/30 bg-ink-800/60"
+                        : "border-ink-700/60 bg-ink-900/40 hover:border-emerald-500/30 hover:bg-ink-800/60"
+                  }`}
                 >
                   <div
                     aria-hidden
-                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500/[0.06] to-emerald-500/0 transition-all"
+                    className={`absolute inset-y-0 left-0 transition-all ${
+                      isSelected
+                        ? "bg-gradient-to-r from-emerald-500/15 to-emerald-500/0"
+                        : "bg-gradient-to-r from-emerald-500/[0.06] to-emerald-500/0"
+                    }`}
                     style={{ width: `${widthPct}%` }}
                   />
                   <div className="relative flex items-center justify-between gap-3">
@@ -65,7 +86,9 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
                       <span className="w-5 font-mono text-[10px] text-ink-500">
                         {String(idx + 1).padStart(2, "0")}
                       </span>
-                      <span className="font-medium text-ink-100">
+                      <span
+                        className={`font-medium ${isSelected ? "text-emerald-100" : "text-ink-100"}`}
+                      >
                         {combo.combo_name}
                       </span>
                     </div>
@@ -84,7 +107,7 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
                       <ConfidenceBadge score={combo.confidence_score} />
                     </div>
                   </div>
-                </Link>
+                </button>
               </li>
             );
           })
