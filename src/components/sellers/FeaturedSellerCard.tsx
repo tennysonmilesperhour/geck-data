@@ -1,9 +1,11 @@
 // Editorial-style featured-seller card. Used on the /sellers index
 // directly above the full data table. Each card hover-lifts and links
 // to /sellers/[id]. Designed to read at-a-glance: name + region +
-// inventory size + plan tier.
+// inventory size + plan tier + a 30-day activity sparkline so the
+// numbers have shape.
 import Link from "next/link";
 import SellerInitials from "./SellerInitials";
+import MiniSparkline from "@/components/charts/MiniSparkline";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
 export type FeaturedSeller = {
@@ -18,12 +20,16 @@ export type FeaturedSeller = {
 
 export default function FeaturedSellerCard({
   seller,
+  daily,
 }: {
   seller: FeaturedSeller;
+  /** 30 daily new-listing counts for this seller, oldest first. */
+  daily?: number[];
 }) {
   const name = seller.seller_name ?? seller.seller_id;
   const plan = (seller.membership ?? "").trim();
   const rating = seller.seller_rating_score;
+  const hasActivity = daily && daily.some((v) => v > 0);
 
   return (
     <Link
@@ -57,6 +63,20 @@ export default function FeaturedSellerCard({
           value={rating != null ? rating.toFixed(2) : "—"}
         />
       </div>
+
+      {hasActivity ? (
+        <div className="mt-5 border-t border-ink-700/60 pt-3">
+          <div className="mb-1 flex items-baseline justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-500">
+              new listings · 30d
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-ink-300">
+              {fmtInt(daily!.reduce((a, b) => a + b, 0))}
+            </span>
+          </div>
+          <MiniSparkline values={daily!} width={232} height={28} fill />
+        </div>
+      ) : null}
     </Link>
   );
 }
