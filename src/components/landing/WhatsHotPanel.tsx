@@ -5,10 +5,11 @@
 // Hovering a row writes hoveredCombo into the shared filter state for
 // cross-widget linking.
 import Link from "next/link";
-import { fmtUsd, fmtInt } from "@/lib/format";
+import { fmtUsd } from "@/lib/format";
 import type { ComboSnapshot } from "@/lib/landing/snapshot";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import MorphTerm from "@/components/morphs/MorphTerm";
+import PopulationBadge from "@/components/morphs/PopulationBadge";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { useLandingFilters } from "./LandingFilters";
 
@@ -110,13 +111,11 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                           />
                         </span>
                       ) : null}
-                      <span>
-                        <span className="text-ink-500">live </span>
-                        {fmtInt(combo.live_count)}
-                      </span>
                       <span className="hidden md:inline">
-                        <span className="text-ink-500">sold </span>
-                        {fmtInt(combo.sold_count)}
+                        <PopulationBadge
+                          live={combo.live_count}
+                          sold={combo.sold_count}
+                        />
                       </span>
                       <span className="text-ink-100">
                         {combo.median_ask ? fmtUsd(combo.median_ask) : "—"}
