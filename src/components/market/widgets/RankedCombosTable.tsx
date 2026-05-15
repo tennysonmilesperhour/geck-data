@@ -7,6 +7,7 @@ import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
+import MorphTerm from "@/components/morphs/MorphTerm";
 import type { ComboRow, ComboRankSort } from "@/lib/market/fixtures";
 
 export default function RankedCombosTable({
@@ -101,7 +102,10 @@ export default function RankedCombosTable({
                   }`}
                 >
                   <td className="px-3 py-3 align-top">
-                    <div className="font-medium text-forest-50">{r.combo}</div>
+                    <MorphTerm
+                      name={r.combo}
+                      className="font-medium text-forest-50"
+                    />
                     <div className="font-mono text-[10px] text-forest-500">
                       {r.traits[0]} · {r.traits[1]}
                     </div>
