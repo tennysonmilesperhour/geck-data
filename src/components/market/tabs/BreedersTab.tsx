@@ -12,7 +12,7 @@ import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
-import { Sparkline } from "@/components/market/charts/InlineCharts";
+import MiniSparkline from "@/components/charts/MiniSparkline";
 
 export default function BreedersTab({
   filters,
@@ -109,7 +109,7 @@ export default function BreedersTab({
                     {r.avgDaysToSell}d
                   </td>
                   <td className="px-3 py-3 align-middle">
-                    <Sparkline values={r.velocity} width={84} height={20} />
+                    <MiniSparkline values={r.velocity} width={84} height={20} />
                   </td>
                   <td className="px-3 py-3 align-middle">
                     <button
