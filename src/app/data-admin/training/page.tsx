@@ -228,8 +228,14 @@ export default async function MorphIdTrainingPage() {
       </section>
 
       <section>
-        <h3 className="mb-3 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400">
-          Connect to geck-inspect Morph ID
+        <h3 className="mb-3 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400">
+          <span>Connect to geck-inspect Morph ID</span>
+          <Link
+            href="/data-admin/training/evals"
+            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/20"
+          >
+            View eval runs →
+          </Link>
         </h3>
         <div className="rounded-xl border border-ink-700 bg-ink-850 p-5 text-sm">
           <p className="text-ink-300">
