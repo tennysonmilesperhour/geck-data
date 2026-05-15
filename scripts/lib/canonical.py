@@ -303,6 +303,7 @@ class CanonicalWriteStats:
         self.sellers_failed = 0
         self.price_history_inserted = 0
         self.price_history_failed = 0
+        self.price_drops_inserted = 0
         self.skipped_no_id = 0
 
     def as_dict(self) -> dict[str, int]:
@@ -313,6 +314,7 @@ class CanonicalWriteStats:
             "market_sellers_failed": self.sellers_failed,
             "price_history_inserted": self.price_history_inserted,
             "price_history_failed": self.price_history_failed,
+            "price_drops_inserted": self.price_drops_inserted,
             "skipped_no_id": self.skipped_no_id,
         }
 
@@ -363,6 +365,24 @@ def upsert_canonical_from_listings(
     deduped_listings = {p["id"]: p for p in listings_payloads}
     listings_batch = list(deduped_listings.values())
 
+    # 0. Snapshot old prices so we can detect price drops AFTER the upsert.
+    # Without this, the Daily Log's "Price drops" card stays empty because
+    # nothing else writes to public.price_drops since the extension stopped.
+    old_prices: dict[str, float] = {}
+    if listings_batch:
+        try:
+            ids = [p["id"] for p in listings_batch]
+            for sub in _chunked(ids, 200):
+                res = supabase.table("market_listings").select(
+                    "id, price"
+                ).in_("id", sub).execute()
+                for row in (res.data or []):
+                    if row.get("price") is not None:
+                        old_prices[row["id"]] = float(row["price"])
+        except APIError as exc:
+            if logger:
+                logger.warning(f"old-price snapshot failed: {exc}")
+
     # 1. market_sellers first (FK target of market_listings.seller_id, if any)
     for batch in _chunked(list(sellers_by_id.values()), MARKET_SELLER_BATCH):
         try:
@@ -403,5 +423,50 @@ def upsert_canonical_from_listings(
                 logger.warning(
                     f"price_history insert failed ({len(batch)} rows): {exc}"
                 )
+
+    # 4. price_drops — one row per listing whose price moved DOWN. Uses the
+    #    pre-upsert snapshot so we don't compare against the post-upsert
+    #    value. Threshold: require a >= 1% drop AND >= $1 absolute drop to
+    #    cut noise from rounding.
+    if old_prices:
+        drops: list[dict[str, Any]] = []
+        now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+        for p in listings_batch:
+            new_price = p.get("price")
+            if new_price is None:
+                continue
+            try:
+                new_f = float(new_price)
+            except (TypeError, ValueError):
+                continue
+            old_f = old_prices.get(p["id"])
+            if old_f is None or old_f <= 0:
+                continue
+            if new_f >= old_f:
+                continue
+            abs_drop = old_f - new_f
+            pct = (abs_drop / old_f) * 100.0
+            if abs_drop < 1.0 or pct < 1.0:
+                continue
+            drops.append({
+                "listing_id":  p["id"],
+                "old_price":   round(old_f, 2),
+                "new_price":   round(new_f, 2),
+                "old_price_usd": round(old_f, 2) if (p.get("price_usd_equivalent") is not None) else None,
+                "new_price_usd": round(new_f, 2) if (p.get("price_usd_equivalent") is not None) else None,
+                "currency":    "USD",
+                "pct_change":  round(-pct, 2),
+                "observed_at": now_iso,
+                "source":      "scraper",
+            })
+        for batch in _chunked(drops, PRICE_HISTORY_BATCH):
+            try:
+                supabase.table("price_drops").insert(batch).execute()
+                stats.price_drops_inserted += len(batch)
+            except APIError as exc:
+                if logger:
+                    logger.warning(
+                        f"price_drops insert failed ({len(batch)} rows): {exc}"
+                    )
 
     return stats
