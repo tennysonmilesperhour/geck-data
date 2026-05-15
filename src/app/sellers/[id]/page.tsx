@@ -9,6 +9,8 @@ import TimeSeriesLine, {
   type ChartEvent,
   type Series,
 } from "@/components/charts/TimeSeriesLine";
+import SellerPercentile from "@/components/sellers/SellerPercentile";
+import TimeOnMarketHistogram from "@/components/sellers/TimeOnMarketHistogram";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -62,7 +64,14 @@ export default async function SellerDetailPage({
   const supabase = createClient();
   const sellerId = params.id;
 
-  const [sellerRes, listingsRes, snapshotsRes, soldRes] = await Promise.all([
+  const [
+    sellerRes,
+    listingsRes,
+    snapshotsRes,
+    soldRes,
+    marketSellerMediansRes,
+    marketDaysToSellRes,
+  ] = await Promise.all([
     supabase
       .from("market_sellers")
       .select(
@@ -90,6 +99,21 @@ export default async function SellerDetailPage({
       .eq("seller_id", sellerId)
       .order("sold_at", { ascending: false })
       .limit(100),
+    // Reference distributions for the percentile + time-on-market
+    // panels. avg_price on market_sellers is the materialised median
+    // listing price per seller; we only need positive, in-range
+    // values to anchor the percentile bar.
+    supabase
+      .from("market_sellers")
+      .select("avg_price")
+      .gt("avg_price", 0)
+      .lt("avg_price", 10000)
+      .limit(5000),
+    supabase
+      .from("sold_listings_v")
+      .select("days_to_sell")
+      .gte("days_to_sell", 0)
+      .limit(5000),
   ]);
 
   if (sellerRes.error) {
@@ -124,6 +148,29 @@ export default async function SellerDetailPage({
   const liveCount = listings.filter((l) => l.current_status === "live").length;
   const soldCount = sold.length;
   const medianDays = median(sold.map((s) => s.days_to_sell));
+
+  // For the percentile widget: compute this seller's median listing
+  // price from live + recent listings rather than trusting the
+  // materialised avg_price column, which lags. Falls back to
+  // seller.avg_price when there are too few priced listings on this
+  // page's slice.
+  const sellerListingPrices = listings
+    .map((l) => l.price_usd_equivalent ?? l.price)
+    .filter((p): p is number => typeof p === "number" && p > 0 && p < 10_000);
+  const sellerMedian =
+    sellerListingPrices.length >= 3
+      ? median(sellerListingPrices) ?? 0
+      : seller.avg_price ?? 0;
+  const marketSellerMedians = (marketSellerMediansRes.data ?? [])
+    .map((r) => Number(r.avg_price))
+    .filter((n) => Number.isFinite(n) && n > 0 && n < 10_000);
+
+  const sellerDaysToSell = sold
+    .map((s) => s.days_to_sell)
+    .filter((d): d is number => typeof d === "number" && d >= 0);
+  const marketDaysToSell = (marketDaysToSellRes.data ?? [])
+    .map((r) => Number(r.days_to_sell))
+    .filter((n) => Number.isFinite(n) && n >= 0);
 
   // Derive a small set of annotations from the seller's own data so
   // the snapshot trend chart is self-narrating. First scrape marks
@@ -317,6 +364,17 @@ export default async function SellerDetailPage({
           value={medianDays != null ? `${Math.round(medianDays)} d` : "—"}
         />
         <KpiCard label="Feedback" value={fmtInt(seller.feedback_count)} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SellerPercentile
+          sellerMedian={sellerMedian}
+          marketMedians={marketSellerMedians}
+        />
+        <TimeOnMarketHistogram
+          sellerDays={sellerDaysToSell}
+          marketDays={marketDaysToSell}
+        />
       </div>
 
       <Panel
