@@ -11,12 +11,14 @@
 // until we have real expo / breeder-release data to surface.
 import {
   fetchMarketIndex,
+  fetchMarketSubIndices,
   fetchPeakIndicators,
   fetchTopMovers,
 } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import type { Filters, SourceId } from "@/lib/market/types";
 import MarketIndexCard from "@/components/market/widgets/MarketIndexCard";
+import MarketSubIndices from "@/components/market/widgets/MarketSubIndices";
 import TopMoversPanel from "@/components/market/widgets/TopMoversPanel";
 import PeakIndicatorGrid from "@/components/market/widgets/PeakIndicatorGrid";
 
@@ -30,6 +32,11 @@ export default function OverviewTab({
   onSelectCombo?: (combo: string) => void;
 }) {
   const indexQ = useFilteredQuery(fetchMarketIndex, filters, [] as const);
+  const subIndicesQ = useFilteredQuery(
+    fetchMarketSubIndices,
+    filters,
+    [] as const,
+  );
   const moversQ = useFilteredQuery(fetchTopMovers, filters, [] as const);
   const peaksQ = useFilteredQuery(fetchPeakIndicators, filters, [] as const);
 
@@ -60,6 +67,15 @@ export default function OverviewTab({
           Loading Market Index…
         </div>
       )}
+
+      {subIndicesQ.data && subIndicesQ.data.length > 0 ? (
+        <MarketSubIndices
+          data={subIndicesQ.data}
+          onSelectCombo={onSelectCombo}
+          status={subIndicesQ.status}
+          note={subIndicesQ.note}
+        />
+      ) : null}
 
       {moversQ.data ? (
         <TopMoversPanel

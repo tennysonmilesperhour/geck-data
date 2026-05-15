@@ -124,6 +124,61 @@ function timeIndexLabel(tf: Timeframe, i: number, n: number): string {
 }
 
 // ----------------------------------------------------------------------------
+// Market Sub-Indices — per-morph indices that compose the basket. The
+// basket index above is one number; this is the same shape rendered
+// for each of the four anchor morphs so /market can show "what's
+// dragging up vs what's holding steady." Same fixture seeding so the
+// small-multiples render deterministically and the screenshot doesn't
+// drift between page loads.
+// ----------------------------------------------------------------------------
+export const SUB_INDEX_MORPHS = [
+  "Lilly White",
+  "Harlequin",
+  "Axanthic",
+  "Cappuccino",
+] as const;
+export type SubIndexMorph = (typeof SUB_INDEX_MORPHS)[number];
+
+export type MarketSubIndex = {
+  morph: SubIndexMorph;
+  value: number;
+  deltaPct: number;
+  series: IndexPoint[];
+  attribution: Attribution;
+};
+
+export function getMarketSubIndices(f: Filters): MarketSubIndex[] {
+  const n = Math.max(12, TIMEFRAME_MONTHS[f.timeframe] * 4);
+  return SUB_INDEX_MORPHS.map((morph, morphIdx) => {
+    const rand = mulberry32(seedFor(f, `sub-index-${morph}`));
+    // Per-morph drift bias so the four indices don't all trend the
+    // same way — Lilly White picks up steam, Harlequin holds, Axanthic
+    // ticks down slightly, Cappuccino oscillates around flat.
+    const driftBias = [0.012, 0.004, -0.002, 0.001][morphIdx]!;
+    const series: IndexPoint[] = [];
+    let v = 1000;
+    for (let i = 0; i < n; i++) {
+      const noise = (rand() - 0.5) * 0.07;
+      v = v * (1 + driftBias + noise);
+      series.push({
+        t: timeIndexLabel(f.timeframe, i, n),
+        v: Math.round(v),
+      });
+    }
+    const value = series[series.length - 1]!.v;
+    const start = series[0]!.v;
+    const deltaPct = ((value - start) / start) * 100;
+    return {
+      morph,
+      value,
+      deltaPct,
+      series,
+      attribution: synthesizeAttribution(f, rand, 4, 55),
+    };
+  });
+}
+
+// ----------------------------------------------------------------------------
 // Top Movers — combos with the biggest % swings in the window.
 // ----------------------------------------------------------------------------
 export type Mover = {
