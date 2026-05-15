@@ -16,6 +16,7 @@ import { LandingFiltersProvider } from "@/components/landing/LandingFilters";
 import FilterChips from "@/components/landing/FilterChips";
 import PriceBandSlider from "@/components/landing/PriceBandSlider";
 import ComboFilter from "@/components/landing/ComboFilter";
+import SectionOrnament from "@/components/ui/SectionOrnament";
 import { getMarketSnapshot } from "@/lib/landing/snapshot";
 import { getScrollytellingData } from "@/lib/landing/scrollytelling";
 
@@ -55,9 +56,11 @@ export default async function LandingPage() {
 
         <TopSellersPanel sellers={snapshot.top_sellers} />
 
-        <div className="border-y border-ink-700/60 py-12">
-          <ScrollytellingSection data={scrolly} />
-        </div>
+        <SectionOrnament variant="leaf" />
+
+        <ScrollytellingSection data={scrolly} />
+
+        <SectionOrnament variant="diamond" />
 
         <DeepDiveCta />
       </div>
