@@ -4,6 +4,7 @@
 import ChartGrid from "@/components/charts/ChartGrid";
 import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
+import DataFreshness from "@/components/ui/DataFreshness";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import SoldPriceDistribution from "@/components/sold/SoldPriceDistribution";
@@ -58,6 +59,7 @@ export default async function SoldPage() {
         eyebrow="Outcomes"
         title="Sold"
         description="Listings that have flipped from live to sold — either explicitly captured by the extension or inferred from absence."
+        right={<DataFreshness updatedAt={Date.now()} window="all time" />}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

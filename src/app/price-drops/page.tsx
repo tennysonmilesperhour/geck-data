@@ -4,6 +4,7 @@ import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
+import DataFreshness from "@/components/ui/DataFreshness";
 import DropAnalytics from "@/components/price-drops/DropAnalytics";
 import { createClient } from "@/lib/supabase/server";
 import { fmtPct, fmtRelative, fmtUsd } from "@/lib/format";
@@ -130,6 +131,7 @@ export default async function PriceDropsPage() {
         eyebrow="Signals"
         title="Price drops"
         description="Explicit price reductions the extension captured on revisit."
+        right={<DataFreshness updatedAt={Date.now()} window="30 days" />}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

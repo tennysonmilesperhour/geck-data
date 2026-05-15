@@ -16,6 +16,7 @@ import FeaturedSellerCard, {
 import LocationDistribution from "@/components/sellers/LocationDistribution";
 import SellerInitials from "@/components/sellers/SellerInitials";
 import MiniSparkline from "@/components/charts/MiniSparkline";
+import DataFreshness from "@/components/ui/DataFreshness";
 import { getSellerDailyActivity } from "@/lib/sellers/activity";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +139,7 @@ export default async function SellersPage() {
         eyebrow="Directory"
         title="Every breeder, ranked"
         description={`${fmtInt(rows.length)} sellers tracked across the catalog. The top six are spotlighted below; the rest are sortable in the table. Click any name for their full history.`}
+        right={<DataFreshness updatedAt={Date.now()} window="30 days" />}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

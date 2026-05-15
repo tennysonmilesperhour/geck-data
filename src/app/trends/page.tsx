@@ -5,8 +5,9 @@
 // client as soon as those queries finish, rather than blocking on the
 // momentum pass.
 import { Suspense } from "react";
-import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
+import { Panel, SectionHeader } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
+import DataFreshness from "@/components/ui/DataFreshness";
 import TimeSeriesLine, {
   type Series,
   type SeriesPoint,
@@ -223,7 +224,7 @@ export default async function TrendsPage() {
         eyebrow="Analysis / Trends"
         title="Market trends"
         description="Longitudinal signal across the crested gecko market. Compare the last 14 days to the 14 days before to see where volume, price, and trait interest are moving."
-        right={<StatusPill status="info" label="90-day window" />}
+        right={<DataFreshness updatedAt={Date.now()} window="30 days" />}
       />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
