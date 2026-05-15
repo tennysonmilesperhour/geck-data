@@ -8,6 +8,18 @@ import DataFreshness from "@/components/ui/DataFreshness";
 import DropAnalytics from "@/components/price-drops/DropAnalytics";
 import { createClient } from "@/lib/supabase/server";
 import { fmtPct, fmtRelative, fmtUsd } from "@/lib/format";
+import WatchButton from "@/components/alerts/WatchButton";
+
+const STRIP_TOKENS = /\b(male|female|unsexed|juv(?:enile)?|sub(?:adult)?|adult|babies?|hatchling|breeder|pair|trio)\b/gi;
+function morphTermFromTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const cleaned = title
+    .replace(STRIP_TOKENS, " ")
+    .replace(/\$[\d,]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned.length >= 3 ? cleaned : null;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +135,22 @@ export default async function PriceDropsPage() {
         ),
     },
     { key: "when", header: "When", render: (r) => fmtRelative(r.observed_at) },
+    {
+      key: "watch",
+      header: "Watch",
+      align: "right",
+      render: (r) => {
+        const term = morphTermFromTitle(r.market_listings?.title);
+        if (!term) return null;
+        return (
+          <WatchButton
+            label="Watch"
+            alertName={`Morph: ${term.slice(0, 60)}`}
+            query={{ kind: "morph", term }}
+          />
+        );
+      },
+    },
   ];
 
   return (

@@ -10,6 +10,22 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
+import WatchButton from "@/components/alerts/WatchButton";
+
+// Drop trailing maturity/sex/price-y debris from the title so the
+// "Watch" alert is named for the morph itself, not "Lilly White
+// Pinstripe Male Juvenile $400".
+const STRIP_TOKENS = /\b(male|female|unsexed|juv(?:enile)?|sub(?:adult)?|adult|babies?|hatchling|breeder|pair|trio)\b/gi;
+function morphTermFromTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const cleaned = title
+    .replace(STRIP_TOKENS, " ")
+    .replace(/\$[\d,]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (cleaned.length < 3) return null;
+  return cleaned;
+}
 
 export type SoldRow = {
   id: string;
@@ -145,6 +161,22 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
           {r.sold_source ?? "—"}
         </span>
       ),
+    },
+    {
+      key: "watch",
+      header: "Watch",
+      align: "right",
+      render: (r) => {
+        const term = morphTermFromTitle(r.title);
+        if (!term) return null;
+        return (
+          <WatchButton
+            label="Watch"
+            alertName={`Morph: ${term.slice(0, 60)}`}
+            query={{ kind: "morph", term }}
+          />
+        );
+      },
     },
   ];
 
