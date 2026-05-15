@@ -26,16 +26,19 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
   );
 
   return (
-    <section className="rounded-2xl border border-ink-700 bg-ink-850 p-5 shadow-panel">
+    <section
+      id="whats-hot"
+      className="rounded-2xl border border-ink-700 bg-ink-850 p-5 shadow-panel"
+    >
       <header className="mb-4 flex items-end justify-between">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400">
             Pulse
           </div>
-          <h2 className="mt-0.5 text-lg font-semibold tracking-tight text-ink-50">
+          <h2 className="mt-1 font-display text-[22px] font-medium tracking-tight text-ink-50">
             What&apos;s hot
           </h2>
-          <p className="mt-1 text-xs text-ink-400">
+          <p className="mt-1.5 text-xs text-ink-400">
             Top combos by current activity. <span className="text-ink-300">Click</span> to filter the page.
           </p>
         </div>

@@ -29,7 +29,7 @@ export default async function LandingPage() {
 
   return (
     <LandingFiltersProvider>
-      <div className="space-y-12">
+      <div className="page-rise space-y-12">
         <HeroBand snapshot={snapshot} />
 
         <FilterChips />
