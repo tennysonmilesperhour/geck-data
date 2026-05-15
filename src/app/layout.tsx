@@ -1,29 +1,40 @@
 import type { Metadata } from "next";
-import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
+import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TelemetryClient from "@/components/TelemetryClient";
 
-// Typography pair. Fraunces is the editorial display face — variable,
-// optical-size aware, and carries enough personality to anchor headers
-// without competing with charts. Inter handles body / data table copy.
-// JetBrains Mono is the numeric / status face. All three load via
-// next/font for proper font-display swap + zero CLS.
+// Typography. The pairing follows the UI Pro Max "Dashboard Data"
+// recommendation for analytics-first products, swapped to keep our
+// editorial display face on top:
+//
+//   Display — Fraunces (variable serif, opsz/SOFT/WONK axes)
+//             Anchors page titles with character that no analytics
+//             template ships with by default.
+//
+//   Body    — IBM Plex Sans (300/400/500/600/700)
+//             Replaces Inter. Plex is purpose-built for data UI:
+//             slightly humanist, tabular figures, identifiable in
+//             screenshots, and unmistakably *not* a default
+//             Tailwind / Apple system stack.
+//
+//   Mono    — JetBrains Mono. Tabular numerics for tables, axes,
+//             timestamps, percentages.
+//
+// All three load via next/font with font-display: swap + a system
+// fallback in tailwind.config.ts.
 const display = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
-  // Variable font — `weight` is not specified so next/font loads the
-  // full variable file. `axes` opts into Fraunces's optical-size +
-  // SOFT/WONK axes for a hint of character on big titles without
-  // making everything feel decorative.
   axes: ["SOFT", "WONK", "opsz"],
 });
-const body = Inter({
+const body = IBM_Plex_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
+  weight: ["300", "400", "500", "600", "700"],
 });
 const mono = JetBrains_Mono({
   subsets: ["latin"],
