@@ -22,6 +22,18 @@ const cards = [
     sub: "Every seller, sortable by volume, price, specialty",
     accent: "from-violet-500/[0.08] to-violet-500/0 border-violet-500/30",
   },
+  {
+    href: "/compare",
+    title: "Compare",
+    sub: "Listings and sellers side-by-side with trait premiums",
+    accent: "from-amber-500/[0.08] to-amber-500/0 border-amber-500/30",
+  },
+  {
+    href: "/sold",
+    title: "Sold history",
+    sub: "What's actually transacting — price, days-to-sell, traits",
+    accent: "from-rose-500/[0.08] to-rose-500/0 border-rose-500/30",
+  },
 ];
 
 export default function DeepDiveCta() {
@@ -32,7 +44,7 @@ export default function DeepDiveCta() {
           Go deeper
         </h2>
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => (
           <Link
             key={c.href}

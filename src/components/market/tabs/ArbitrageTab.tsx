@@ -1,12 +1,13 @@
 "use client";
-// Arbitrage tab. Pulls the biggest cross-source or cross-region spreads
-// for each combo and surfaces them as a ranked "buy here, sell there" list.
+// Arbitrage tab. Pulls the biggest cross-region spreads for each combo
+// and surfaces them as a ranked "buy here, sell there" list.
 //
-// KPIs up top. Axis toggle (by source / by region). Table with the pair of
-// legs + spread + confidence.
-import { useState } from "react";
+// The previous version had a By-source / By-region toggle, but the
+// source axis returned fixture data unconditionally because we don't
+// yet have multi-source price feeds. That toggle has been dropped
+// until the underlying data exists. The fetchArbitrage signature still
+// takes an axis arg so adding it back later is a one-line UI change.
 import type { Filters } from "@/lib/market/types";
-import type { ArbitrageAxis } from "@/lib/market/fixtures";
 import { fetchArbitrage } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import KpiCard from "@/components/ui/KpiCard";
@@ -14,8 +15,7 @@ import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
 
 export default function ArbitrageTab({ filters }: { filters: Filters }) {
-  const [axis, setAxis] = useState<ArbitrageAxis>("source");
-  const q = useFilteredQuery(fetchArbitrage, filters, [axis] as const, axis);
+  const q = useFilteredQuery(fetchArbitrage, filters, ["region"] as const, "region");
   if (!q.data) {
     return (
       <div className="forest-surface p-6 text-sm text-forest-400">
@@ -32,7 +32,7 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
           label="Biggest spread"
           value={`${data.kpis.biggestPct.toFixed(1)}%`}
           tone="positive"
-          sub={axis === "source" ? "between two sources" : "between two regions"}
+          sub="between two regions"
         />
         <KpiCard
           label="Avg spread"
@@ -63,15 +63,13 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
               </h2>
               <p className="mt-0.5 max-w-md text-xs text-forest-400">
                 Where the same combination is priced meaningfully differently
-                across {axis === "source" ? "feeds" : "markets"}. Confidence
-                scores how thin each leg is — a narrow sample on one side
-                inflates the spread.
+                across markets. Confidence scores how thin each leg is — a
+                narrow sample on one side inflates the spread.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <LivePreviewTag status={q.status} note={q.note} />
-            <AxisToggle axis={axis} onChange={setAxis} />
           </div>
         </header>
 
@@ -103,7 +101,7 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
                     <td className="px-3 py-3">
                       <div className="font-medium text-forest-50">{r.combo}</div>
                       <div className="font-mono text-[10px] text-forest-500">
-                        {axis === "source" ? "cross-source" : "cross-region"}
+                        cross-region
                       </div>
                     </td>
                     <td className="px-3 py-3">
@@ -135,33 +133,6 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
           shortlist, not a trade signal.
         </footer>
       </section>
-    </div>
-  );
-}
-
-function AxisToggle({
-  axis,
-  onChange,
-}: {
-  axis: ArbitrageAxis;
-  onChange: (a: ArbitrageAxis) => void;
-}) {
-  return (
-    <div className="inline-flex overflow-hidden rounded-md border border-forest-700 bg-forest-950/60 font-mono text-[11px]">
-      {(["source", "region"] as ArbitrageAxis[]).map((v) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onChange(v)}
-          className={`px-2.5 py-1.5 transition ${
-            axis === v
-              ? "bg-ready/20 text-ready"
-              : "text-forest-300 hover:bg-forest-850 hover:text-forest-100"
-          }`}
-        >
-          {v === "source" ? "By source" : "By region"}
-        </button>
-      ))}
     </div>
   );
 }

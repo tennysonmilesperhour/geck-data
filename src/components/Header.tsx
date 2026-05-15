@@ -13,7 +13,6 @@ type Tab = { href: string; label: string; group?: "core" | "analysis" | "ops" };
 
 const TABS: Tab[] = [
   { href: "/",               label: "Pulse",         group: "core" },
-  { href: "/daily-log",      label: "Daily Log",     group: "core" },
   { href: "/sold",           label: "Sold",          group: "core" },
   { href: "/price-drops",    label: "Drops",         group: "core" },
   { href: "/sellers",        label: "Sellers",       group: "core" },

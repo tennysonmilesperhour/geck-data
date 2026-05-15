@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { fmtUsd, fmtInt } from "@/lib/format";
 import type { ComboSnapshot } from "@/lib/landing/snapshot";
+import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
@@ -117,26 +118,3 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
   );
 }
 
-function ConfidenceBadge({ score }: { score: number }) {
-  const tier =
-    score >= 80
-      ? "high"
-      : score >= 50
-        ? "med"
-        : score >= 20
-          ? "low"
-          : "thin";
-  const cls = {
-    high: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-    med: "bg-sky-500/10 text-sky-300 border-sky-500/30",
-    low: "bg-amber-500/10 text-amber-300 border-amber-500/30",
-    thin: "bg-ink-700/30 text-ink-400 border-ink-700",
-  }[tier];
-  return (
-    <span
-      className={`inline-flex h-5 items-center rounded-full border px-1.5 font-mono text-[9px] uppercase ${cls}`}
-    >
-      {score}
-    </span>
-  );
-}

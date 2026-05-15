@@ -1,10 +1,13 @@
-// Shared D3 chart palette, tuned for the Claude-Code-style dark surface
-// (ink-800 panel background). Keep these keys stable — all charts import
-// from here so the aesthetic stays coherent.
+// Shared D3 chart palette. Keys are stable — every chart imports from
+// here so the aesthetic stays coherent. Anchor is `--accent` from
+// globals.css (emerald-bright) so charts read on the same brand as the
+// rest of the app. Sky-blue is the secondary so two-series overlays
+// have enough hue separation; positive/negative/warn track the status
+// tokens defined in tailwind.config.ts.
 export const chartTheme = {
   // Primary & accent
-  primary: "#d97757",      // Claude orange (bars / fills)
-  primarySoft: "rgba(217,119,87,0.22)",
+  primary: "#10b981",      // emerald — same as claude.DEFAULT
+  primarySoft: "rgba(16,185,129,0.22)",
   secondary: "#60a5fa",    // info blue (overlays / secondary series)
   secondarySoft: "rgba(96,165,250,0.22)",
   positive: "#4ade80",
@@ -12,21 +15,21 @@ export const chartTheme = {
   warn: "#fbbf24",
   // Series palette (use in order)
   series: [
-    "#d97757", // claude
-    "#60a5fa", // info
-    "#4ade80", // ready
-    "#fbbf24", // busy
+    "#10b981", // emerald primary
+    "#60a5fa", // info blue
+    "#34d399", // mint
+    "#fbbf24", // amber
     "#a78bfa", // purple
     "#f472b6", // pink
-    "#34d399", // teal
-    "#f87171", // danger
+    "#4ade80", // bright green
+    "#f87171", // danger red
   ],
-  // Chart chrome
-  grid: "#2d2d2d",
-  axis: "#4a4a4a",
-  axisText: "#a8a8a8",
-  label: "#c7c7c7",
-  markerStroke: "#0f0f0f", // dot outlines blend into panel bg
-  tooltipBg: "#1f1f1f",
-  tooltipBorder: "#363636",
+  // Chart chrome — tuned for the forest dark surfaces
+  grid: "#1f3328",         // ink-800 / forest-800 territory
+  axis: "#426752",         // ink-600 / forest-600
+  axisText: "#a8b5ac",     // ink-300
+  label: "#c7d0ca",        // ink-200
+  markerStroke: "#0a1410", // ink-950 — dot outlines blend into panel
+  tooltipBg: "#15281f",    // ink-800
+  tooltipBorder: "#2c4f3a",// ink-650
 };

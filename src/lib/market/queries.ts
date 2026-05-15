@@ -778,8 +778,16 @@ export async function fetchBreeders(
             ? Math.round(soldAgg.sumPx / soldAgg.total)
             : Math.round(s.avg_price ?? 0),
         avgDaysToSell: avgDays,
-        specialty: "Lilly White × Axanthic" as BreedersData["rows"][number]["specialty"],
-        velocity: Array.from({ length: 12 }, (_, i) => (i + 1) * 0 + (soldAgg?.total ?? 0)),
+        // Specialty is supposed to come from each seller's actual top
+        // trait combinations. Until that derivation lands we surface
+        // a non-misleading dash instead of pretending every seller
+        // breeds the same morph.
+        specialty: "—" as BreedersData["rows"][number]["specialty"],
+        // Velocity sparkline needs a real 12-period sold count series.
+        // The current data layer doesn't bucket sales by month per
+        // seller; until it does we emit empty so the sparkline renders
+        // as a placeholder rather than a synthetic flat line.
+        velocity: [],
         lineageScore: score,
         attribution: {
           sources: ["gi_listings"] as SourceId[],
