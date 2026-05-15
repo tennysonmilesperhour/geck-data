@@ -1,7 +1,7 @@
-// Trait activity — per-trait daily sparkline + slope + total count
-// over the last 14 days. The chart primitive is now the shared
-// MiniSparkline so this file just owns the data fetch + panel chrome
-// + slope tag pill.
+// Trait activity — per-trait sparkline + slope + total count over the
+// window length the parent /trends page is showing (90d default, 180d
+// when toggled). Weekly buckets for the sparkline so 13–26 points
+// render legibly instead of a noisy 90/180-day daily stream.
 //
 // All computed off listings.first_seen_at — no synthetic data, no
 // 100% deltas when the prior window is empty.
@@ -15,7 +15,7 @@ import MiniSparkline, {
 import { parseTraitList } from "@/lib/traits";
 
 const DAY_MS = 86_400_000;
-const WINDOW_DAYS = 14;
+const WEEK_MS = 7 * DAY_MS;
 
 type Row = {
   norm_traits: string | null;
@@ -25,62 +25,60 @@ type Row = {
 
 type TraitSeries = {
   trait: string;
-  daily: number[];
+  weekly: number[];
   total: number;
   earlyCount: number;
   lateCount: number;
 };
 
-function dayIndex(iso: string, windowStart: number): number | null {
+function weekIndex(iso: string, windowStart: number, weeks: number): number | null {
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return null;
-  const idx = Math.floor((t - windowStart) / DAY_MS);
-  return idx >= 0 && idx < WINDOW_DAYS ? idx : null;
+  const idx = Math.floor((t - windowStart) / WEEK_MS);
+  return idx >= 0 && idx < weeks ? idx : null;
 }
 
-function traitTokens(r: Row): string[] {
-  // parseTraitList drops key/value segments like "Diet: Meal Replacement"
-  // and "Proven breeder: No" that the extension concatenates into
-  // cached_traits/norm_traits. See src/lib/traits.ts.
-  return parseTraitList(r);
-}
-
-async function fetchSeries(): Promise<TraitSeries[]> {
+async function fetchSeries(windowDays: number): Promise<TraitSeries[]> {
   const supabase = createClient();
-  const sinceMs = Date.now() - WINDOW_DAYS * DAY_MS;
+  const weeks = Math.max(2, Math.ceil(windowDays / 7));
+  const sinceMs = Date.now() - weeks * WEEK_MS;
   const since = new Date(sinceMs).toISOString();
 
   const { data } = await supabase
     .from("market_listings")
     .select("norm_traits, cached_traits, first_seen_at")
     .gte("first_seen_at", since)
-    .limit(20000);
+    .limit(30000);
 
   const rows = (data ?? []) as Row[];
   const byTrait = new Map<string, number[]>();
 
   for (const r of rows) {
     if (!r.first_seen_at) continue;
-    const idx = dayIndex(r.first_seen_at, sinceMs);
+    const idx = weekIndex(r.first_seen_at, sinceMs, weeks);
     if (idx === null) continue;
-    for (const t of traitTokens(r)) {
-      const arr = byTrait.get(t) ?? Array.from({ length: WINDOW_DAYS }, () => 0);
+    for (const t of parseTraitList(r)) {
+      const arr = byTrait.get(t) ?? Array.from({ length: weeks }, () => 0);
       arr[idx]! += 1;
       byTrait.set(t, arr);
     }
   }
 
-  const HALF = Math.floor(WINDOW_DAYS / 2);
-  const series: TraitSeries[] = [];
-  for (const [trait, daily] of byTrait) {
-    const total = daily.reduce((a, b) => a + b, 0);
-    if (total < 3) continue; // noise floor
-    const earlyCount = daily.slice(0, HALF).reduce((a, b) => a + b, 0);
-    const lateCount = daily.slice(HALF).reduce((a, b) => a + b, 0);
-    series.push({ trait, daily, total, earlyCount, lateCount });
+  // Noise floor scales with window so the panel stays readable at both
+  // 90d and 180d. Roughly: require at least one appearance per ~2 weeks
+  // on average for a trait to make the list.
+  const NOISE_FLOOR = Math.max(3, Math.floor(weeks / 2));
+  const HALF = Math.floor(weeks / 2);
+  const out: TraitSeries[] = [];
+  for (const [trait, weekly] of byTrait) {
+    const total = weekly.reduce((a, b) => a + b, 0);
+    if (total < NOISE_FLOOR) continue;
+    const earlyCount = weekly.slice(0, HALF).reduce((a, b) => a + b, 0);
+    const lateCount = weekly.slice(HALF).reduce((a, b) => a + b, 0);
+    out.push({ trait, weekly, total, earlyCount, lateCount });
   }
-  series.sort((a, b) => b.total - a.total);
-  return series.slice(0, 24);
+  out.sort((a, b) => b.total - a.total);
+  return out.slice(0, 24);
 }
 
 const SLOPE_TAG: Record<SlopeKind, { label: string; cls: string; glyph: string }> = {
@@ -118,17 +116,23 @@ function SlopeTag({ kind }: { kind: SlopeKind }) {
   );
 }
 
-export default async function TraitMomentumPanels() {
-  const series = await fetchSeries();
+export default async function TraitMomentumPanels({
+  windowDays = 90,
+}: {
+  windowDays?: number;
+}) {
+  const series = await fetchSeries(windowDays);
+  const halfDays = Math.floor(windowDays / 2);
   if (series.length === 0) {
     return (
       <Panel
-        title="Trait activity · last 14 days"
-        subtitle="Daily appearances of each trait in new listings. Not enough data yet — the catalog is still spinning up."
+        title={`Trait activity · last ${windowDays} days`}
+        subtitle="Weekly appearances of each trait in new listings. Not enough data yet — the catalog is still spinning up."
       >
         <p className="text-sm text-ink-400">
-          No traits have been seen at least three times in the last 14 days.
-          As the daily scrape continues, this panel will fill in.
+          No traits have been seen often enough in the last {windowDays} days
+          to clear the noise floor. As the daily scrape continues, this panel
+          will fill in.
         </p>
       </Panel>
     );
@@ -136,8 +140,8 @@ export default async function TraitMomentumPanels() {
 
   return (
     <Panel
-      title="Trait activity · last 14 days"
-      subtitle="Each row is one trait. The sparkline is its daily appearance count over the window; the badge compares the late 7 days to the early 7 days. ↑ rising, ↓ cooling, ✦ new this week, − flat."
+      title={`Trait activity · last ${windowDays} days`}
+      subtitle={`Each row is one trait. The sparkline is its weekly appearance count over the window; the badge compares the late ${halfDays} days to the early ${halfDays}. ↑ rising, ↓ cooling, ✦ new this period, − flat.`}
     >
       <ul className="divide-y divide-ink-700/60">
         {series.map((s) => {
@@ -150,7 +154,7 @@ export default async function TraitMomentumPanels() {
               <span className="truncate capitalize text-ink-100">
                 {s.trait}
               </span>
-              <MiniSparkline values={s.daily} width={96} height={22} />
+              <MiniSparkline values={s.weekly} width={120} height={22} />
               <span className="w-16 text-right font-mono text-[12px] tabular-nums text-ink-300">
                 {fmtInt(s.total)}
               </span>
