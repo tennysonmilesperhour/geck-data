@@ -10,7 +10,12 @@ import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { chartTheme } from "@/components/charts/theme";
 import { createClient } from "@/lib/supabase/server";
-import { fmtInt, fmtPct, fmtUsd } from "@/lib/format";
+import { fmtInt, fmtUsd } from "@/lib/format";
+import {
+  computeMarketMedian,
+  computeTraitPremiums,
+} from "@/lib/market/trait-premium";
+import TraitPremiumPanel from "@/components/morphs/TraitPremiumPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -44,16 +49,7 @@ function priceOf(l: Listing): number | null {
 function median(arr: number[]): number | null {
   if (arr.length === 0) return null;
   const s = [...arr].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
-
-function traitSet(l: Listing): Set<string> {
-  const raw = (l.norm_traits || l.cached_traits || "").toLowerCase();
-  if (!raw) return new Set();
-  const tokens = raw.includes(",")
-    ? raw.split(",").map((t) => t.trim())
-    : raw.split(/\s+/).map((t) => t.trim());
-  return new Set(tokens.filter((t) => t && t.length >= 3));
+  return s[Math.floor(s.length / 2)]!;
 }
 
 export default async function ComparePage({
@@ -90,38 +86,12 @@ export default async function ComparePage({
   const listings = (listingsRes.data ?? []) as Listing[];
   const sellers = (sellersRes.data ?? []) as Seller[];
 
-  // Market baselines
-  const allPrices = listings.map(priceOf).filter((p): p is number => p !== null);
-  const marketMedian = median(allPrices) ?? 0;
-
-  // --- 1) Trait premium vs market median --------------------------------
-  const traitStats = new Map<string, number[]>(); // trait -> prices
-  for (const l of listings) {
-    const p = priceOf(l);
-    if (p == null) continue;
-    for (const t of traitSet(l)) {
-      const arr = traitStats.get(t) ?? [];
-      arr.push(p);
-      traitStats.set(t, arr);
-    }
-  }
-  type TraitRow = { trait: string; count: number; median: number; premium: number };
-  const traitRows: TraitRow[] = [];
-  for (const [trait, prices] of traitStats) {
-    if (prices.length < 5) continue;
-    const m = median(prices)!;
-    traitRows.push({
-      trait,
-      count: prices.length,
-      median: m,
-      premium: marketMedian > 0 ? ((m - marketMedian) / marketMedian) * 100 : 0,
-    });
-  }
-  const topPremium = [...traitRows].sort((a, b) => b.premium - a.premium).slice(0, 12);
-  const bottomPremium = [...traitRows].sort((a, b) => a.premium - b.premium).slice(0, 12);
-
-  const premiumBarMax = Math.max(1, ...topPremium.map((t) => Math.abs(t.premium)));
-  const discountBarMax = Math.max(1, ...bottomPremium.map((t) => Math.abs(t.premium)));
+  // Market baselines — shared module so the same trait-premium
+  // numbers are available on every surface that wants them.
+  const marketMedian = computeMarketMedian(listings);
+  const traitRows = computeTraitPremiums(listings, marketMedian, {
+    minSample: 5,
+  });
 
   // --- 2) Maturity band bands ------------------------------------------
   type Band = { label: string; count: number; median: number; p25: number; p75: number };
@@ -276,69 +246,7 @@ export default async function ComparePage({
         <KpiCard label="Maturity cohorts" value={fmtInt(bands.length)} />
       </section>
 
-      <Panel
-        title="Trait premium vs. market median"
-        subtitle="Positive means listings with this trait price above the market median. Negative means below. Minimum 5 priced listings."
-      >
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div>
-            <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ready">
-              Premium traits
-            </div>
-            <ul className="space-y-1.5">
-              {topPremium.map((t) => {
-                const w = Math.round((Math.abs(t.premium) / premiumBarMax) * 100);
-                return (
-                  <li
-                    key={t.trait}
-                    className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-sm"
-                  >
-                    <span className="truncate text-ink-100">{t.trait}</span>
-                    <div className="h-1.5 w-40 rounded bg-ink-700">
-                      <div
-                        className="h-1.5 rounded"
-                        style={{ width: `${w}%`, background: chartTheme.positive }}
-                      />
-                    </div>
-                    <span className="w-28 text-right font-mono text-[12px]">
-                      <span className="text-ready">{fmtPct(t.premium, 0)}</span>
-                      <span className="ml-2 text-ink-500">· {fmtUsd(t.median)}</span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-          <div>
-            <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-danger">
-              Discount traits
-            </div>
-            <ul className="space-y-1.5">
-              {bottomPremium.map((t) => {
-                const w = Math.round((Math.abs(t.premium) / discountBarMax) * 100);
-                return (
-                  <li
-                    key={t.trait}
-                    className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-sm"
-                  >
-                    <span className="truncate text-ink-100">{t.trait}</span>
-                    <div className="h-1.5 w-40 rounded bg-ink-700">
-                      <div
-                        className="h-1.5 rounded"
-                        style={{ width: `${w}%`, background: chartTheme.negative }}
-                      />
-                    </div>
-                    <span className="w-28 text-right font-mono text-[12px]">
-                      <span className="text-danger">{fmtPct(t.premium, 0)}</span>
-                      <span className="ml-2 text-ink-500">· {fmtUsd(t.median)}</span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
-      </Panel>
+      <TraitPremiumPanel rows={traitRows} limit={12} />
 
       <Panel
         title="Maturity price bands"
