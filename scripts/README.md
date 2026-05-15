@@ -103,6 +103,31 @@ Tunables (env vars):
 Cost: depends on backlog. Tracked via the `scrape_runs.records_attempted`
 counter.
 
+### scrape_sellers.py
+
+Weekly per-seller scrape. Reads the `sellers_needing_scrape` view to
+get the subset of seller slugs that are linked from at least one
+active listing and haven't been refreshed in the last 7 days. Fetches
+each `https://www.morphmarket.com/stores/{slug}` page through Decodo
+(same recipe as `scrape_listings.py` — premium proxy + browser_actions
+wait/scroll/wait) and upserts a row into `public.sellers`.
+
+Seller slugs are populated by `scrape_details.py`, which extracts them
+from each listing's JSON-LD `seller.url`. So a brand-new listing won't
+have a slug — and therefore won't seed a seller scrape — until the
+next weekly details run touches it.
+
+Captured fields (per the "bare minimum" choice we landed on):
+`store_name`, `owner_name`, `location_raw`, `member_since`,
+`listings_count`, `avatar_url`. Anything richer (reviews, ratings,
+response time, full listing inventory) would need its own pass and
+isn't worth the credits at the data-platform stage we're in.
+
+Tunables (env vars):
+- `MAX_SELLERS` cap for smoke tests.
+
+Cost: ~700 active sellers → ~700 credits/week, ~2,800/month.
+
 ### download_images.py
 
 Reads `listings_needing_image_download()` to get listings whose

@@ -1,0 +1,59 @@
+name: Weekly Sellers Scrape
+
+# Walks each distinct seller_slug from active listings and upserts the
+# seller's store-page metadata (display name, owner, location, member
+# since, listings count, avatar) into public.sellers.
+#
+# Seller slugs come from listings.seller_slug, which scrape_details.py
+# populates from each listing's per-listing JSON-LD `seller.url`. Until
+# scrape_details has run at least once on a given listing, that
+# listing's seller_slug is NULL and it does not contribute a slug to
+# the sellers_needing_scrape view.
+#
+# Cost envelope: ~700 active sellers in the catalog -> 1 Decodo
+# Premium+JS credit per seller -> ~700 credits/week or ~2,800/month.
+#
+# Schedule sits at Mon 12:00 UTC: one hour after the weekly images job
+# (Mon 11:00) and two after the weekly details job (Mon 10:00). The
+# details job feeds the slugs view, so running this after it gives the
+# fresh slug data a chance to land first.
+on:
+  schedule:
+    - cron: '0 12 * * 1'   # Mondays 12:00 UTC
+  workflow_dispatch:
+
+# Sellers scrape is independent of the listings concurrency group,
+# but we still want only one of these in flight at a time so a
+# manual dispatch during a scheduled run can't double-write.
+concurrency:
+  group: scrape-sellers
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # ~700 sellers * (2s per-worker delay + ~20s render) / 2 workers
+    # ~= 130 min worst case. The 180 ceiling protects against retry
+    # storms.
+    timeout-minutes: 180
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_sellers.py
+        env:
+          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action
+        working-directory: scripts
+        run: python scrape_sellers.py
