@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as d3 from "d3";
 import { chartTheme } from "./theme";
+import { parseTraitList } from "@/lib/traits";
 
 export type RidgeInput = {
   cached_traits: string | null;
@@ -39,15 +40,9 @@ export default function RidgePlot({
   const rows = useMemo<Row[]>(() => {
     const map = new Map<string, number[]>();
     for (const d of data) {
-      const raw = (d.norm_traits || d.cached_traits || "").toLowerCase();
-      if (!raw) continue;
-      const tokens = raw.includes(",")
-        ? raw.split(",").map((t) => t.trim())
-        : raw.split(/\s+/).map((t) => t.trim());
       const price = d.price_usd_equivalent ?? d.price;
       if (price == null || price <= 0 || price >= 3500) continue;
-      for (const t of tokens) {
-        if (!t || t.length < 3) continue;
+      for (const t of parseTraitList(d)) {
         const list = map.get(t) ?? [];
         list.push(price);
         map.set(t, list);

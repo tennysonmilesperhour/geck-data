@@ -12,6 +12,7 @@ import MiniSparkline, {
   type SlopeKind,
   classifySlope,
 } from "@/components/charts/MiniSparkline";
+import { parseTraitList } from "@/lib/traits";
 
 const DAY_MS = 86_400_000;
 const WINDOW_DAYS = 14;
@@ -38,19 +39,10 @@ function dayIndex(iso: string, windowStart: number): number | null {
 }
 
 function traitTokens(r: Row): string[] {
-  const raw = (r.norm_traits || r.cached_traits || "").toLowerCase();
-  if (!raw) return [];
-  const tokens = raw.includes(",")
-    ? raw.split(",").map((t) => t.trim())
-    : raw.split(/\s+/).map((t) => t.trim());
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const t of tokens) {
-    if (!t || t.length < 3 || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-  }
-  return out;
+  // parseTraitList drops key/value segments like "Diet: Meal Replacement"
+  // and "Proven breeder: No" that the extension concatenates into
+  // cached_traits/norm_traits. See src/lib/traits.ts.
+  return parseTraitList(r);
 }
 
 async function fetchSeries(): Promise<TraitSeries[]> {
