@@ -15,6 +15,8 @@ import FeaturedSellerCard, {
 } from "@/components/sellers/FeaturedSellerCard";
 import LocationDistribution from "@/components/sellers/LocationDistribution";
 import SellerInitials from "@/components/sellers/SellerInitials";
+import MiniSparkline from "@/components/charts/MiniSparkline";
+import { getSellerDailyActivity } from "@/lib/sellers/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,13 @@ export default async function SellersPage() {
     Math.max(1, totalInv);
   const featured = rows.slice(0, 6) as FeaturedSeller[];
 
+  // Chronological per-seller activity for the top ~60 (covers the
+  // featured cards + visible table window). Limiting to a known set
+  // keeps the query bounded; sellers off the top of the list render
+  // without a sparkline rather than burning a query.
+  const sparkTargetIds = rows.slice(0, 60).map((r) => r.seller_id);
+  const sellerActivity = await getSellerDailyActivity(sparkTargetIds);
+
   const columns: Column<SellerRow>[] = [
     {
       key: "name",
@@ -66,6 +75,21 @@ export default async function SellersPage() {
       ),
     },
     { key: "loc", header: "Location", render: (s) => s.seller_location ?? "—" },
+    {
+      key: "activity",
+      header: "30d",
+      render: (s) => {
+        const daily = sellerActivity.get(s.seller_id);
+        if (!daily || daily.every((v) => v === 0)) {
+          return <span className="text-ink-600">—</span>;
+        }
+        return (
+          <span className="hidden sm:inline-block">
+            <MiniSparkline values={daily} width={80} height={20} />
+          </span>
+        );
+      },
+    },
     { key: "mem", header: "Plan", render: (s) => s.membership ?? "—" },
     {
       key: "listings",
@@ -139,7 +163,11 @@ export default async function SellersPage() {
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {featured.map((s) => (
-              <FeaturedSellerCard key={s.seller_id} seller={s} />
+              <FeaturedSellerCard
+                key={s.seller_id}
+                seller={s}
+                daily={sellerActivity.get(s.seller_id)}
+              />
             ))}
           </div>
         </section>
