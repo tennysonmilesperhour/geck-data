@@ -7,6 +7,7 @@ import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import SoldPriceDistribution from "@/components/sold/SoldPriceDistribution";
+import SoldByMaturity from "@/components/sold/SoldByMaturity";
 import SortableSoldTable, {
   type SoldRow,
 } from "@/components/sold/SortableSoldTable";
@@ -71,6 +72,10 @@ export default async function SoldPage() {
 
       <SoldPriceDistribution
         prices={rows.map((r) => r.price_usd_equivalent ?? r.price)}
+      />
+
+      <SoldByMaturity
+        rows={rows.map((r) => ({ maturity: r.maturity, sold_at: r.sold_at }))}
       />
 
       <ChartGrid page="sold" ctx={{ soldRows: rows, soldEvents }} />
