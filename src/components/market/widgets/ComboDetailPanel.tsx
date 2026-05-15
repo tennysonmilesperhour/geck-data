@@ -11,6 +11,7 @@ import { sourceMeta } from "@/lib/market/sources";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
 import MultiLineChart from "@/components/market/charts/MultiLineChart";
+import MorphTerm from "@/components/morphs/MorphTerm";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
@@ -41,7 +42,7 @@ export default function ComboDetailPanel({
               Headline
             </div>
             <h2 className="mt-0.5 truncate font-display text-[26px] font-medium tracking-tight text-forest-50">
-              {detail.combo}
+              <MorphTerm name={detail.combo} />
             </h2>
             <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
               <span className="text-3xl font-semibold tabular-nums text-ready">

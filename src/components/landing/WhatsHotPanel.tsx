@@ -8,6 +8,7 @@ import Link from "next/link";
 import { fmtUsd, fmtInt } from "@/lib/format";
 import type { ComboSnapshot } from "@/lib/landing/snapshot";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import MorphTerm from "@/components/morphs/MorphTerm";
 import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
@@ -90,11 +91,10 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
                       <span className="w-5 font-mono text-[10px] text-ink-500">
                         {String(idx + 1).padStart(2, "0")}
                       </span>
-                      <span
+                      <MorphTerm
+                        name={combo.combo_name}
                         className={`font-medium ${isSelected ? "text-emerald-100" : "text-ink-100"}`}
-                      >
-                        {combo.combo_name}
-                      </span>
+                      />
                     </div>
                     <div className="flex items-center gap-4 font-mono text-[11px] tabular-nums text-ink-300">
                       <span>
