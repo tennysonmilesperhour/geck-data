@@ -17,7 +17,10 @@ import FilterChips from "@/components/landing/FilterChips";
 import PriceBandSlider from "@/components/landing/PriceBandSlider";
 import ComboFilter from "@/components/landing/ComboFilter";
 import SectionOrnament from "@/components/ui/SectionOrnament";
-import { getMarketSnapshot } from "@/lib/landing/snapshot";
+import {
+  getComboDailyAppearances,
+  getMarketSnapshot,
+} from "@/lib/landing/snapshot";
 import { getScrollytellingData } from "@/lib/landing/scrollytelling";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +30,15 @@ export default async function LandingPage() {
     getMarketSnapshot(),
     getScrollytellingData(),
   ]);
+  // Combo-level chronological data: 14-day appearance counts per combo,
+  // computed off market_listings.first_seen_at so the WhatsHotPanel
+  // sparklines reflect actual day-by-day discovery, not synthetic
+  // deltas. Done after the snapshot returns so the combo list is
+  // available; cheap enough at this scale that the extra serial round
+  // trip is acceptable.
+  const comboDaily = await getComboDailyAppearances(
+    snapshot.combos.slice(0, 12),
+  );
 
   return (
     <LandingFiltersProvider>
@@ -47,7 +59,7 @@ export default async function LandingPage() {
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
           <div className="lg:col-span-3">
-            <WhatsHotPanel combos={snapshot.combos} />
+            <WhatsHotPanel combos={snapshot.combos} comboDaily={comboDaily} />
           </div>
           <div className="lg:col-span-2">
             <OpportunitiesPanel opportunities={snapshot.opportunities} />

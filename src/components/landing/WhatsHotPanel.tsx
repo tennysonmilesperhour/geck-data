@@ -9,14 +9,17 @@ import { fmtUsd, fmtInt } from "@/lib/format";
 import type { ComboSnapshot } from "@/lib/landing/snapshot";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import MorphTerm from "@/components/morphs/MorphTerm";
+import MiniSparkline from "@/components/charts/MiniSparkline";
 import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
   combos: ComboSnapshot[];
+  /** Combo_name -> 14 daily appearance counts (oldest first). */
+  comboDaily?: Map<string, number[]>;
   limit?: number;
 };
 
-export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
+export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) {
   const { hoveredCombo, selectedCombos, toggleCombo, setHoveredCombo } =
     useLandingFilters();
 
@@ -97,6 +100,16 @@ export default function WhatsHotPanel({ combos, limit = 8 }: Props) {
                       />
                     </div>
                     <div className="flex items-center gap-4 font-mono text-[11px] tabular-nums text-ink-300">
+                      {comboDaily?.get(combo.combo_name) ? (
+                        <span className="hidden sm:inline-block">
+                          <MiniSparkline
+                            values={comboDaily.get(combo.combo_name)!}
+                            width={80}
+                            height={20}
+                            fill
+                          />
+                        </span>
+                      ) : null}
                       <span>
                         <span className="text-ink-500">live </span>
                         {fmtInt(combo.live_count)}

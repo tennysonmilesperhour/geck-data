@@ -46,6 +46,13 @@ export type SellerCard = {
   membership: string | null;
 };
 
+export type ComboDaily = {
+  /** Combo name (key into ComboSnapshot.combo_name). */
+  combo: string;
+  /** Appearance count per day across the last 14 days, oldest first. */
+  daily: number[];
+};
+
 export type MarketSnapshot = {
   totals: {
     listings: number;
@@ -69,6 +76,8 @@ const WINDOW_DAYS = 365;
 const OPPORTUNITY_THRESHOLD = 0.25; // 25% below combo median ask
 const OPPORTUNITY_LIMIT = 12;
 const TOP_SELLER_LIMIT = 6;
+const COMBO_DAILY_WINDOW_DAYS = 14;
+const DAY_MS = 86_400_000;
 
 export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   const supabase = createClient();
@@ -224,4 +233,65 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     ),
     generated_at: new Date().toISOString(),
   };
+}
+
+/**
+ * For each combo in `combos`, count how many new listings matched it on
+ * each of the last COMBO_DAILY_WINDOW_DAYS days. Matching is the same
+ * token-prefix logic the opportunities path uses — every part of the
+ * combo name (split on × / x) must appear in the listing's
+ * norm_traits/cached_traits.
+ *
+ * Returns a Map keyed by combo_name so the caller can drop a sparkline
+ * next to each combo without touching the rest of the snapshot.
+ */
+export async function getComboDailyAppearances(
+  combos: ReadonlyArray<ComboSnapshot>,
+): Promise<Map<string, number[]>> {
+  if (combos.length === 0) return new Map();
+  const supabase = createClient();
+  const sinceMs = Date.now() - COMBO_DAILY_WINDOW_DAYS * DAY_MS;
+  const since = new Date(sinceMs).toISOString();
+
+  const { data } = await supabase
+    .from("market_listings")
+    .select("first_seen_at, norm_traits, cached_traits")
+    .gte("first_seen_at", since)
+    .limit(20000);
+
+  const result = new Map<string, number[]>();
+  for (const c of combos) {
+    result.set(
+      c.combo_name,
+      Array.from({ length: COMBO_DAILY_WINDOW_DAYS }, () => 0),
+    );
+  }
+
+  // Pre-tokenise each combo name once.
+  const comboTokens: Array<{ name: string; tokens: string[] }> = combos.map((c) => ({
+    name: c.combo_name,
+    tokens: c.combo_name.toLowerCase().split(/\s*×\s*|\s+x\s+/),
+  }));
+
+  for (const row of (data ?? []) as Array<{
+    first_seen_at: string | null;
+    norm_traits: string | null;
+    cached_traits: string | null;
+  }>) {
+    if (!row.first_seen_at) continue;
+    const t = Date.parse(row.first_seen_at);
+    if (!Number.isFinite(t)) continue;
+    const idx = Math.floor((t - sinceMs) / DAY_MS);
+    if (idx < 0 || idx >= COMBO_DAILY_WINDOW_DAYS) continue;
+    const traits = (row.norm_traits || row.cached_traits || "").toLowerCase();
+    if (!traits) continue;
+    for (const ct of comboTokens) {
+      if (ct.tokens.every((tok) => traits.includes(tok))) {
+        const arr = result.get(ct.name)!;
+        arr[idx]! += 1;
+      }
+    }
+  }
+
+  return result;
 }
