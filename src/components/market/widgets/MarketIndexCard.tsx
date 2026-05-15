@@ -9,6 +9,7 @@
 import { AreaChart } from "@/components/market/charts/InlineCharts";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
+import DataFreshness from "@/components/ui/DataFreshness";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
@@ -108,10 +109,7 @@ export default function MarketIndexCard({
       </div>
 
       <footer className="mt-3 flex items-center justify-between text-[11px] text-forest-500">
-        <span className="inline-flex items-center gap-1.5 font-mono">
-          <span aria-hidden>◷</span>
-          Freshness ≤ 12h
-        </span>
+        <DataFreshness updatedAt={Date.now()} tone="forest" />
         <SourceBadgeList
           ids={data.attribution.sources}
           max={4}
