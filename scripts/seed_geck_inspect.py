@@ -135,19 +135,32 @@ def fetch_canonical_rows(
 
 
 def fetch_existing_image_urls(geck_inspect: Client, urls: list[str]) -> set[str]:
-    """Return the subset of urls that already exist in gecko_images."""
+    """Return the subset of urls that already exist in gecko_images.
+
+    Chunks the IN clause small (50) because MorphMarket/Supabase URLs are
+    long and a single IN clause with hundreds of them blows past
+    PostgREST's request limit and returns a 400 'JSON could not be
+    generated'. If a chunk still fails, fall back to "assume not
+    present" so the seeder makes forward progress instead of dying.
+    """
     if not urls:
         return set()
     existing: set[str] = set()
-    # Supabase REST 'in' has a ~1000-item limit; chunk to be safe.
-    for i in range(0, len(urls), 500):
-        chunk = urls[i:i+500]
-        res = geck_inspect.table("gecko_images").select(
-            "image_url"
-        ).in_("image_url", chunk).execute()
-        for row in (res.data or []):
-            if row.get("image_url"):
-                existing.add(row["image_url"])
+    CHUNK = 50
+    for i in range(0, len(urls), CHUNK):
+        chunk = urls[i:i + CHUNK]
+        try:
+            res = geck_inspect.table("gecko_images").select(
+                "image_url"
+            ).in_("image_url", chunk).execute()
+            for row in (res.data or []):
+                if row.get("image_url"):
+                    existing.add(row["image_url"])
+        except Exception:  # noqa: BLE001
+            # Fall through; we'll just attempt to insert. Worst case we
+            # get a duplicate row (gecko_images.id is auto-uuid so no PK
+            # collision, and image_url has no unique constraint).
+            continue
     return existing
 
 
