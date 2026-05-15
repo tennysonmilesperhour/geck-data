@@ -59,7 +59,9 @@ export function SectionHeader({
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="text-xl font-semibold tracking-tight text-ink-50">{title}</h1>
+        <h1 className="font-display text-[28px] leading-[1.1] font-medium tracking-[-0.01em] text-ink-50">
+          {title}
+        </h1>
         {description ? (
           <p className="mt-1 max-w-2xl text-sm text-ink-400">{description}</p>
         ) : null}

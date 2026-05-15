@@ -50,7 +50,7 @@ export default function DataTable<T>({
         </thead>
         <tbody className="divide-y divide-ink-700/70 text-ink-200">
           {rows.map((row, idx) => (
-            <tr key={rowKey(row, idx)} className="transition hover:bg-ink-850">
+            <tr key={rowKey(row, idx)} className="row-hover">
               {columns.map((c) => (
                 <td
                   key={c.key}

@@ -1,6 +1,7 @@
-// Seller leaderboard index. Charts (scatter / bubble / treemap / geo) are
-// driven by the registry + user prefs through <ChartGrid>; the table below
-// stays page-owned because it's the navigational entry point.
+// Seller directory. Editorial header + featured top-six + location
+// distribution + the full ranked table. Charts (scatter / bubble /
+// treemap / geo) stay driven by ChartGrid; the table below is page-
+// owned because it's the navigational entry point.
 import Link from "next/link";
 import { type Seller } from "@/components/charts/SellerLeaderboardScatter";
 import ChartGrid from "@/components/charts/ChartGrid";
@@ -9,10 +10,19 @@ import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
+import FeaturedSellerCard, {
+  type FeaturedSeller,
+} from "@/components/sellers/FeaturedSellerCard";
+import LocationDistribution from "@/components/sellers/LocationDistribution";
+import SellerInitials from "@/components/sellers/SellerInitials";
 
 export const dynamic = "force-dynamic";
 
-type SellerRow = Seller & { total_listings: number | null; avg_price: number | null };
+type SellerRow = Seller & {
+  total_listings: number | null;
+  avg_price: number | null;
+  seller_rating_score: number | null;
+};
 
 export default async function SellersPage() {
   const supabase = createClient();
@@ -37,6 +47,7 @@ export default async function SellersPage() {
   const avgPriceAll =
     rows.reduce((a, r) => a + (r.avg_price ?? 0) * (r.total_listings ?? 0), 0) /
     Math.max(1, totalInv);
+  const featured = rows.slice(0, 6) as FeaturedSeller[];
 
   const columns: Column<SellerRow>[] = [
     {
@@ -45,9 +56,12 @@ export default async function SellersPage() {
       render: (s) => (
         <Link
           href={`/sellers/${s.seller_id}`}
-          className="font-medium text-claude hover:underline"
+          className="group inline-flex items-center gap-3"
         >
-          {s.seller_name ?? s.seller_id}
+          <SellerInitials name={s.seller_name ?? s.seller_id} size={28} />
+          <span className="font-medium text-ink-100 transition group-hover:text-claude-glow">
+            {s.seller_name ?? s.seller_id}
+          </span>
         </Link>
       ),
     },
@@ -57,35 +71,49 @@ export default async function SellersPage() {
       key: "listings",
       header: "Listings",
       align: "right",
-      render: (s) => fmtInt(s.total_listings),
+      render: (s) => (
+        <span className="font-mono tabular-nums">{fmtInt(s.total_listings)}</span>
+      ),
     },
     {
       key: "avg",
       header: "Avg price",
       align: "right",
-      render: (s) => fmtUsd(s.avg_price),
+      render: (s) => (
+        <span className="font-mono tabular-nums">{fmtUsd(s.avg_price)}</span>
+      ),
     },
     {
       key: "fb",
       header: "Feedback",
       align: "right",
-      render: (s) => fmtInt(s.feedback_count),
+      render: (s) => (
+        <span className="font-mono tabular-nums text-ink-300">
+          {fmtInt(s.feedback_count)}
+        </span>
+      ),
     },
     {
       key: "rating",
       header: "Rating",
       align: "right",
       render: (s) =>
-        s.seller_rating_score != null ? s.seller_rating_score.toFixed(2) : "—",
+        s.seller_rating_score != null ? (
+          <span className="font-mono tabular-nums">
+            {s.seller_rating_score.toFixed(2)}
+          </span>
+        ) : (
+          <span className="text-ink-500">—</span>
+        ),
     },
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="page-rise space-y-10">
       <SectionHeader
         eyebrow="Directory"
-        title="Sellers"
-        description={`${fmtInt(rows.length)} tracked sellers. Click a name to see their timeline.`}
+        title="Every breeder, ranked"
+        description={`${fmtInt(rows.length)} sellers tracked across the catalog. The top six are spotlighted below; the rest are sortable in the table. Click any name for their full history.`}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -99,10 +127,40 @@ export default async function SellersPage() {
         />
       </div>
 
-      <ChartGrid page="sellers" ctx={{ sellers: rows }} />
+      {featured.length > 0 ? (
+        <section>
+          <div className="mb-4 flex items-baseline justify-between">
+            <h2 className="font-display text-[22px] font-medium tracking-tight text-ink-50">
+              Featured breeders
+            </h2>
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-500">
+              ranked by inventory
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {featured.map((s) => (
+              <FeaturedSellerCard key={s.seller_id} seller={s} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ChartGrid page="sellers" ctx={{ sellers: rows }} />
+        </div>
+        <LocationDistribution rows={rows} />
+      </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">All sellers</h2>
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="font-display text-[22px] font-medium tracking-tight text-ink-50">
+            All sellers
+          </h2>
+          <span className="text-xs text-ink-400">
+            {fmtInt(rows.length)} rows
+          </span>
+        </div>
         <DataTable columns={columns} rows={rows} rowKey={(s) => s.seller_id} />
       </section>
     </div>

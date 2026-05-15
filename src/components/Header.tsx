@@ -76,7 +76,9 @@ export default function Header() {
       <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-6 px-6 py-3">
         <Link href="/" className="flex items-center gap-2 text-ink-50">
           <Logo size={28} />
-          <span className="text-sm font-semibold tracking-tight">Geck Inspect</span>
+          <span className="font-display text-[15px] font-medium tracking-tight">
+            Geck Inspect
+          </span>
           <span className="ml-1 rounded border border-ink-700 bg-ink-800 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-ink-400">
             market
           </span>

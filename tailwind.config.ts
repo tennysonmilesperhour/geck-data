@@ -68,15 +68,33 @@ const config: Config = {
         },
       },
       fontFamily: {
+        // CSS variables come from src/app/layout.tsx (next/font/google).
+        // Each registration falls back to a system stack so SSR + the
+        // font-loading window never render with the wrong metrics.
+        display: [
+          "var(--font-display)",
+          "ui-serif",
+          "Iowan Old Style",
+          "Apple Garamond",
+          "Georgia",
+          "serif",
+        ],
         sans: [
+          "var(--font-sans)",
           "ui-sans-serif",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
-          "Inter",
           "sans-serif",
         ],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "monospace"],
+        mono: [
+          "var(--font-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "monospace",
+        ],
       },
       boxShadow: {
         panel: "0 1px 0 0 rgba(74,222,128,0.02) inset, 0 0 0 1px rgba(74,222,128,0.05)",
