@@ -128,8 +128,26 @@ def prompt_fingerprint(args: argparse.Namespace) -> str:
     return hashlib.sha1(bits.encode()).hexdigest()[:10]
 
 
+def _load_dotenv_for_eval() -> None:
+    """Pull .env.local into os.environ before we read GECK_INSPECT_* vars.
+
+    The eval script needs these BEFORE get_supabase() runs, so we can't
+    rely on supabase_client._load_dotenv_if_present which runs later.
+    """
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except ImportError:
+        return
+    repo_root = Path(__file__).resolve().parents[1]
+    for candidate in (repo_root / ".env.local", repo_root / ".env"):
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+            return
+
+
 def main() -> int:
     args = parse_args()
+    _load_dotenv_for_eval()
 
     fn_url = os.environ.get("GECK_INSPECT_FUNCTION_URL")
     anon_key = os.environ.get("GECK_INSPECT_ANON_KEY")
