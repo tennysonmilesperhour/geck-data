@@ -1,30 +1,17 @@
 // Sold listings — the primary outcome view. Pulls from the sold_listings_v
 // view (market_listings JOIN listing_status_events where status='sold').
-// Charts above the table come from <ChartGrid>; the table itself stays
-// page-owned as the navigational entry point.
-import Link from "next/link";
+// Page-owned hero histogram + ChartGrid + sortable table.
 import ChartGrid from "@/components/charts/ChartGrid";
-import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
-import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
+import { fmtInt, fmtUsd } from "@/lib/format";
+import SoldPriceDistribution from "@/components/sold/SoldPriceDistribution";
+import SortableSoldTable, {
+  type SoldRow,
+} from "@/components/sold/SortableSoldTable";
 
 export const dynamic = "force-dynamic";
-
-type SoldRow = {
-  id: string;
-  seller_id: string | null;
-  title: string | null;
-  price: number | null;
-  price_usd_equivalent: number | null;
-  maturity: string | null;
-  sex: string | null;
-  first_seen_at: string | null;
-  sold_at: string | null;
-  days_to_sell: number | null;
-  sold_source: string | null;
-};
 
 export default async function SoldPage() {
   const supabase = createClient();
@@ -64,61 +51,6 @@ export default async function SoldPage() {
   ).length;
   const inferredCount = rows.filter((r) => r.sold_source === "extension_inferred").length;
 
-  const columns: Column<SoldRow>[] = [
-    {
-      key: "title",
-      header: "Listing",
-      render: (r) => (
-        <div>
-          <div className="font-medium text-ink-100">{r.title ?? r.id}</div>
-          <div className="text-xs text-ink-400">{r.id}</div>
-        </div>
-      ),
-    },
-    { key: "maturity", header: "Maturity", render: (r) => r.maturity ?? "—" },
-    { key: "sex", header: "Sex", render: (r) => r.sex ?? "—" },
-    {
-      key: "price",
-      header: "Price",
-      align: "right",
-      render: (r) => fmtUsd(r.price_usd_equivalent ?? r.price),
-    },
-    {
-      key: "days",
-      header: "Days",
-      align: "right",
-      render: (r) => fmtInt(r.days_to_sell),
-    },
-    {
-      key: "sold_at",
-      header: "Sold",
-      render: (r) => (
-        <span title={fmtDate(r.sold_at)}>{fmtRelative(r.sold_at)}</span>
-      ),
-    },
-    {
-      key: "seller",
-      header: "Seller",
-      render: (r) =>
-        r.seller_id ? (
-          <Link href={`/sellers/${r.seller_id}`} className="text-claude hover:underline">
-            {r.seller_id}
-          </Link>
-        ) : (
-          "—"
-        ),
-    },
-    {
-      key: "source",
-      header: "Source",
-      render: (r) => (
-        <span className="rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200">
-          {r.sold_source ?? "—"}
-        </span>
-      ),
-    },
-  ];
-
   return (
     <div className="page-rise space-y-8">
       <SectionHeader
@@ -137,6 +69,10 @@ export default async function SoldPage() {
         <KpiCard label="Median sold price" value={fmtUsd(medianPrice)} />
       </div>
 
+      <SoldPriceDistribution
+        prices={rows.map((r) => r.price_usd_equivalent ?? r.price)}
+      />
+
       <ChartGrid page="sold" ctx={{ soldRows: rows, soldEvents }} />
 
       {inferredCount > 0 ? (
@@ -147,12 +83,7 @@ export default async function SoldPage() {
 
       <section>
         <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Recently sold</h2>
-        <DataTable
-          columns={columns}
-          rows={rows.slice(0, 200)}
-          rowKey={(r) => r.id}
-          emptyMessage="No sold listings recorded yet."
-        />
+        <SortableSoldTable rows={rows} />
       </section>
     </div>
   );
