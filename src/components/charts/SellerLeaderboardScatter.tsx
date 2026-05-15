@@ -20,7 +20,7 @@ export type Seller = {
 const MEMBERSHIP_COLOR: Record<string, string> = {
   Basic: "#6b6b6b",        // ink-500
   Premium: "#60a5fa",       // info
-  Pro: "#d97757",           // claude
+  Pro: "#b25929",           // claude
   Elite: "#f87171",         // danger
 };
 

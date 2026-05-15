@@ -667,7 +667,7 @@ export async function fetchSupplyPipeline(
 
 function supplyColor(): (combo: string) => string {
   const palette = [
-    "#34d399", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb7185",
+    "#2dbf95", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb7185",
     "#22d3ee", "#c084fc", "#4ade80", "#fde047", "#f97316", "#38bdf8",
   ];
   const cache = new Map<string, string>();

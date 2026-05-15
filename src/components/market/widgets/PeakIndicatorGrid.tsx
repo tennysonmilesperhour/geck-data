@@ -30,7 +30,7 @@ const TIER_META: Record<
     label: "ACCUMULATE",
     tint: "bg-ready/10 border-ready/40",
     text: "text-ready",
-    marker: "#34d399",
+    marker: "#2dbf95",
   },
 };
 

@@ -16,7 +16,7 @@ export type BubbleSeller = {
 const MEMBERSHIP_COLOR: Record<string, string> = {
   Basic: "#6b6b6b",
   Premium: "#60a5fa",
-  Pro: "#d97757",
+  Pro: "#b25929",
   Elite: "#f87171",
 };
 

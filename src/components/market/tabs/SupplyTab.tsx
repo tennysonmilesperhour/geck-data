@@ -80,7 +80,7 @@ export default function SupplyTab({ filters }: { filters: Filters }) {
 
 function LockBanner() {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-ready/30 bg-ready/5 px-4 py-3 text-sm shadow-[0_0_0_1px_rgba(16,185,129,0.08)]">
+    <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-ready/30 bg-ready/5 px-4 py-3 text-sm shadow-[0_0_0_1px_rgba(14,154,115,0.08)]">
       <div className="flex items-start gap-3">
         <span
           aria-hidden
