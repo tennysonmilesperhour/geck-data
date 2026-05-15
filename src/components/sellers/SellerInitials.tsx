@@ -4,16 +4,16 @@
 // depending on uploaded photos (we don't have a complete photo set).
 
 const PALETTES: ReadonlyArray<readonly [string, string]> = [
-  ["#10b981", "#0ea5e9"], // emerald → sky
-  ["#34d399", "#6366f1"], // mint → indigo
-  ["#22d3ee", "#10b981"], // cyan → emerald
-  ["#84cc16", "#10b981"], // lime → emerald
+  ["#0e9a73", "#0ea5e9"], // emerald → sky
+  ["#2dbf95", "#6366f1"], // mint → indigo
+  ["#22d3ee", "#0e9a73"], // cyan → emerald
+  ["#84cc16", "#0e9a73"], // lime → emerald
   ["#a3e635", "#3b82f6"], // limey → blue
-  ["#f59e0b", "#10b981"], // amber → emerald
+  ["#f59e0b", "#0e9a73"], // amber → emerald
   ["#f97316", "#84cc16"], // orange → lime
-  ["#ec4899", "#10b981"], // pink → emerald
+  ["#ec4899", "#0e9a73"], // pink → emerald
   ["#a78bfa", "#22d3ee"], // violet → cyan
-  ["#fbbf24", "#34d399"], // amber → mint
+  ["#fbbf24", "#2dbf95"], // amber → mint
 ];
 
 function djb2(str: string): number {

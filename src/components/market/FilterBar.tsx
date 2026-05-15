@@ -137,7 +137,7 @@ function Segmented<T extends string>({
             onClick={() => onChange(opt)}
             className={`px-3 py-1.5 transition ${
               active
-                ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(74,222,128,0.25)]"
+                ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(123,191,131,0.25)]"
                 : "text-forest-300 hover:bg-forest-850 hover:text-forest-100"
             }`}
           >

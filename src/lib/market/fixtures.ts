@@ -362,8 +362,8 @@ export function getComboDetail(f: Filters, combo: Combo | null): ComboDetail | n
     range,
     observations: 20 + Math.floor(rand() * 40),
     series: [
-      { name: "Upper band",    color: "#10b98166", dashed: true, points: upper },
-      { name: "Sold (median)", color: "#34d399",                  points: sold },
+      { name: "Upper band",    color: "#0e9a7366", dashed: true, points: upper },
+      { name: "Sold (median)", color: "#2dbf95",                  points: sold },
       { name: "Ask (median)",  color: "#a78bfa",   dashed: true, points: ask },
       { name: "Internal avg",  color: "#fbbf24",                  points: internal },
       { name: "External avg",  color: "#38bdf8",                  points: external },
@@ -642,7 +642,7 @@ export type SupplyPipeline = {
 };
 
 const SUPPLY_COLORS: readonly string[] = [
-  "#34d399", "#60a5fa", "#a78bfa", "#f472b6",
+  "#2dbf95", "#60a5fa", "#a78bfa", "#f472b6",
   "#fbbf24", "#fb7185", "#22d3ee", "#c084fc",
   "#4ade80", "#fde047", "#f97316", "#38bdf8",
 ];

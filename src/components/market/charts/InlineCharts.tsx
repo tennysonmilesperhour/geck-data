@@ -24,7 +24,7 @@ const innerH = H - M.t - M.b;
 
 export function AreaChart({
   data,
-  color = "#34d399",
+  color = "#2dbf95",
   yFormat = (v) => Math.round(v).toLocaleString(),
   tooltipLabel = "Index",
   height = 240,
@@ -176,7 +176,7 @@ export function AreaChart({
             x2={hover.x}
             y1={M.t}
             y2={M.t + innerH}
-            stroke="#34d39966"
+            stroke="#2dbf9566"
             strokeWidth={1}
           />
           <circle cx={hover.x} cy={hover.y} r={4} fill="#e5ede8" stroke={color} strokeWidth={2} />
@@ -188,7 +188,7 @@ export function AreaChart({
               height={40}
               rx={6}
               fill="#0b1814"
-              stroke="rgba(74,222,128,0.35)"
+              stroke="rgba(123,191,131,0.35)"
             />
             <text x={0} y={-16} textAnchor="middle" fontSize={10} fill="#a8c4b8">
               {active.t}
@@ -212,7 +212,7 @@ export function Sparkline({
   values,
   width = 84,
   height = 24,
-  positiveColor = "#34d399",
+  positiveColor = "#2dbf95",
   negativeColor = "#fb7185",
 }: {
   values: number[];

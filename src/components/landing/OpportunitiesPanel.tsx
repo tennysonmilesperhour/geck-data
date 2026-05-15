@@ -68,7 +68,7 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
                   rel="noopener noreferrer"
                   className={`group flex items-start justify-between gap-3 rounded-md border px-3 py-2.5 transition ${
                     isMatched
-                      ? "border-emerald-500/50 bg-ink-800/80 shadow-[0_0_0_1px_rgba(16,185,129,0.08)]"
+                      ? "border-emerald-500/50 bg-ink-800/80 shadow-[0_0_0_1px_rgba(14,154,115,0.08)]"
                       : "border-ink-700/60 bg-ink-900/40 hover:border-amber-500/40 hover:bg-ink-800/60"
                   }`}
                 >
