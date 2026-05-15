@@ -74,7 +74,7 @@ export default function BreedersTab({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[840px] text-sm">
             <thead>
-              <tr className="text-left font-mono text-[10px] uppercase tracking-wider text-ready">
+              <tr className="text-left font-mono text-[10px] uppercase tracking-[0.14em] text-forest-400">
                 <th className="px-3 py-2">Breeder</th>
                 <th className="px-3 py-2">Region</th>
                 <th className="px-3 py-2 text-right">Active</th>
@@ -89,7 +89,7 @@ export default function BreedersTab({
             </thead>
             <tbody className="divide-y divide-forest-700/60">
               {data.rows.map((r) => (
-                <tr key={r.name} className="hover:bg-forest-850/50">
+                <tr key={r.name} className="row-hover">
                   <td className="px-3 py-3 align-middle font-medium text-forest-50">
                     {r.name}
                   </td>
