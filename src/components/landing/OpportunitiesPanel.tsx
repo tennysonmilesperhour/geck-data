@@ -37,7 +37,7 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-400/80">
             Signal
           </div>
-          <h2 className="mt-0.5 text-lg font-semibold tracking-tight text-ink-50">
+          <h2 className="mt-1 font-display text-[22px] font-medium tracking-tight text-ink-50">
             Opportunities
           </h2>
           <p className="mt-1 text-xs text-ink-400">

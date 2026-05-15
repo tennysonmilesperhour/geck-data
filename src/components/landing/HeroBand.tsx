@@ -34,17 +34,27 @@ export default function HeroBand({ snapshot }: Props) {
       />
 
       <div className="relative flex flex-col gap-7 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-400">
+        <div className="max-w-2xl">
+          <div className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-400">
+            <span className="status-dot" />
             Live · Crested Gecko Market
           </div>
-          <h1 className="text-balance text-3xl font-semibold tracking-tight text-ink-50 md:text-4xl">
-            What&apos;s happening right now.
+          <h1 className="font-display text-balance text-[44px] font-medium leading-[1.05] tracking-[-0.015em] text-ink-50 md:text-[56px]">
+            What&apos;s happening{" "}
+            <span className="text-claude-glow">right now.</span>
           </h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-ink-300">
+          <p className="mt-4 text-base leading-7 text-ink-300">
             Pricing, trait economics, regional spread, and seller signal —
-            refreshed from MorphMarket every day. Drill from any tile into the
-            full dataset.
+            refreshed from MorphMarket every day. New to crested geckos? Start
+            with{" "}
+            <Link href="#whats-hot" className="text-claude-glow hover:underline">
+              what&apos;s selling
+            </Link>
+            . Looking to time the market? Try{" "}
+            <Link href="/trends" className="text-claude-glow hover:underline">
+              trends
+            </Link>
+            .
           </p>
         </div>
         <Link
