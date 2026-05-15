@@ -50,6 +50,35 @@ JSONLD_RE = re.compile(
 )
 
 
+# MorphMarket dropped the JSON-LD `seller` field from detail pages
+# sometime around mid-May 2026, so we can't rely on Product.seller for
+# seller info anymore. The rendered HTML still carries an anchor of the
+# shape <a href="/stores/{slug}/"...>...storeName...{display name}...</a>
+# in two places per page (mobile + desktop layouts). We pluck the slug
+# and the display name from there.
+_SELLER_ANCHOR_RE = re.compile(
+    r'<a[^>]+href="/stores/(?P<slug>[^/"]+)/?"[^>]*>'
+    r'.{0,500}?storeName[^"]*"[^>]*>(?P<name>[^<]+)<',
+    re.DOTALL,
+)
+
+
+def _extract_seller_from_html(html: str) -> tuple[Optional[str], Optional[str]]:
+    """Return (seller_slug, seller_name) from the rendered detail HTML.
+
+    Both values may be None if the page doesn't expose them (sold-out
+    listings sometimes hide the store link).
+    """
+    if not html:
+        return None, None
+    match = _SELLER_ANCHOR_RE.search(html)
+    if not match:
+        return None, None
+    slug = match.group("slug").strip() or None
+    name = match.group("name").strip() or None
+    return slug, name
+
+
 class FetchResult(NamedTuple):
     """One of: upsert a refreshed row, deactivate a gone listing, or skip."""
 
@@ -207,6 +236,10 @@ def parse_detail_html(html: str, *, listing_id: str) -> Optional[dict[str, Any]]
         else:
             extras[lower] = str(value)
 
+    # JSON-LD on detail pages no longer carries `seller.url`, so we pull
+    # the slug (and the name as a fallback) from the rendered HTML.
+    html_seller_slug, html_seller_name = _extract_seller_from_html(html)
+
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
     row: dict[str, Any] = {
         "listing_id": normalise_listing_id(listing_id),
@@ -215,7 +248,8 @@ def parse_detail_html(html: str, *, listing_id: str) -> Optional[dict[str, Any]]
         "price": coerce_float(offer.get("price")),
         "currency": offer.get("priceCurrency"),
         "availability": offer.get("availability"),
-        "seller_name": seller.get("name"),
+        "seller_name": seller.get("name") or html_seller_name,
+        "seller_slug": html_seller_slug,
         "scientific_name": extras.get("scientific name"),
         "category": extras.get("category"),
         "sex": extras.get("sex"),
