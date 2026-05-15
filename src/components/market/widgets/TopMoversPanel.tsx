@@ -101,7 +101,12 @@ function Column({
                   ${m.avgPrice.toLocaleString()} avg · n={m.n}
                 </div>
               </div>
-              <MiniSparkline values={m.spark} width={88} height={22} />
+              <span
+                title="Prior window median → current window median (two endpoints, no daily breakdown)"
+                className="inline-flex"
+              >
+                <MiniSparkline values={m.spark} width={64} height={22} />
+              </span>
               <div className={`flex items-center gap-1 font-mono text-sm ${color}`}>
                 <span aria-hidden>{tone === "positive" ? "▲" : "▼"}</span>
                 <span className="tabular-nums">
