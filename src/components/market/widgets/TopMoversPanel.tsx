@@ -4,7 +4,7 @@
 //
 // Matches the handoff screenshots. Row click is reserved for task 4
 // (Combos tab detail drill-in) — placeholder handler for now.
-import { Sparkline } from "@/components/market/charts/InlineCharts";
+import MiniSparkline from "@/components/charts/MiniSparkline";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
@@ -101,7 +101,7 @@ function Column({
                   ${m.avgPrice.toLocaleString()} avg · n={m.n}
                 </div>
               </div>
-              <Sparkline values={m.spark} />
+              <MiniSparkline values={m.spark} width={88} height={22} />
               <div className={`flex items-center gap-1 font-mono text-sm ${color}`}>
                 <span aria-hidden>{tone === "positive" ? "▲" : "▼"}</span>
                 <span className="tabular-nums">

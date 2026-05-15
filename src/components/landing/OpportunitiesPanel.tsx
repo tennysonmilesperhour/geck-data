@@ -34,7 +34,7 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
     <section className="rounded-2xl border border-ink-700 bg-ink-850 p-5 shadow-panel">
       <header className="mb-4 flex items-end justify-between">
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-400/80">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-clay-300/80">
             Signal
           </div>
           <h2 className="mt-1 font-display text-[22px] font-medium tracking-tight text-ink-50">
