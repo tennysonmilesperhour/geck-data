@@ -60,7 +60,7 @@ export default function BreedersTab({
               ☰
             </span>
             <div>
-              <h2 className="text-base font-semibold text-forest-50">Breeders</h2>
+              <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">Breeders</h2>
               <p className="mt-0.5 max-w-lg text-xs text-forest-400">
                 Ranked by sold volume in the selected window. Sparkline shows
                 the last 12 weeks of new listings. Click a specialty combo to

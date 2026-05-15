@@ -12,20 +12,23 @@ export const dynamic = "force-dynamic";
 
 export default function MarketPage() {
   return (
-    <div className="market-theme -mx-6 -my-8 min-h-[calc(100vh-4rem)] px-6 py-8">
-      <div className="space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-forest-400">
+    <div className="market-theme page-rise -mx-6 -my-8 min-h-[calc(100vh-4rem)] px-6 py-8">
+      <div className="space-y-8">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-2xl">
+            <div className="mb-2 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-forest-400">
+              <span className="status-dot" />
               Analysis · Market
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-forest-50">
-              Geck Inspect Market
+            <h1 className="font-display text-[40px] font-medium leading-[1.05] tracking-[-0.015em] text-forest-50 md:text-[48px]">
+              The crested gecko{" "}
+              <span className="text-claude-glow">trading floor.</span>
             </h1>
-            <p className="mt-1 max-w-2xl text-sm text-forest-300">
+            <p className="mt-3 text-base leading-7 text-forest-300">
               Weighted pricing, movers, regional spreads, arbitrage, and
               forward supply — every number tagged with its source and
-              confidence.
+              confidence. Built for breeders evaluating production roadmaps
+              and pricing decisions.
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-ready/40 bg-ready/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-ready">

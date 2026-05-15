@@ -42,7 +42,7 @@ export default function SupplyTab({ filters }: { filters: Filters }) {
               ⚘
             </span>
             <div>
-              <h2 className="text-base font-semibold text-forest-50">
+              <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
                 Supply pipeline — projected hatchlings (9-month)
               </h2>
               <p className="mt-0.5 text-xs text-forest-400">

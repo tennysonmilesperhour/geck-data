@@ -58,7 +58,7 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
               ◎
             </span>
             <div>
-              <h2 className="text-base font-semibold text-forest-50">
+              <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
                 Arbitrage — biggest spreads
               </h2>
               <p className="mt-0.5 max-w-md text-xs text-forest-400">

@@ -40,7 +40,7 @@ export default function ComboDetailPanel({
             <div className="font-mono text-[10px] uppercase tracking-wider text-forest-400">
               Headline
             </div>
-            <h2 className="mt-0.5 truncate text-xl font-semibold text-forest-50">
+            <h2 className="mt-0.5 truncate font-display text-[26px] font-medium tracking-tight text-forest-50">
               {detail.combo}
             </h2>
             <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">

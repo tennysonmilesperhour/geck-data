@@ -37,7 +37,7 @@ export default function RankedCombosTable({
             ◆
           </span>
           <div>
-            <h2 className="text-base font-semibold text-forest-50">
+            <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
               Trait Combinations — ranked
             </h2>
             <p className="mt-0.5 max-w-xs text-xs text-forest-400">
