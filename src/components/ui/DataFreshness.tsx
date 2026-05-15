@@ -15,8 +15,13 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 function relative(ts: Date | string | number | null | undefined): string {
-  if (!ts) return "unknown";
-  const t = ts instanceof Date ? ts.getTime() : Date.parse(String(ts));
+  if (ts == null) return "unknown";
+  const t =
+    ts instanceof Date
+      ? ts.getTime()
+      : typeof ts === "number"
+        ? ts
+        : Date.parse(ts);
   if (!Number.isFinite(t)) return "unknown";
   const delta = Date.now() - t;
   if (delta < 0) return "just now";

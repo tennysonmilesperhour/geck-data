@@ -83,10 +83,45 @@ export const SOURCES: readonly SourceMeta[] = [
 
 const BY_ID = new Map<SourceId, SourceMeta>(SOURCES.map((s) => [s.id, s]));
 
-export function sourceMeta(id: SourceId): SourceMeta {
-  const m = BY_ID.get(id);
-  if (!m) throw new Error(`Unknown source: ${id}`);
-  return m;
+// Map raw strings that come back from the database (price_history.source,
+// market_listings.scrape_source, etc.) to canonical SourceIds. The
+// scraper writes "scraper" today and a small handful of legacy ingests
+// wrote "extension_legacy"; both should read as MorphMarket / GI listings
+// in the UI, not crash a panel.
+const ALIAS_MAP: Readonly<Record<string, SourceId>> = {
+  scraper: "morphmarket",
+  morphmarket_scrape: "morphmarket",
+  extension_legacy: "gi_listings",
+  extension_inferred: "gi_listings",
+};
+
+export function normalizeSourceId(raw: string | null | undefined): SourceId {
+  if (!raw) return "gi_listings";
+  if (BY_ID.has(raw as SourceId)) return raw as SourceId;
+  const aliased = ALIAS_MAP[raw];
+  if (aliased) return aliased;
+  return "gi_listings";
+}
+
+// Defensive fallback so a stray foreign-source string never crashes a
+// render. The UI will show a neutral "Other" pill instead of throwing;
+// the caller can normalize first if it wants the alias mapping applied.
+const UNKNOWN_META: SourceMeta = {
+  id: "gi_listings",
+  label: "Other source",
+  short: "Other",
+  kind: "external",
+  color: "#94a3b8",
+  description:
+    "Source not in the canonical catalog. Probably a legacy ingest value — see normalizeSourceId in src/lib/market/sources.ts.",
+};
+
+export function sourceMeta(id: SourceId | string): SourceMeta {
+  const m = BY_ID.get(id as SourceId);
+  if (m) return m;
+  const aliased = ALIAS_MAP[id as string];
+  if (aliased) return BY_ID.get(aliased)!;
+  return UNKNOWN_META;
 }
 
 export const ALL_SOURCE_IDS: readonly SourceId[] = SOURCES.map((s) => s.id);

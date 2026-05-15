@@ -45,6 +45,7 @@ import {
   sortComboRows,
   tierForScore,
 } from "./fixtures";
+import { normalizeSourceId, sourceMeta } from "./sources";
 
 // ----------------------------------------------------------------------------
 // Shared result envelope. `live` is the observable signal that a widget
@@ -400,15 +401,22 @@ export async function fetchComboDetail(
     // reconstruct the multi-series shape from price_history alone.
     const fixture = getComboDetail(filters, combo as never);
     if (!fixture) return ok(null);
+    // Database stores raw strings like "scraper" / "extension_legacy"
+    // in price_history.source; normalize at this boundary so downstream
+    // components only see canonical SourceIds. The original raw string
+    // is preserved as `label` so the badge tooltip can disclose it.
     const mapped = {
       ...fixture,
-      blend: blendRows.map((b) => ({
-        source: (b.source as SourceId) ?? "gi_listings",
-        n: b.n,
-        amount: Math.round(Number(b.avg_price)),
-        pct: Math.round(Number(b.pct)),
-        label: b.source,
-      })),
+      blend: blendRows.map((b) => {
+        const id = normalizeSourceId(b.source);
+        return {
+          source: id,
+          n: b.n,
+          amount: Math.round(Number(b.avg_price)),
+          pct: Math.round(Number(b.pct)),
+          label: b.source && b.source !== id ? `${sourceMeta(id).short} (${b.source})` : sourceMeta(id).short,
+        };
+      }),
     };
     return ok(mapped, `v_combo_source_blend(${combo}, ${w}d)`);
   } catch (e) {
