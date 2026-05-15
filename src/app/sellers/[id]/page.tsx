@@ -13,6 +13,7 @@ import SellerPercentile from "@/components/sellers/SellerPercentile";
 import TimeOnMarketHistogram from "@/components/sellers/TimeOnMarketHistogram";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
+import WatchButton from "@/components/alerts/WatchButton";
 
 export const dynamic = "force-dynamic";
 
@@ -310,11 +311,19 @@ export default async function SellerDetailPage({
           <h1 className="font-display text-[34px] font-medium leading-tight tracking-tight text-ink-50">
             {seller.seller_name ?? seller.seller_id}
           </h1>
-          {seller.five_star_rating != null ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-clay-400/40 bg-clay-500/10 px-2 py-0.5 text-xs text-clay-300">
-              ★ {seller.five_star_rating.toFixed(1)}
-            </span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {seller.five_star_rating != null ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-clay-400/40 bg-clay-500/10 px-2 py-0.5 text-xs text-clay-300">
+                ★ {seller.five_star_rating.toFixed(1)}
+              </span>
+            ) : null}
+            <WatchButton
+              label="Watch seller"
+              alertName={`Seller: ${seller.seller_name ?? seller.seller_id}`}
+              query={{ kind: "seller", seller_id: seller.seller_id }}
+              size="md"
+            />
+          </div>
         </div>
         <p className="mt-1 text-sm text-ink-400">
           {[seller.seller_location, seller.membership].filter(Boolean).join(" · ") ||
