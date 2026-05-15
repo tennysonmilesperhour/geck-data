@@ -199,15 +199,25 @@ export default async function SellerDetailPage({
   return (
     <div className="page-rise space-y-8">
       <div>
-        <Link href="/sellers" className="text-sm text-claude hover:underline">
-          ← All sellers
-        </Link>
-        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-ink-50">
+        <nav
+          aria-label="Breadcrumb"
+          className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-500"
+        >
+          <Link
+            href="/sellers"
+            className="transition hover:text-claude-glow"
+          >
+            Sellers
+          </Link>
+          <span aria-hidden>/</span>
+          <span className="text-ink-300">{seller.seller_name ?? seller.seller_id}</span>
+        </nav>
+        <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
+          <h1 className="font-display text-[34px] font-medium leading-tight tracking-tight text-ink-50">
             {seller.seller_name ?? seller.seller_id}
           </h1>
           {seller.five_star_rating != null ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
+            <span className="inline-flex items-center gap-1 rounded-full border border-clay-400/40 bg-clay-500/10 px-2 py-0.5 text-xs text-clay-300">
               ★ {seller.five_star_rating.toFixed(1)}
             </span>
           ) : null}
