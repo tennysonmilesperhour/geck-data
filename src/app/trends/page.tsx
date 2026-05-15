@@ -9,6 +9,7 @@ import { Panel, SectionHeader } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
 import DataFreshness from "@/components/ui/DataFreshness";
 import TimeSeriesLine, {
+  type ChartEvent,
   type Series,
   type SeriesPoint,
 } from "@/components/charts/TimeSeriesLine";
@@ -196,6 +197,25 @@ export default async function TrendsPage() {
     { name: "Price ticks", color: chartTheme.series[1]!, points: priceTicksDaily },
   ];
 
+  // Detect backfill days on the new-listings stream: a single day
+  // that's >3x the median of the other days in the window almost
+  // always reflects an initial catalog ingest, not organic activity.
+  // Flag it on the chart so the spike isn't read as a market event.
+  const volumeEvents: ChartEvent[] = (() => {
+    const points = newListingsDaily;
+    if (points.length < 4) return [];
+    const sortedVals = points.map((p) => p.v).sort((a, b) => a - b);
+    const median = sortedVals[Math.floor(sortedVals.length / 2)] ?? 0;
+    if (median === 0) return [];
+    return points
+      .filter((p) => p.v >= median * 3 && p.v >= 50)
+      .map((p) => ({
+        at: p.t,
+        label: `Backfill spike (${p.v} listings)`,
+        tone: "warn" as const,
+      }));
+  })();
+
   const medianPriceSeries: Series[] = [
     {
       name: "Median price (weekly)",
@@ -261,7 +281,11 @@ export default async function TrendsPage() {
         subtitle="Daily count across ingest streams over the last 30 days. New listings = unique listings first seen that day; price drops + sold are recorded as the events happen. Large early-period bars are part of the initial catalog backfill, not organic activity."
         right={<span className="font-mono text-[11px]">last 30d</span>}
       >
-        <TimeSeriesLine series={volumeSeries} height={280} />
+        <TimeSeriesLine
+          series={volumeSeries}
+          events={volumeEvents}
+          height={280}
+        />
       </Panel>
 
       <Panel

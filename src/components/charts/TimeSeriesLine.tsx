@@ -12,13 +12,31 @@ export type Series = {
   points: SeriesPoint[];
 };
 
+// Annotated events overlay vertical markers on the chart so viewers
+// can correlate a slope change with a known cause ("first scrape",
+// "May 10 backfill", "trait promo"). Same pattern Bloomberg and
+// Robinhood use for earnings markers on equity charts.
+export type ChartEvent = {
+  at: Date;
+  label: string;
+  tone?: "info" | "warn" | "positive";
+};
+
+const EVENT_TONE_COLOR: Record<NonNullable<ChartEvent["tone"]>, string> = {
+  info: "#7ab1d1",      // ocean
+  warn: "#cd6e3c",      // clay-400
+  positive: "#7bbf83",  // sage
+};
+
 export default function TimeSeriesLine({
   series,
+  events,
   height = 260,
   yFormat = (n) => d3.format(",.0f")(n),
   yLabel,
 }: {
   series: Series[];
+  events?: ChartEvent[];
   height?: number;
   yFormat?: (n: number) => string;
   yLabel?: string;
@@ -98,6 +116,47 @@ export default function TimeSeriesLine({
         .attr("fill", s.color);
     }
 
+    // Event annotations — vertical dotted markers + small dot at the
+    // bottom axis with a tooltip surfacing the label on hover. Events
+    // outside the chart's time domain are silently skipped so a
+    // caller passing a generic event list doesn't push the marker off
+    // the right edge.
+    if (events && events.length > 0) {
+      const [t0, t1] = x.domain() as [Date, Date];
+      const inWindow = events.filter(
+        (e) => e.at.getTime() >= t0.getTime() && e.at.getTime() <= t1.getTime(),
+      );
+      const eventLayer = g.append("g").attr("class", "events");
+      for (const e of inWindow) {
+        const xPos = x(e.at);
+        const tone = e.tone ?? "info";
+        const color = EVENT_TONE_COLOR[tone];
+        eventLayer
+          .append("line")
+          .attr("x1", xPos)
+          .attr("x2", xPos)
+          .attr("y1", 0)
+          .attr("y2", h)
+          .attr("stroke", color)
+          .attr("stroke-width", 1)
+          .attr("stroke-dasharray", "3,3")
+          .attr("opacity", 0.55);
+        const marker = eventLayer
+          .append("g")
+          .attr("transform", `translate(${xPos}, ${h})`)
+          .style("cursor", "default");
+        marker.append("title").text(
+          `${e.label} · ${d3.timeFormat("%b %-d, %Y")(e.at)}`,
+        );
+        marker
+          .append("circle")
+          .attr("r", 4)
+          .attr("fill", color)
+          .attr("stroke", chartTheme.markerStroke)
+          .attr("stroke-width", 1.5);
+      }
+    }
+
     // Legend
     const legend = g
       .append("g")
@@ -113,7 +172,7 @@ export default function TimeSeriesLine({
         .attr("fill", chartTheme.label)
         .text(s.name);
     });
-  }, [series, height, yFormat, yLabel]);
+  }, [series, events, height, yFormat, yLabel]);
 
   return <svg ref={svgRef} className="w-full" style={{ height }} />;
 }
