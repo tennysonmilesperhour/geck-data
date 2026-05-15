@@ -210,7 +210,7 @@ export default async function AlertsPage() {
           columns={alertColumns}
           rows={alertRows}
           rowKey={(a) => a.id}
-          emptyMessage="No alerts yet. (Alert creation UI coming — until then, insert rows directly in the `alerts` table.)"
+          emptyMessage="No alerts yet. The alert creation UI is coming soon."
         />
       </section>
 

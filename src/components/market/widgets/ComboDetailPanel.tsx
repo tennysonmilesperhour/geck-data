@@ -75,16 +75,10 @@ export default function ComboDetailPanel({
           <MultiLineChart series={detail.series} />
         </div>
 
-        <footer className="mt-3 flex items-center justify-between text-[11px] text-forest-500">
+        <footer className="mt-3 text-[11px] text-forest-500">
           <span className="font-mono">
             {detail.observations.toLocaleString()} observations over period
           </span>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-ready hover:text-forest-50"
-          >
-            See underlying transactions →
-          </button>
         </footer>
       </section>
 

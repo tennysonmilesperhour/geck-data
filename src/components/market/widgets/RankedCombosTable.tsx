@@ -63,14 +63,6 @@ export default function RankedCombosTable({
           <span aria-hidden className="text-xs text-forest-500">
             ↧
           </span>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md border border-forest-700 bg-forest-950/40 px-2 py-1 text-[10px] text-forest-300 hover:text-forest-100"
-            title="Methodology (coming soon)"
-          >
-            <span aria-hidden>ⓘ</span>
-            Methodology
-          </button>
         </div>
       </header>
 

@@ -65,14 +65,6 @@ export default function PeakIndicatorGrid({
         </div>
         <div className="flex items-center gap-2">
           {status ? <LivePreviewTag status={status} note={note} /> : null}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md border border-forest-700 bg-forest-950/40 px-2 py-1 text-[10px] text-forest-300 hover:text-forest-100"
-            title="Methodology (coming soon)"
-          >
-            <span aria-hidden>ⓘ</span>
-            Methodology
-          </button>
         </div>
       </header>
 
