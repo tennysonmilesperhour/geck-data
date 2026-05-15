@@ -243,11 +243,15 @@ export async function fetchTopMovers(
         const currPx = Number(r.median_sold ?? 0);
         const prevPx = prevByCombo.get(r.combo_name) ?? currPx;
         const deltaPct = prevPx === 0 ? 0 : ((currPx - prevPx) / prevPx) * 100;
-        const steps = 12;
-        const spark = Array.from({ length: steps }, (_, i) => {
-          const t = i / (steps - 1);
-          return prevPx + (currPx - prevPx) * t;
-        });
+        // The v_combo_rollups RPC gives us a single median per
+        // window, not a daily series. We don't have day-level
+        // breakdown here — so the "spark" is just the two real
+        // endpoints (prior window median -> current window median).
+        // MiniSparkline draws this as a single line segment, which
+        // is the honest representation. Previously we interpolated 12
+        // synthetic points between the two values; that looked like a
+        // time series but carried no real intermediate information.
+        const spark = [prevPx, currPx];
         return {
           combo: r.combo_name as Mover["combo"],
           avgPrice: Math.round(currPx),
