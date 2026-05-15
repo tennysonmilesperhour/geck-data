@@ -37,7 +37,7 @@ export default function ConfidenceBadge({
   const px = size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs";
   return (
     <span
-      title={`Confidence ${score}/100 — ${tier}`}
+      title={`Confidence ${score}/100 — ${tier}. Higher means more observations and tighter agreement across sources behind this number.`}
       className={`inline-flex items-center gap-1 rounded-md border font-mono ${px} ${TONE_CLASSES[tone]}`}
     >
       <span aria-hidden>⊘</span>

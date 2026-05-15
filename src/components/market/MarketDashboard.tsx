@@ -6,6 +6,7 @@
 import { useState } from "react";
 import type { Filters, Tab } from "@/lib/market/types";
 import FilterBar from "./FilterBar";
+import OnboardingPanel from "./OnboardingPanel";
 import TabNav from "./TabNav";
 import OverviewTab from "./tabs/OverviewTab";
 import CombosTab from "./tabs/CombosTab";
@@ -35,6 +36,7 @@ export default function MarketDashboard() {
   return (
     <div className="space-y-4">
       <FilterBar filters={filters} onChange={setFilters} />
+      <OnboardingPanel />
       <TabNav tab={tab} onChange={setTab} />
 
       {tab === "overview" && (
