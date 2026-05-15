@@ -1,8 +1,10 @@
-// Market Trends — longitudinal view of the crested gecko market. Shows
-// daily/weekly cadence across every event stream plus price movement,
-// trait momentum, and cohort metrics. All reads go through the anon key
-// and the public-read policies; the page reshapes raw rows into the
-// Series format consumed by TimeSeriesLine.
+// Market Trends — longitudinal view of the crested gecko market. The
+// heavy trait-momentum computation (~20k listings, ~200ms) is lifted
+// into a Suspense-wrapped child component so the rest of the page
+// (cadence chart, weekly median, maturity cohorts) streams to the
+// client as soon as those queries finish, rather than blocking on the
+// momentum pass.
+import { Suspense } from "react";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
 import TimeSeriesLine, {
@@ -12,6 +14,9 @@ import TimeSeriesLine, {
 import { chartTheme } from "@/components/charts/theme";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtPct, fmtUsd } from "@/lib/format";
+import TraitMomentumPanels, {
+  TraitMomentumSkeleton,
+} from "@/components/trends/TraitMomentumPanels";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +33,7 @@ function weekBucketISO(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  // Anchor to Monday of the week.
-  const day = d.getUTCDay() || 7; // 1..7 (Mon..Sun)
+  const day = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() - (day - 1));
   d.setUTCHours(0, 0, 0, 0);
   return d.toISOString().slice(0, 10);
@@ -67,7 +71,7 @@ function medianSeries(
   for (const [k, arr] of map) {
     arr.sort((a, b) => a - b);
     const m = arr[Math.floor(arr.length / 2)];
-    out.push({ t: new Date(k + "T00:00:00Z"), v: m });
+    out.push({ t: new Date(k + "T00:00:00Z"), v: m ?? 0 });
   }
   return out.sort((a, b) => a.t.getTime() - b.t.getTime());
 }
@@ -75,17 +79,19 @@ function medianSeries(
 export default async function TrendsPage() {
   const supabase = createClient();
 
-  const since30 = new Date(Date.now() - 30 * DAY_MS).toISOString();
   const since90 = new Date(Date.now() - 90 * DAY_MS).toISOString();
   const since14 = new Date(Date.now() - 14 * DAY_MS).toISOString();
   const prev14 = new Date(Date.now() - 28 * DAY_MS).toISOString();
 
+  // Fast queries — these block the initial paint. The trait-momentum
+  // computation (which needs the full 20k listings + a chunky double
+  // groupBy) runs in <TraitMomentumPanels /> behind a Suspense boundary.
   const [
     newListingsRaw,
     priceDropsRaw,
     soldEventsRaw,
     priceHistoryRaw,
-    listingsAll,
+    listingsForMaturity,
     recentCount14,
     priorCount14,
   ] = await Promise.all([
@@ -112,7 +118,7 @@ export default async function TrendsPage() {
       .limit(20000),
     supabase
       .from("market_listings")
-      .select("id, price, price_usd_equivalent, maturity, norm_traits, cached_traits, first_seen_at")
+      .select("price, price_usd_equivalent, maturity")
       .limit(20000),
     supabase
       .from("market_listings")
@@ -142,24 +148,19 @@ export default async function TrendsPage() {
     dayBucketISO,
   );
 
-  // Weekly median price from price_history (if populated)
   const priceRows = (priceHistoryRaw.data ?? [])
     .map((r) => ({ t: r.observed_at as string, v: Number(r.price) }))
     .filter((r) => Number.isFinite(r.v) && r.v > 0 && r.v < 10_000);
   const medianPriceWeekly = medianSeries(priceRows, weekBucketISO);
 
-  // Current snapshot: median by maturity
-  type Row = {
+  type MaturityRow = {
     price: number | null;
     price_usd_equivalent: number | null;
     maturity: string | null;
-    norm_traits: string | null;
-    cached_traits: string | null;
-    first_seen_at: string | null;
   };
-  const all = (listingsAll.data ?? []) as Row[];
+  const matAll = (listingsForMaturity.data ?? []) as MaturityRow[];
   const byMaturity = new Map<string, number[]>();
-  for (const r of all) {
+  for (const r of matAll) {
     const p = r.price_usd_equivalent ?? r.price;
     if (!p || p <= 0 || p > 10_000) continue;
     const m = r.maturity ?? "unknown";
@@ -172,76 +173,21 @@ export default async function TrendsPage() {
     arr.sort((a, b) => a - b);
     medianByMaturity.push({
       maturity: m,
-      median: arr[Math.floor(arr.length / 2)],
+      median: arr[Math.floor(arr.length / 2)] ?? 0,
       count: arr.length,
     });
   }
   medianByMaturity.sort((a, b) => b.count - a.count);
-
-  // Trait momentum: count each trait in new listings last 14d vs prior 14d.
-  const prev14End = Date.now() - 14 * DAY_MS;
-  const prev14Start = Date.now() - 28 * DAY_MS;
-  const recent = (since14Iso: string, before?: string) =>
-    all.filter((r) => {
-      if (!r.first_seen_at) return false;
-      const t = Date.parse(r.first_seen_at);
-      if (!Number.isFinite(t)) return false;
-      const afterStart = t >= Date.parse(since14Iso);
-      const beforeEnd = before ? t < Date.parse(before) : true;
-      return afterStart && beforeEnd;
-    });
-  const recentListings = recent(since14);
-  const priorListings = all.filter((r) => {
-    if (!r.first_seen_at) return false;
-    const t = Date.parse(r.first_seen_at);
-    return t >= prev14Start && t < prev14End;
-  });
-
-  const traitCounts = (rows: Row[]): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (const r of rows) {
-      const raw = (r.norm_traits || r.cached_traits || "").toLowerCase();
-      if (!raw) continue;
-      const tokens = raw.includes(",")
-        ? raw.split(",").map((t) => t.trim())
-        : raw.split(/\s+/).map((t) => t.trim());
-      const seen = new Set<string>();
-      for (const t of tokens) {
-        if (!t || t.length < 3 || seen.has(t)) continue;
-        seen.add(t);
-        m.set(t, (m.get(t) ?? 0) + 1);
-      }
-    }
-    return m;
-  };
-  const recentTraits = traitCounts(recentListings);
-  const priorTraits = traitCounts(priorListings);
-  const allTraitKeys = new Set<string>([...recentTraits.keys(), ...priorTraits.keys()]);
-  const momentum: Array<{
-    trait: string;
-    recent: number;
-    prior: number;
-    delta: number; // percentage
-  }> = [];
-  for (const t of allTraitKeys) {
-    const r = recentTraits.get(t) ?? 0;
-    const p = priorTraits.get(t) ?? 0;
-    if (r + p < 4) continue; // noise floor
-    const delta = p === 0 ? (r > 0 ? 100 : 0) : ((r - p) / p) * 100;
-    momentum.push({ trait: t, recent: r, prior: p, delta });
-  }
-  const topRising = [...momentum]
-    .sort((a, b) => b.delta - a.delta)
-    .slice(0, 10);
-  const topFalling = [...momentum]
-    .sort((a, b) => a.delta - b.delta)
-    .slice(0, 10);
+  const maxMaturityMedian = medianByMaturity.reduce(
+    (a, m) => Math.max(a, m.median),
+    1,
+  );
 
   const volumeSeries: Series[] = [
-    { name: "New listings", color: chartTheme.series[0], points: newListingsDaily },
-    { name: "Price drops", color: chartTheme.series[3], points: priceDropsDaily },
-    { name: "Sold", color: chartTheme.series[2], points: soldDaily },
-    { name: "Price ticks", color: chartTheme.series[1], points: priceTicksDaily },
+    { name: "New listings", color: chartTheme.series[0]!, points: newListingsDaily },
+    { name: "Price drops", color: chartTheme.series[3]!, points: priceDropsDaily },
+    { name: "Sold", color: chartTheme.series[2]!, points: soldDaily },
+    { name: "Price ticks", color: chartTheme.series[1]!, points: priceTicksDaily },
   ];
 
   const medianPriceSeries: Series[] = [
@@ -251,14 +197,6 @@ export default async function TrendsPage() {
       points: medianPriceWeekly,
     },
   ];
-
-  const maturitySeries: Series[] = medianByMaturity.map((m, i) => ({
-    name: m.maturity,
-    color: chartTheme.series[i % chartTheme.series.length],
-    // Plot a flat "current" point as a degenerate series — useful when price_history
-    // is sparse but the current snapshot is always available.
-    points: [{ t: new Date(), v: m.median }],
-  }));
 
   const recentAvgDrop =
     (priceDropsRaw.data ?? [])
@@ -278,7 +216,7 @@ export default async function TrendsPage() {
     <div className="page-rise space-y-8">
       <SectionHeader
         eyebrow="Analysis / Trends"
-        title="Market Trends"
+        title="Market trends"
         description="Longitudinal signal across the crested gecko market. Compare the last 14 days to the 14 days before to see where volume, price, and trait interest are moving."
         right={<StatusPill status="info" label="90-day window" />}
       />
@@ -306,7 +244,7 @@ export default async function TrendsPage() {
         />
         <KpiCard
           label="Tracked listings"
-          value={fmtInt(all.length)}
+          value={fmtInt(matAll.length)}
           tone="default"
           sub={`${medianByMaturity.length} maturity cohorts`}
         />
@@ -341,90 +279,52 @@ export default async function TrendsPage() {
       </Panel>
 
       <Panel
-        title="Median price by maturity (current)"
-        subtitle="Cross-section of the live market. Juvenile pricing tends to be the broadest market; adult pricing reflects proven breeders."
+        title="Median price by maturity"
+        subtitle="Cross-section of the live market. Bar length = relative median price; the count tells you how thick the market is in each cohort."
       >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {medianByMaturity.map((m, i) => (
-            <div
-              key={m.maturity}
-              className="rounded-md border border-ink-700 bg-ink-850 p-3"
-            >
-              <div
-                className="font-mono text-[10px] uppercase tracking-wider"
-                style={{ color: chartTheme.series[i % chartTheme.series.length] }}
-              >
-                {m.maturity}
-              </div>
-              <div className="mt-1 text-xl font-semibold text-ink-50">
-                {fmtUsd(m.median)}
-              </div>
-              <div className="mt-0.5 text-xs text-ink-400">
-                {fmtInt(m.count)} listings
-              </div>
-            </div>
-          ))}
-        </div>
-        {maturitySeries.length > 0 ? (
-          <div className="mt-4 hidden">{/* reserved for future per-maturity trend */}</div>
-        ) : null}
+        {medianByMaturity.length === 0 ? (
+          <p className="text-sm text-ink-400">No maturity data yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {medianByMaturity.map((m, i) => {
+              const pct = (m.median / maxMaturityMedian) * 100;
+              const color =
+                chartTheme.series[i % chartTheme.series.length] ??
+                chartTheme.primary;
+              return (
+                <li key={m.maturity}>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                    <span className="text-sm capitalize text-ink-100">
+                      {m.maturity}
+                    </span>
+                    <span className="flex items-baseline gap-3 font-mono text-[11px] tabular-nums">
+                      <span className="text-ink-500">
+                        {fmtInt(m.count)} listings
+                      </span>
+                      <span className="font-display text-[16px] tabular-nums text-ink-50">
+                        {fmtUsd(m.median)}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-ink-800">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        background: `linear-gradient(90deg, ${color}55, ${color})`,
+                      }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </Panel>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <Panel
-          title="Rising traits · 14d"
-          subtitle="Percent change in trait appearance among new listings."
-        >
-          <ul className="divide-y divide-ink-700/60 font-mono text-[13px]">
-            {topRising.map((m) => (
-              <li
-                key={m.trait}
-                className="flex items-center justify-between py-1.5"
-              >
-                <span className="text-ink-100">{m.trait}</span>
-                <span className="flex items-center gap-3">
-                  <span className="text-ink-400">
-                    {m.prior} → {m.recent}
-                  </span>
-                  <span className="w-16 text-right text-ready">
-                    {fmtPct(m.delta, 0)}
-                  </span>
-                </span>
-              </li>
-            ))}
-            {topRising.length === 0 ? (
-              <li className="py-3 text-ink-500">Not enough new listings yet.</li>
-            ) : null}
-          </ul>
-        </Panel>
-
-        <Panel
-          title="Cooling traits · 14d"
-          subtitle="Percent change down — interest fading relative to prior window."
-        >
-          <ul className="divide-y divide-ink-700/60 font-mono text-[13px]">
-            {topFalling.map((m) => (
-              <li
-                key={m.trait}
-                className="flex items-center justify-between py-1.5"
-              >
-                <span className="text-ink-100">{m.trait}</span>
-                <span className="flex items-center gap-3">
-                  <span className="text-ink-400">
-                    {m.prior} → {m.recent}
-                  </span>
-                  <span className="w-16 text-right text-danger">
-                    {fmtPct(m.delta, 0)}
-                  </span>
-                </span>
-              </li>
-            ))}
-            {topFalling.length === 0 ? (
-              <li className="py-3 text-ink-500">Not enough new listings yet.</li>
-            ) : null}
-          </ul>
-        </Panel>
-      </div>
+      <Suspense fallback={<TraitMomentumSkeleton />}>
+        <TraitMomentumPanels />
+      </Suspense>
     </div>
   );
 }
