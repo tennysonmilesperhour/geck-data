@@ -79,6 +79,11 @@ function medianSeries(
 export default async function TrendsPage() {
   const supabase = createClient();
 
+  // 30d for the cadence chart (90d was dominated by the initial catalog
+  // backfill spike, which made the rest of the timeline read as flat),
+  // 90d kept for the price-history weekly median so it has enough
+  // points to draw a line.
+  const since30 = new Date(Date.now() - 30 * DAY_MS).toISOString();
   const since90 = new Date(Date.now() - 90 * DAY_MS).toISOString();
   const since14 = new Date(Date.now() - 14 * DAY_MS).toISOString();
   const prev14 = new Date(Date.now() - 28 * DAY_MS).toISOString();
@@ -98,18 +103,18 @@ export default async function TrendsPage() {
     supabase
       .from("market_listings")
       .select("first_seen_at")
-      .gte("first_seen_at", since90)
+      .gte("first_seen_at", since30)
       .limit(20000),
     supabase
       .from("price_drops")
       .select("observed_at, pct_change")
-      .gte("observed_at", since90)
+      .gte("observed_at", since30)
       .limit(20000),
     supabase
       .from("listing_status_events")
       .select("observed_at")
       .eq("status", "sold")
-      .gte("observed_at", since90)
+      .gte("observed_at", since30)
       .limit(20000),
     supabase
       .from("price_history")
@@ -251,9 +256,9 @@ export default async function TrendsPage() {
       </section>
 
       <Panel
-        title="Event volume"
-        subtitle="Daily count across ingest streams. Big gaps = ingest paused; bursts = scrape batches."
-        right={<span className="font-mono text-[11px]">last 90d</span>}
+        title="Discovery activity"
+        subtitle="Daily count across ingest streams over the last 30 days. New listings = unique listings first seen that day; price drops + sold are recorded as the events happen. Large early-period bars are part of the initial catalog backfill, not organic activity."
+        right={<span className="font-mono text-[11px]">last 30d</span>}
       >
         <TimeSeriesLine series={volumeSeries} height={280} />
       </Panel>
