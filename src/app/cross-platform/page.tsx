@@ -150,7 +150,7 @@ export default async function CrossPlatformPage() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="page-rise space-y-8">
       <SectionHeader
         eyebrow="Sources"
         title="Cross-platform"
@@ -172,7 +172,7 @@ export default async function CrossPlatformPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">By platform</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">By platform</h2>
         <DataTable
           columns={platformColumns}
           rows={platforms}
@@ -182,7 +182,7 @@ export default async function CrossPlatformPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recent listings</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Recent listings</h2>
         <DataTable
           columns={columns}
           rows={rows.slice(0, 200)}

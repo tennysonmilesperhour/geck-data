@@ -197,7 +197,7 @@ export default async function SellerDetailPage({
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="page-rise space-y-8">
       <div>
         <Link href="/sellers" className="text-sm text-claude hover:underline">
           ← All sellers
@@ -274,7 +274,7 @@ export default async function SellerDetailPage({
       </Panel>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">Current & recent listings</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Current & recent listings</h2>
         <DataTable
           columns={listingColumns}
           rows={listings}
@@ -284,7 +284,7 @@ export default async function SellerDetailPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recently sold</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Recently sold</h2>
         <DataTable
           columns={soldColumns}
           rows={sold}
