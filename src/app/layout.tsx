@@ -14,10 +14,10 @@ const display = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
-  // Opt into Fraunces's "SOFT" and "WONK" axes for a hint of character on
-  // big titles without making everything feel decorative. Defaults are
-  // close-to-neutral; pages can override via inline style if needed.
+  // Variable font — `weight` is not specified so next/font loads the
+  // full variable file. `axes` opts into Fraunces's optical-size +
+  // SOFT/WONK axes for a hint of character on big titles without
+  // making everything feel decorative.
   axes: ["SOFT", "WONK", "opsz"],
 });
 const body = Inter({
