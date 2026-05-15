@@ -4,6 +4,7 @@ import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
+import DropAnalytics from "@/components/price-drops/DropAnalytics";
 import { createClient } from "@/lib/supabase/server";
 import { fmtPct, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -142,6 +143,13 @@ export default async function PriceDropsPage() {
           tone="negative"
         />
       </div>
+
+      <DropAnalytics
+        rows={rows.map((r) => ({
+          observed_at: r.observed_at,
+          pct_change: r.pct_change,
+        }))}
+      />
 
       <DataTable
         columns={columns}
