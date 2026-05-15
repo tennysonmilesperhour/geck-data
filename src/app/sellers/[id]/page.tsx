@@ -5,7 +5,10 @@ import { notFound } from "next/navigation";
 import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { Panel, SectionHeader } from "@/components/ui/Panel";
-import TimeSeriesLine, { type Series } from "@/components/charts/TimeSeriesLine";
+import TimeSeriesLine, {
+  type ChartEvent,
+  type Series,
+} from "@/components/charts/TimeSeriesLine";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 
@@ -121,6 +124,50 @@ export default async function SellerDetailPage({
   const liveCount = listings.filter((l) => l.current_status === "live").length;
   const soldCount = sold.length;
   const medianDays = median(sold.map((s) => s.days_to_sell));
+
+  // Derive a small set of annotations from the seller's own data so
+  // the snapshot trend chart is self-narrating. First scrape marks
+  // where the curve actually begins (helps differentiate a real
+  // plateau from "we just started watching"); biggest recent jump in
+  // feedback flags a likely sale cluster worth reading the timeline
+  // around.
+  const sortedSnapshots = [...snapshots]
+    .filter((s) => s.observed_at)
+    .sort(
+      (a, b) =>
+        Date.parse(a.observed_at!) - Date.parse(b.observed_at!),
+    );
+  const snapshotEvents: ChartEvent[] = [];
+  if (sortedSnapshots.length > 0) {
+    snapshotEvents.push({
+      at: new Date(sortedSnapshots[0]!.observed_at!),
+      label: "First scrape",
+      tone: "info",
+    });
+  }
+  if (sortedSnapshots.length >= 3) {
+    // Largest single-step feedback jump in the window — proxy for a
+    // batch sale that pulled the seller's review count up.
+    let bestIdx = -1;
+    let bestDelta = 0;
+    for (let i = 1; i < sortedSnapshots.length; i++) {
+      const a = sortedSnapshots[i - 1]!.feedback_count;
+      const b = sortedSnapshots[i]!.feedback_count;
+      if (typeof a !== "number" || typeof b !== "number") continue;
+      const delta = b - a;
+      if (delta > bestDelta) {
+        bestDelta = delta;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx > 0 && bestDelta >= 3) {
+      snapshotEvents.push({
+        at: new Date(sortedSnapshots[bestIdx]!.observed_at!),
+        label: `+${bestDelta} feedback jump`,
+        tone: "positive",
+      });
+    }
+  }
 
   // Pull recent photos from market_listings → listings join. The scraper
   // writes primary_image_url onto the listings table (keyed on the raw
@@ -272,9 +319,16 @@ export default async function SellerDetailPage({
         <KpiCard label="Feedback" value={fmtInt(seller.feedback_count)} />
       </div>
 
-      <Panel title="Snapshot trend" subtitle="Feedback and listings over time">
+      <Panel
+        title="Snapshot trend"
+        subtitle="Feedback and listings over time. Dotted markers flag the first scrape and notable feedback jumps so the curve has context."
+      >
         {snapshots.length >= 2 ? (
-          <TimeSeriesLine series={[feedbackSeries, listingsSeries]} yLabel="count" />
+          <TimeSeriesLine
+            series={[feedbackSeries, listingsSeries]}
+            events={snapshotEvents}
+            yLabel="count"
+          />
         ) : (
           <p className="py-6 text-center text-sm text-ink-400">
             Not enough snapshots yet. The extension will build this up as you
