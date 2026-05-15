@@ -70,7 +70,7 @@ export default function RankedCombosTable({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
-            <tr className="text-left font-mono text-[10px] uppercase tracking-wider text-ready">
+            <tr className="text-left font-mono text-[10px] uppercase tracking-[0.14em] text-forest-400">
               <Th>Combo</Th>
               <ThNum sort="medianSold" current={sort} onClick={onSortChange}>
                 Median sold
