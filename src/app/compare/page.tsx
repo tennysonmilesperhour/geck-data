@@ -56,7 +56,20 @@ function traitSet(l: Listing): Set<string> {
   return new Set(tokens.filter((t) => t && t.length >= 3));
 }
 
-export default async function ComparePage() {
+export default async function ComparePage({
+  searchParams,
+}: {
+  searchParams?: { sellers?: string };
+}) {
+  // ?sellers=id1,id2,id3 narrows the head-to-head section to those
+  // sellers. Empty / missing param falls back to "top 15 by inventory
+  // value" so existing links and direct visits still get a useful page.
+  const focusedSellerIds = (searchParams?.sellers ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const focusMode = focusedSellerIds.length > 0;
+
   const supabase = createClient();
 
   const [listingsRes, sellersRes] = await Promise.all([
@@ -142,17 +155,26 @@ export default async function ComparePage() {
     priceBySeller.set(l.seller_id, arr);
   }
 
-  const sellersEnriched = sellers
+  const sellersAll = sellers
     .map((s) => {
       const prices = priceBySeller.get(s.seller_id) ?? [];
       prices.sort((a, b) => a - b);
-      const medP = prices.length ? prices[Math.floor(prices.length / 2)] : s.avg_price ?? 0;
+      const medP = prices.length
+        ? prices[Math.floor(prices.length / 2)] ?? 0
+        : s.avg_price ?? 0;
       const inventoryValue = prices.reduce((a, b) => a + b, 0);
       return { seller: s, count: prices.length, median: medP, inventoryValue };
     })
-    .filter((r) => r.count > 0)
-    .sort((a, b) => b.inventoryValue - a.inventoryValue)
-    .slice(0, 15);
+    .filter((r) => r.count > 0);
+
+  const sellersEnriched = focusMode
+    ? // Respect URL order: a shared link should put the requested
+      // sellers in the exact order the URL specifies (it might encode
+      // the share author's intended ordering).
+      focusedSellerIds
+        .map((id) => sellersAll.find((r) => r.seller.seller_id === id))
+        .filter((r): r is (typeof sellersAll)[number] => Boolean(r))
+    : sellersAll.sort((a, b) => b.inventoryValue - a.inventoryValue).slice(0, 15);
 
   const maxInventoryValue = Math.max(1, ...sellersEnriched.map((r) => r.inventoryValue));
   const maxListings = Math.max(1, ...sellersEnriched.map((r) => r.count));
@@ -369,7 +391,11 @@ export default async function ComparePage() {
 
       <Panel
         title="Seller head-to-head"
-        subtitle="Top 15 sellers by current inventory value (sum of priced listings). Bars show rank within this view."
+        subtitle={
+          focusMode
+            ? `Comparing the ${sellersEnriched.length} seller${sellersEnriched.length === 1 ? "" : "s"} from the share link. Drop the ?sellers= param to see the top 15 by inventory.`
+            : "Top 15 sellers by current inventory value (sum of priced listings). Bars show rank within this view."
+        }
         padded={false}
       >
         <DataTable
