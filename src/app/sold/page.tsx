@@ -1,6 +1,8 @@
-// Sold listings — the primary outcome view. Pulls from the sold_listings_v
-// view (market_listings JOIN listing_status_events where status='sold').
-// Page-owned hero histogram + ChartGrid + sortable table.
+// Sold listings — the comps tool. Pulls from sold_listings_v and lets
+// the URL slice the view by morph (title contains), maturity, and sex.
+// Every downstream panel (histogram, by-maturity, table, ChartGrid)
+// renders the same filtered slice so the page tells one coherent
+// story about whichever subset you're looking at.
 import ChartGrid from "@/components/charts/ChartGrid";
 import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
@@ -9,13 +11,52 @@ import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import SoldPriceDistribution from "@/components/sold/SoldPriceDistribution";
 import SoldByMaturity from "@/components/sold/SoldByMaturity";
+import SoldFilters from "@/components/sold/SoldFilters";
 import SortableSoldTable, {
   type SoldRow,
 } from "@/components/sold/SortableSoldTable";
 
 export const dynamic = "force-dynamic";
 
-export default async function SoldPage() {
+type SearchParams = {
+  morph?: string;
+  maturity?: string;
+  sex?: string;
+};
+
+function normaliseMaturity(m: string | null | undefined): string {
+  if (!m) return "Unknown";
+  const lower = m.toLowerCase();
+  if (lower.startsWith("juv")) return "Juvenile";
+  if (lower.startsWith("sub")) return "Subadult";
+  if (lower.startsWith("adult")) return "Adult";
+  return "Unknown";
+}
+
+function applyFilters(rows: SoldRow[], f: SearchParams): SoldRow[] {
+  const morph = f.morph?.toLowerCase().trim();
+  const maturity = f.maturity?.trim();
+  const sex = f.sex?.toLowerCase().trim();
+  return rows.filter((r) => {
+    if (morph) {
+      const hay = (r.title ?? "").toLowerCase();
+      if (!hay.includes(morph)) return false;
+    }
+    if (maturity) {
+      if (normaliseMaturity(r.maturity) !== maturity) return false;
+    }
+    if (sex) {
+      if ((r.sex ?? "").toLowerCase() !== sex) return false;
+    }
+    return true;
+  });
+}
+
+export default async function SoldPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
   const supabase = createClient();
   const [{ data, error }, soldEventsRes] = await Promise.all([
     supabase
@@ -41,8 +82,10 @@ export default async function SoldPage() {
     );
   }
 
-  const rows = (data ?? []) as SoldRow[];
+  const allRows = (data ?? []) as SoldRow[];
   const soldEvents = (soldEventsRes.data ?? []) as { observed_at: string }[];
+  const rows = applyFilters(allRows, searchParams ?? {});
+  const filtered = allRows.length !== rows.length;
 
   const days = rows
     .map((r) => r.days_to_sell)
@@ -53,17 +96,34 @@ export default async function SoldPage() {
   ).length;
   const inferredCount = rows.filter((r) => r.sold_source === "extension_inferred").length;
 
+  const filterSummary = [
+    searchParams?.morph,
+    searchParams?.maturity,
+    searchParams?.sex,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div className="page-rise space-y-8">
       <SectionHeader
-        eyebrow="Outcomes"
+        eyebrow="Outcomes / Comps"
         title="Sold"
-        description="Listings that have flipped from live to sold — either explicitly captured by the extension or inferred from absence."
+        description={
+          filtered
+            ? `Showing ${fmtInt(rows.length)} of ${fmtInt(allRows.length)} recent sold listings narrowed by ${filterSummary}. The histogram, cohort multiples, and table all reflect this slice.`
+            : "Listings that have flipped from live to sold — either explicitly captured by the extension or inferred from absence. Narrow the slice with the filter below."
+        }
         right={<DataFreshness updatedAt={Date.now()} window="all time" />}
       />
 
+      <SoldFilters />
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label="Sold (all time)" value={fmtInt(rows.length)} />
+        <KpiCard
+          label={filtered ? "Sold (matching filter)" : "Sold (all time)"}
+          value={fmtInt(rows.length)}
+        />
         <KpiCard label="Sold past 7 days" value={fmtInt(sevenDayCount)} tone="positive" />
         <KpiCard
           label="Median time-to-sell"
@@ -72,9 +132,18 @@ export default async function SoldPage() {
         <KpiCard label="Median sold price" value={fmtUsd(medianPrice)} />
       </div>
 
-      <SoldPriceDistribution
-        prices={rows.map((r) => r.price_usd_equivalent ?? r.price)}
-      />
+      {rows.length >= 5 ? (
+        <SoldPriceDistribution
+          prices={rows.map((r) => r.price_usd_equivalent ?? r.price)}
+        />
+      ) : filtered ? (
+        <section className="surface p-5">
+          <p className="text-sm text-ink-400">
+            Only {fmtInt(rows.length)} sold listings match this slice — too few
+            to draw a distribution. Try widening the filter.
+          </p>
+        </section>
+      ) : null}
 
       <SoldByMaturity
         rows={rows.map((r) => ({ maturity: r.maturity, sold_at: r.sold_at }))}
@@ -89,7 +158,9 @@ export default async function SoldPage() {
       ) : null}
 
       <section>
-        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Recently sold</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">
+          Recently sold
+        </h2>
         <SortableSoldTable rows={rows} />
       </section>
     </div>
