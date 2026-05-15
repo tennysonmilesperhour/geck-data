@@ -275,7 +275,7 @@ export default async function TrendsPage() {
         100;
 
   return (
-    <div className="space-y-8">
+    <div className="page-rise space-y-8">
       <SectionHeader
         eyebrow="Analysis / Trends"
         title="Market Trends"

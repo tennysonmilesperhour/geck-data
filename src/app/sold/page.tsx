@@ -120,7 +120,7 @@ export default async function SoldPage() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="page-rise space-y-8">
       <SectionHeader
         eyebrow="Outcomes"
         title="Sold"
@@ -146,7 +146,7 @@ export default async function SoldPage() {
       ) : null}
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recently sold</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Recently sold</h2>
         <DataTable
           columns={columns}
           rows={rows.slice(0, 200)}

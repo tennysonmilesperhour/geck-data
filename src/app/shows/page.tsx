@@ -136,7 +136,7 @@ export default async function ShowsPage() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="page-rise space-y-8">
       <SectionHeader
         eyebrow="Events"
         title="Shows & expos"
@@ -158,7 +158,7 @@ export default async function ShowsPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">Shows by mention count</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Shows by mention count</h2>
         <DataTable
           columns={columns}
           rows={shows}
@@ -168,7 +168,7 @@ export default async function ShowsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-ink-50">Recent mentions</h2>
+        <h2 className="mb-3 font-display text-[20px] font-medium tracking-tight text-ink-50">Recent mentions</h2>
         <DataTable
           columns={recentColumns}
           rows={rows.slice(0, 50)}

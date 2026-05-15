@@ -239,7 +239,7 @@ export default async function ComparePage() {
   ];
 
   return (
-    <div className="space-y-10">
+    <div className="page-rise space-y-10">
       <SectionHeader
         eyebrow="Analysis / Compare"
         title="Comparative Analysis"
