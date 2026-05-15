@@ -34,7 +34,7 @@ export default function TopMoversPanel({
             ⇅
           </span>
           <div>
-            <h2 className="text-base font-semibold text-forest-50">Top Movers</h2>
+            <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">Top Movers</h2>
             <p className="mt-0.5 text-xs text-forest-400">
               Largest price swings in the selected timeframe
             </p>

@@ -54,7 +54,7 @@ export default function PeakIndicatorGrid({
             ⏱
           </span>
           <div>
-            <h2 className="text-base font-semibold text-forest-50">
+            <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
               Peak Indicator — Hold, Sell, or Accumulate
             </h2>
             <p className="mt-0.5 text-xs text-forest-400">
