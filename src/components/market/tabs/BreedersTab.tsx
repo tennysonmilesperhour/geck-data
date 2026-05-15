@@ -109,18 +109,34 @@ export default function BreedersTab({
                     {r.avgDaysToSell}d
                   </td>
                   <td className="px-3 py-3 align-middle">
-                    <MiniSparkline values={r.velocity} width={84} height={20} />
+                    {r.velocity.length > 0 ? (
+                      <MiniSparkline
+                        values={r.velocity}
+                        width={84}
+                        height={20}
+                      />
+                    ) : (
+                      <span className="inline-flex items-center rounded-full border border-forest-700 bg-forest-950/60 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-forest-500">
+                        coming soon
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-3 align-middle">
-                    <button
-                      type="button"
-                      onClick={
-                        onSelectCombo ? () => onSelectCombo(r.specialty) : undefined
-                      }
-                      className="rounded-md border border-forest-700 bg-forest-950/60 px-2 py-0.5 text-[11px] text-forest-200 hover:border-ready/40 hover:text-ready"
-                    >
-                      {r.specialty}
-                    </button>
+                    {r.specialty && (r.specialty as string) !== "—" ? (
+                      <button
+                        type="button"
+                        onClick={
+                          onSelectCombo ? () => onSelectCombo(r.specialty) : undefined
+                        }
+                        className="rounded-md border border-forest-700 bg-forest-950/60 px-2 py-0.5 text-[11px] text-forest-200 hover:border-ready/40 hover:text-ready"
+                      >
+                        {r.specialty}
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full border border-forest-700 bg-forest-950/60 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-forest-500">
+                        coming soon
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right align-middle">
                     <LineagePill score={r.lineageScore} />

@@ -13,9 +13,14 @@ function toneForScore(score: number): Tone {
   return "danger";
 }
 
+// Four distinct tones so the four confidence tiers don't collapse
+// visually. Previously neutral (50-79) and warn (25-49) used the same
+// busy-amber classes — two distinct meanings rendered identically.
+// Neutral now reads as muted ink (the "we have data but it's thin"
+// register); warn keeps the clay/amber alarm tone for "this is shaky".
 const TONE_CLASSES: Record<Tone, string> = {
   positive: "border-ready/40 bg-ready/10 text-ready",
-  neutral:  "border-busy/40 bg-busy/10 text-busy",
+  neutral:  "border-ink-600 bg-ink-800/70 text-ink-200",
   warn:     "border-busy/40 bg-busy/10 text-busy",
   danger:   "border-danger/40 bg-danger/10 text-danger",
 };

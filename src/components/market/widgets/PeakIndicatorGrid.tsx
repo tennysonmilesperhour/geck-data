@@ -107,15 +107,8 @@ function PeakCard({ ind }: { ind: PeakIndicator }) {
 
       <GradientBar score={ind.score} markerColor={meta.marker} />
 
-      <footer className="mt-3 flex items-center justify-between gap-2">
+      <footer className="mt-3 flex items-center gap-2">
         <ConfidenceBadge score={ind.attribution.confidence.score} size="sm" />
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-forest-400 hover:bg-forest-850 hover:text-forest-100"
-          title="Open combo detail (Combos tab)"
-        >
-          ↗
-        </button>
       </footer>
     </article>
   );

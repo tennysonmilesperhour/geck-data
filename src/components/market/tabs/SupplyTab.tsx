@@ -94,12 +94,6 @@ function LockBanner() {
           breeding signals activate with an Enterprise subscription.
         </p>
       </div>
-      <a
-        href="#plans"
-        className="inline-flex items-center gap-1 rounded-md bg-ready px-3 py-1.5 text-sm text-forest-975 hover:bg-ready/90"
-      >
-        View plans →
-      </a>
     </div>
   );
 }
