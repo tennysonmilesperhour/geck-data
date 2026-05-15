@@ -21,6 +21,7 @@ import type {
   HeatmapCell,
   HeatmapMetric,
   MarketIndex,
+  MarketSubIndex,
   Mover,
   PeakIndicator,
   RegionalHeatmap,
@@ -36,6 +37,7 @@ import {
   getComboDetail,
   getCombosRanked,
   getMarketIndex,
+  getMarketSubIndices,
   getPeakIndicators,
   getRegionalHeatmap,
   getSupplyPipeline,
@@ -139,6 +141,21 @@ export async function fetchMarketIndex(
       `fetchMarketIndex error: ${errMsg(e)}`,
     );
   }
+}
+
+// ----------------------------------------------------------------------------
+// Market Sub-Indices — per-morph indices below the basket Market Index.
+// No SQL view exists for these yet; the fetcher always returns the
+// deterministic fixture flagged as preview. Once a view lands (e.g.
+// v_market_sub_index) the consumer doesn't change.
+// ----------------------------------------------------------------------------
+export async function fetchMarketSubIndices(
+  filters: Filters,
+): Promise<QueryResult<MarketSubIndex[]>> {
+  return preview(
+    getMarketSubIndices(filters),
+    "v_market_sub_index not implemented — preview fixture",
+  );
 }
 
 // ----------------------------------------------------------------------------
