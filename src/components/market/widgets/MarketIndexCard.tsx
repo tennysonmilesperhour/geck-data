@@ -13,7 +13,7 @@ import DataFreshness from "@/components/ui/DataFreshness";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
-import type { MarketIndex } from "@/lib/market/fixtures";
+import type { MarketIndex } from "@/lib/market/widget-types";
 import type { Filters, SourceId } from "@/lib/market/types";
 
 export default function MarketIndexCard({

@@ -8,7 +8,7 @@ import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
 import MorphTerm from "@/components/morphs/MorphTerm";
-import type { ComboRow, ComboRankSort } from "@/lib/market/fixtures";
+import type { ComboRow, ComboRankSort } from "@/lib/market/widget-types";
 
 export default function RankedCombosTable({
   rows,

@@ -10,6 +10,7 @@
 import type { Filters } from "@/lib/market/types";
 import { fetchArbitrage } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
+import EmptyState from "@/components/market/EmptyState";
 import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
@@ -18,9 +19,11 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
   const q = useFilteredQuery(fetchArbitrage, filters, ["region"] as const, "region");
   if (!q.data) {
     return (
-      <div className="forest-surface p-6 text-sm text-forest-400">
-        Loading arbitrage…
-      </div>
+      <EmptyState
+        status={q.status}
+        label="Arbitrage spreads"
+        note={q.note}
+      />
     );
   }
   const data = q.data;

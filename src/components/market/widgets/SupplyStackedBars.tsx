@@ -2,7 +2,7 @@
 // Inline-SVG stacked bars — one column per month, segments colored per
 // combo. Shared legend underneath. No external chart lib; keeps the
 // bundle lean.
-import type { SupplyMonth } from "@/lib/market/fixtures";
+import type { SupplyMonth } from "@/lib/market/widget-types";
 
 const W = 880;
 const H = 280;

@@ -8,7 +8,7 @@ import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
-import type { PeakIndicator, PeakTier } from "@/lib/market/fixtures";
+import type { PeakIndicator, PeakTier } from "@/lib/market/widget-types";
 
 const TIER_META: Record<
   PeakTier,
