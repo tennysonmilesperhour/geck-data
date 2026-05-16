@@ -4,13 +4,15 @@
 //   Right (1/3) — ComboDetailPanel with headline, multi-line chart, blend,
 //                 key metrics
 //
-// Both sides read live data via queries.ts with fixture fallback; each
-// exposes its live/preview status via LivePreviewTag.
+// Both sides read live data via queries.ts and show an empty state if
+// the underlying view returns nothing. LivePreviewTag on each panel
+// surfaces live vs preview status.
 import { useEffect, useState } from "react";
 import { fetchComboDetail, fetchCombosRanked } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
-import type { ComboRankSort } from "@/lib/market/fixtures";
+import type { ComboRankSort } from "@/lib/market/widget-types";
 import type { Filters } from "@/lib/market/types";
+import EmptyState from "@/components/market/EmptyState";
 import RankedCombosTable from "@/components/market/widgets/RankedCombosTable";
 import ComboDetailPanel from "@/components/market/widgets/ComboDetailPanel";
 
@@ -61,9 +63,11 @@ export default function CombosTab({
             note={rowsQ.note}
           />
         ) : (
-          <div className="forest-surface p-6 text-sm text-forest-400">
-            Loading Combos…
-          </div>
+          <EmptyState
+            status={rowsQ.status}
+            label="Combos"
+            note={rowsQ.note}
+          />
         )}
       </div>
       <div className="xl:col-span-1">

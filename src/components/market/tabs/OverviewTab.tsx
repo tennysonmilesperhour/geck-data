@@ -4,11 +4,10 @@
 //   [                   Top Movers (full width)                           ]
 //   [                    Peak Indicator grid (full width)                ]
 //
-// Market Index / Top Movers / Peak Indicator read real data via the
-// queries module; each one falls back to fixtures when the underlying
-// views return empty so the dashboard never goes blank. Market Calendar
-// was a hardcoded fixture (event data isn't in Supabase) — removed
-// until we have real expo / breeder-release data to surface.
+// Each widget reads real data via the queries module; when a view is
+// empty or missing, the widget renders an EmptyState rather than a
+// synthetic fixture. Market Sub-Indices stays hidden entirely while
+// no v_market_sub_index view exists.
 import {
   fetchMarketIndex,
   fetchMarketSubIndices,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import type { Filters, SourceId } from "@/lib/market/types";
+import EmptyState from "@/components/market/EmptyState";
 import MarketIndexCard from "@/components/market/widgets/MarketIndexCard";
 import MarketSubIndices from "@/components/market/widgets/MarketSubIndices";
 import TopMoversPanel from "@/components/market/widgets/TopMoversPanel";
@@ -63,9 +63,11 @@ export default function OverviewTab({
           note={indexQ.note}
         />
       ) : (
-        <div className="forest-surface p-6 text-sm text-forest-400">
-          Loading Market Index…
-        </div>
+        <EmptyState
+          status={indexQ.status}
+          label="Market Index"
+          note={indexQ.note}
+        />
       )}
 
       {subIndicesQ.data && subIndicesQ.data.length > 0 ? (
@@ -86,9 +88,11 @@ export default function OverviewTab({
           note={moversQ.note}
         />
       ) : (
-        <div className="forest-surface p-6 text-sm text-forest-400">
-          Loading Top Movers…
-        </div>
+        <EmptyState
+          status={moversQ.status}
+          label="Top Movers"
+          note={moversQ.note}
+        />
       )}
 
       {peaksQ.data ? (
@@ -98,9 +102,11 @@ export default function OverviewTab({
           note={peaksQ.note}
         />
       ) : (
-        <div className="forest-surface p-6 text-sm text-forest-400">
-          Loading Peak Indicator…
-        </div>
+        <EmptyState
+          status={peaksQ.status}
+          label="Peak Indicator"
+          note={peaksQ.note}
+        />
       )}
     </div>
   );

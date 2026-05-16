@@ -3,9 +3,10 @@
 // heatmap render to RegionalHeatmap. Reads live data via queries.ts.
 import { useState } from "react";
 import type { Filters } from "@/lib/market/types";
-import type { HeatmapMetric, RegionKey } from "@/lib/market/fixtures";
+import type { HeatmapMetric, RegionKey } from "@/lib/market/widget-types";
 import { fetchRegionalHeatmap } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
+import EmptyState from "@/components/market/EmptyState";
 import RegionalHeatmap from "@/components/market/widgets/RegionalHeatmap";
 
 export default function RegionalTab({ filters }: { filters: Filters }) {
@@ -22,9 +23,11 @@ export default function RegionalTab({ filters }: { filters: Filters }) {
 
   if (!q.data) {
     return (
-      <div className="forest-surface p-6 text-sm text-forest-400">
-        Loading regional heatmap…
-      </div>
+      <EmptyState
+        status={q.status}
+        label="Regional heatmap"
+        note={q.note}
+      />
     );
   }
 

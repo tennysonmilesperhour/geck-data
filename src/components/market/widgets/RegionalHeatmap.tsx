@@ -11,8 +11,8 @@ import type {
   HeatmapMetric,
   RegionalHeatmap as HeatmapData,
   RegionKey,
-} from "@/lib/market/fixtures";
-import { REGION_COLUMNS, heatmapMetricLabel } from "@/lib/market/fixtures";
+} from "@/lib/market/widget-types";
+import { REGION_COLUMNS, heatmapMetricLabel } from "@/lib/market/widget-types";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";

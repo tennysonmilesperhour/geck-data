@@ -2,7 +2,7 @@
 // Upcoming expos + breeder releases, bucketed into "this month" vs "later".
 // Colored dot reflects the kind (expo vs release). The relative date label
 // matches the screenshots' "US 8d ago" / "JP Jun 19" style.
-import type { CalendarEntry } from "@/lib/market/fixtures";
+import type { CalendarEntry } from "@/lib/market/widget-types";
 
 export default function MarketCalendarPanel({
   entries,

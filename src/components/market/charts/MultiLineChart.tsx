@@ -3,7 +3,7 @@
 // screenshot: dotted bands + solid sold line + dashed ask + solid
 // internal/external avg. Single legend below the axes.
 import { useMemo } from "react";
-import type { MultiSeries } from "@/lib/market/fixtures";
+import type { MultiSeries } from "@/lib/market/widget-types";
 
 const W = 720;
 const H = 280;

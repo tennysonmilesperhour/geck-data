@@ -1,17 +1,13 @@
 "use client";
 // Supply tab — forward-looking projected hatchlings over the next 9
 // months. Reads v_supply_pipeline_monthly (aggregated by (month, combo))
-// with fixture fallback so the shape of the product is visible even
-// before any user records breeding data.
-//
-// The enterprise-lock banner stays because the UX promise ("Live
-// internal sales, scraped external feeds, and forward-looking breeding
-// signals activate with an Enterprise subscription") is the gate we'll
-// wire to real paywalling later — the data visibility itself already
-// respects RLS (owners see their pairs, admins see all).
+// and renders an empty state when no user has recorded breeding pairs
+// yet; data visibility respects RLS (owners see their pairs, admins
+// see all).
 import type { Filters } from "@/lib/market/types";
 import { fetchSupplyPipeline } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
+import EmptyState from "@/components/market/EmptyState";
 import SupplyStackedBars from "@/components/market/widgets/SupplyStackedBars";
 import SourceBadge from "@/components/market/SourceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
@@ -21,9 +17,11 @@ export default function SupplyTab({ filters }: { filters: Filters }) {
 
   if (!q.data) {
     return (
-      <div className="forest-surface p-6 text-sm text-forest-400">
-        Loading supply pipeline…
-      </div>
+      <EmptyState
+        status={q.status}
+        label="Supply pipeline"
+        note={q.note}
+      />
     );
   }
   const data = q.data;

@@ -6,7 +6,7 @@
 //   4) Observations count + "See underlying transactions →"
 //   5) Blended price — contribution by source (stacked h-bars)
 //   6) Key metrics strip (Median ask / Ask→Sold spread / Days / Volume)
-import type { ComboDetail } from "@/lib/market/fixtures";
+import type { ComboDetail } from "@/lib/market/widget-types";
 import { sourceMeta } from "@/lib/market/sources";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
@@ -73,7 +73,13 @@ export default function ComboDetailPanel({
         </div>
 
         <div className="mt-4">
-          <MultiLineChart series={detail.series} />
+          {detail.series.length > 0 ? (
+            <MultiLineChart series={detail.series} />
+          ) : (
+            <div className="rounded-lg border border-dashed border-forest-700 bg-forest-950/40 px-4 py-8 text-center font-mono text-[11px] uppercase tracking-wider text-forest-500">
+              Multi-series chart not wired yet
+            </div>
+          )}
         </div>
 
         <footer className="mt-3 text-[11px] text-forest-500">

@@ -1,57 +1,42 @@
 // Real-data fetchers for every /market widget. Each fetcher wraps a
-// Supabase query behind the exact shape the corresponding fixture
-// exposes, then returns a `QueryResult<T>` that tells the caller:
+// Supabase query and returns a `QueryResult<T | null>`:
 //
-//   - `live: true`  — rows came from Supabase (views from 0005/0006)
-//   - `live: false` — fixture fallback (empty result set, missing view,
-//                     or RLS denied; we never surface a broken dashboard)
+//   - `live: true`        — rows came from Supabase
+//   - `live: false`, data: null — no data yet (DB empty, view missing,
+//                                  RLS denied, or feature genuinely not
+//                                  wired up). Widgets render an empty
+//                                  state, never synthetic numbers.
 //
-// Widgets can swap `getX(filters)` for `await fetchX(filters)` without
-// changing their render path, and can look at `result.live` to decide
-// whether to show a "Preview" badge on that card.
+// `attributionNote` carries either a one-line provenance string for
+// live results ("v_combo_rollups(90d)") or the reason an empty state
+// is showing ("v_market_sub_index not implemented").
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import type { Filters, SourceId } from "./types";
-import type {
-  Arbitrage,
-  BreedersData,
-  ComboDetail,
-  ComboRankSort,
-  ComboRow,
-  HeatmapCell,
-  HeatmapMetric,
-  MarketIndex,
-  MarketSubIndex,
-  Mover,
-  PeakIndicator,
-  RegionalHeatmap,
-  RegionKey,
-  SupplyMonth,
-  SupplyPipeline,
-} from "./fixtures";
 import {
   REGION_COLUMNS,
   actionForScore,
-  getArbitrage,
-  getBreeders,
-  getComboDetail,
-  getCombosRanked,
-  getMarketIndex,
-  getMarketSubIndices,
-  getPeakIndicators,
-  getRegionalHeatmap,
-  getSupplyPipeline,
-  getTopMovers,
   sortComboRows,
   tierForScore,
-} from "./fixtures";
+  type Arbitrage,
+  type ArbitrageAxis,
+  type BreedersData,
+  type ComboDetail,
+  type ComboRankSort,
+  type ComboRow,
+  type HeatmapCell,
+  type HeatmapMetric,
+  type MarketIndex,
+  type MarketSubIndex,
+  type Mover,
+  type PeakIndicator,
+  type RegionKey,
+  type RegionalHeatmap,
+  type SupplyMonth,
+  type SupplyPipeline,
+} from "./widget-types";
 import { normalizeSourceId, sourceMeta } from "./sources";
 
-// ----------------------------------------------------------------------------
-// Shared result envelope. `live` is the observable signal that a widget
-// is rendering real data; `attributionNote` is an optional source-tag
-// string the widget can echo (e.g. "v_combo_rollups(90d)").
-// ----------------------------------------------------------------------------
 export type QueryResult<T> = {
   data: T;
   live: boolean;
@@ -68,7 +53,7 @@ function ok<T>(data: T, note?: string): QueryResult<T> {
   };
 }
 
-function preview<T>(data: T, reason: string): QueryResult<T> {
+function empty<T>(data: T, reason: string): QueryResult<T> {
   return {
     data,
     live: false,
@@ -77,7 +62,6 @@ function preview<T>(data: T, reason: string): QueryResult<T> {
   };
 }
 
-// Convert the filter bar's timeframe pill to days for the SQL window_days arg.
 const DAYS_BY_TIMEFRAME: Record<string, number> = {
   "30d": 30,
   "90d": 90,
@@ -101,7 +85,7 @@ function confidenceSources(filters: Filters): SourceId[] {
 // ----------------------------------------------------------------------------
 export async function fetchMarketIndex(
   filters: Filters,
-): Promise<QueryResult<MarketIndex>> {
+): Promise<QueryResult<MarketIndex | null>> {
   try {
     const supabase = createClient();
     const { data, error } = await supabase.rpc("v_market_index", {
@@ -114,7 +98,7 @@ export async function fetchMarketIndex(
       combos_in: number;
     }>;
     if (rows.length < 2) {
-      return preview(getMarketIndex(filters), "v_market_index returned <2 rows");
+      return empty(null, "v_market_index returned <2 rows");
     }
     const series = rows.map((r) => ({
       t: r.week_start.slice(0, 7),
@@ -137,31 +121,21 @@ export async function fetchMarketIndex(
       `v_market_index(${windowDays(filters)}d, ${rows.length} weeks)`,
     );
   } catch (e) {
-    return preview(
-      getMarketIndex(filters),
-      `fetchMarketIndex error: ${errMsg(e)}`,
-    );
+    return empty(null, `fetchMarketIndex error: ${errMsg(e)}`);
   }
 }
 
 // ----------------------------------------------------------------------------
-// Market Sub-Indices — per-morph indices below the basket Market Index.
-// No SQL view exists for these yet; the fetcher always returns the
-// deterministic fixture flagged as preview. Once a view lands (e.g.
-// v_market_sub_index) the consumer doesn't change.
+// Market Sub-Indices — no SQL view exists for these yet.
 // ----------------------------------------------------------------------------
 export async function fetchMarketSubIndices(
-  filters: Filters,
-): Promise<QueryResult<MarketSubIndex[]>> {
-  return preview(
-    getMarketSubIndices(filters),
-    "v_market_sub_index not implemented — preview fixture",
-  );
+  _filters: Filters,
+): Promise<QueryResult<MarketSubIndex[] | null>> {
+  return empty(null, "v_market_sub_index not implemented");
 }
 
 // ----------------------------------------------------------------------------
 // Combos ranked — v_combo_rollups(window_days)
-// Shared by the Combos tab table and the Peak Indicator grid.
 // ----------------------------------------------------------------------------
 type RollupRow = {
   combo_name: string;
@@ -186,9 +160,7 @@ async function fetchRollups(filters: Filters): Promise<{
     });
     if (error) throw error;
     const rows = (data ?? []) as RollupRow[];
-    const usable = rows.filter(
-      (r) => r.sold_count > 0 || r.live_count > 0,
-    );
+    const usable = rows.filter((r) => r.sold_count > 0 || r.live_count > 0);
     if (usable.length === 0) {
       return { rows: [], live: false, reason: "no combos with observations" };
     }
@@ -201,9 +173,9 @@ async function fetchRollups(filters: Filters): Promise<{
 export async function fetchCombosRanked(
   filters: Filters,
   sort: ComboRankSort,
-): Promise<QueryResult<ComboRow[]>> {
+): Promise<QueryResult<ComboRow[] | null>> {
   const { rows, live, reason } = await fetchRollups(filters);
-  if (!live) return preview(getCombosRanked(filters, sort), reason ?? "no data");
+  if (!live) return empty(null, reason ?? "no data");
   const mapped: ComboRow[] = rows.map((r) => {
     const parts = r.combo_name.split(" × ");
     const medianSold = r.median_sold ? Number(r.median_sold) : 0;
@@ -234,7 +206,7 @@ export async function fetchCombosRanked(
 export async function fetchTopMovers(
   filters: Filters,
 ): Promise<
-  QueryResult<{ appreciating: Mover[]; depreciating: Mover[] }>
+  QueryResult<{ appreciating: Mover[]; depreciating: Mover[] } | null>
 > {
   try {
     const supabase = createClient();
@@ -247,10 +219,7 @@ export async function fetchTopMovers(
     const currRows = (curr.data ?? []) as RollupRow[];
     const prevRows = (prev.data ?? []) as RollupRow[];
     if (currRows.length === 0) {
-      return preview(
-        getTopMovers(filters),
-        "no combos with observations",
-      );
+      return empty(null, "no combos with observations");
     }
     const prevByCombo = new Map(
       prevRows.map((r) => [r.combo_name, Number(r.median_sold ?? 0)]),
@@ -261,14 +230,6 @@ export async function fetchTopMovers(
         const currPx = Number(r.median_sold ?? 0);
         const prevPx = prevByCombo.get(r.combo_name) ?? currPx;
         const deltaPct = prevPx === 0 ? 0 : ((currPx - prevPx) / prevPx) * 100;
-        // The v_combo_rollups RPC gives us a single median per
-        // window, not a daily series. We don't have day-level
-        // breakdown here — so the "spark" is just the two real
-        // endpoints (prior window median -> current window median).
-        // MiniSparkline draws this as a single line segment, which
-        // is the honest representation. Previously we interpolated 12
-        // synthetic points between the two values; that looked like a
-        // time series but carried no real intermediate information.
         const spark = [prevPx, currPx];
         return {
           combo: r.combo_name as Mover["combo"],
@@ -282,6 +243,9 @@ export async function fetchTopMovers(
           },
         };
       });
+    if (movers.length === 0) {
+      return empty(null, "no priced combos in window");
+    }
     const byDelta = [...movers].sort((a, b) => b.deltaPct - a.deltaPct);
     return ok(
       {
@@ -291,18 +255,16 @@ export async function fetchTopMovers(
       `v_combo_rollups delta over ${w}d`,
     );
   } catch (e) {
-    return preview(getTopMovers(filters), `fetchTopMovers error: ${errMsg(e)}`);
+    return empty(null, `fetchTopMovers error: ${errMsg(e)}`);
   }
 }
 
 // ----------------------------------------------------------------------------
-// Peak Indicator — score ∈ 0..100 per combo, derived from:
-//   volumeTerm   + momentumTerm + spreadTerm
-// Clamped to 5..95 so cards always sit on the gradient bar.
+// Peak Indicator
 // ----------------------------------------------------------------------------
 export async function fetchPeakIndicators(
   filters: Filters,
-): Promise<QueryResult<PeakIndicator[]>> {
+): Promise<QueryResult<PeakIndicator[] | null>> {
   try {
     const supabase = createClient();
     const w = windowDays(filters);
@@ -314,7 +276,7 @@ export async function fetchPeakIndicators(
     const currRows = (curr.data ?? []) as RollupRow[];
     const prevRows = (prev.data ?? []) as RollupRow[];
     if (currRows.length === 0) {
-      return preview(getPeakIndicators(filters), "no combos with observations");
+      return empty(null, "no combos with observations");
     }
     const prevByCombo = new Map(
       prevRows.map((r) => [r.combo_name, Number(r.median_sold ?? 0)]),
@@ -348,12 +310,12 @@ export async function fetchPeakIndicators(
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
+    if (cards.length === 0) {
+      return empty(null, "no combos with observations");
+    }
     return ok(cards, `derived from v_combo_rollups(${w}d)`);
   } catch (e) {
-    return preview(
-      getPeakIndicators(filters),
-      `fetchPeakIndicators error: ${errMsg(e)}`,
-    );
+    return empty(null, `fetchPeakIndicators error: ${errMsg(e)}`);
   }
 }
 
@@ -370,15 +332,13 @@ export async function fetchComboDetail(
   try {
     const supabase = createClient();
     const w = windowDays(filters);
-    // price_history is large; pull only the window via a range query,
-    // joining to market_listings to match combo via combo_match. Doing
-    // this in SQL would be cleaner as a view, but a client-side filter
-    // is fine at small scales.
     const [blend, series] = await Promise.all([
       supabase.rpc("v_combo_source_blend", { p_combo: combo, window_days: w }),
       supabase
         .from("price_history")
-        .select("observed_at, price_usd_equivalent, source, listing_id!inner(cached_traits, norm_traits)")
+        .select(
+          "observed_at, price_usd_equivalent, source, listing_id!inner(cached_traits, norm_traits)",
+        )
         .gte("observed_at", new Date(Date.now() - w * 86400_000).toISOString())
         .not("price_usd_equivalent", "is", null)
         .limit(2000),
@@ -392,38 +352,54 @@ export async function fetchComboDetail(
       pct: number | string;
     }>).filter((b) => b.n > 0);
     if (blendRows.length === 0) {
-      return preview(
-        getComboDetail(filters, combo as never),
-        "no blend rows for combo",
-      );
+      return empty(null, "no blend rows for combo");
     }
-    // Fall back to fixture for the chart series if we can't reliably
-    // reconstruct the multi-series shape from price_history alone.
-    const fixture = getComboDetail(filters, combo as never);
-    if (!fixture) return ok(null);
-    // Database stores raw strings like "scraper" / "extension_legacy"
-    // in price_history.source; normalize at this boundary so downstream
-    // components only see canonical SourceIds. The original raw string
-    // is preserved as `label` so the badge tooltip can disclose it.
-    const mapped = {
-      ...fixture,
-      blend: blendRows.map((b) => {
-        const id = normalizeSourceId(b.source);
-        return {
-          source: id,
-          n: b.n,
-          amount: Math.round(Number(b.avg_price)),
-          pct: Math.round(Number(b.pct)),
-          label: b.source && b.source !== id ? `${sourceMeta(id).short} (${b.source})` : sourceMeta(id).short,
-        };
-      }),
-    };
-    return ok(mapped, `v_combo_source_blend(${combo}, ${w}d)`);
-  } catch (e) {
-    return preview(
-      getComboDetail(filters, combo as never),
-      `fetchComboDetail error: ${errMsg(e)}`,
+    // We don't have a multi-series chart pipeline yet, so we return a
+    // detail object with the blend populated and the chart series empty.
+    // ComboDetailPanel renders the empty series as a "chart not wired"
+    // placeholder rather than a fake line.
+    return ok<ComboDetail>(
+      {
+        combo: combo as ComboDetail["combo"],
+        medianSold: Math.round(
+          blendRows.reduce(
+            (a, b) => a + Number(b.avg_price) * Number(b.pct),
+            0,
+          ) / 100,
+        ),
+        range: [0, 0],
+        observations: blendRows.reduce((a, b) => a + b.n, 0),
+        series: [],
+        blend: blendRows.map((b) => {
+          const id = normalizeSourceId(b.source);
+          return {
+            source: id,
+            n: b.n,
+            amount: Math.round(Number(b.avg_price)),
+            pct: Math.round(Number(b.pct)),
+            label:
+              b.source && b.source !== id
+                ? `${sourceMeta(id).short} (${b.source})`
+                : sourceMeta(id).short,
+          };
+        }),
+        keyMetrics: {
+          medianAsk: 0,
+          askSoldSpreadPct: 0,
+          daysToSell: 0,
+          volume: blendRows.reduce((a, b) => a + b.n, 0),
+        },
+        attribution: {
+          sources: confidenceSources(filters),
+          confidence: {
+            score: Math.min(99, 20 + blendRows.reduce((a, b) => a + b.n, 0)),
+          },
+        },
+      },
+      `v_combo_source_blend(${combo}, ${w}d)`,
     );
+  } catch (e) {
+    return empty(null, `fetchComboDetail error: ${errMsg(e)}`);
   }
 }
 
@@ -433,7 +409,7 @@ export async function fetchComboDetail(
 export async function fetchRegionalHeatmap(
   filters: Filters,
   metric: HeatmapMetric,
-): Promise<QueryResult<RegionalHeatmap>> {
+): Promise<QueryResult<RegionalHeatmap | null>> {
   try {
     const supabase = createClient();
     const w = windowDays(filters);
@@ -450,12 +426,8 @@ export async function fetchRegionalHeatmap(
       confidence_score: number;
     }>;
     if (rows.length === 0) {
-      return preview(
-        getRegionalHeatmap(filters, metric),
-        "no regional observations",
-      );
+      return empty(null, "no regional observations");
     }
-    // Pivot into combo → region.
     const byCombo = new Map<string, Map<RegionKey, (typeof rows)[number]>>();
     for (const r of rows) {
       let m = byCombo.get(r.combo_name);
@@ -489,10 +461,7 @@ export async function fetchRegionalHeatmap(
       return { combo: combo as RegionalHeatmap["rows"][number]["combo"], cells };
     });
     if (!Number.isFinite(lo)) {
-      return preview(
-        getRegionalHeatmap(filters, metric),
-        "no cells resolved in pivot",
-      );
+      return empty(null, "no cells resolved in pivot");
     }
     return ok<RegionalHeatmap>(
       {
@@ -512,10 +481,7 @@ export async function fetchRegionalHeatmap(
       `v_regional_heatmap(${w}d)`,
     );
   } catch (e) {
-    return preview(
-      getRegionalHeatmap(filters, metric),
-      `fetchRegionalHeatmap error: ${errMsg(e)}`,
-    );
+    return empty(null, `fetchRegionalHeatmap error: ${errMsg(e)}`);
   }
 }
 
@@ -525,7 +491,6 @@ function pickMetric(
 ): number | null {
   if (metric === "medianSold") return row.median_sold ? Number(row.median_sold) : null;
   if (metric === "ask") return row.median_ask ? Number(row.median_ask) : null;
-  // spread %
   if (!row.median_sold || !row.median_ask) return null;
   const s = Number(row.median_sold);
   const a = Number(row.median_ask);
@@ -533,15 +498,16 @@ function pickMetric(
 }
 
 // ----------------------------------------------------------------------------
-// Arbitrage — derived from v_regional_heatmap (axis='region') or stays on
-// fixture for axis='source' until we have real multi-source price data.
+// Arbitrage — derived from v_regional_heatmap (axis='region'). The
+// 'source' axis returns an empty state until we have real multi-source
+// price data; it used to return fixture data unconditionally.
 // ----------------------------------------------------------------------------
 export async function fetchArbitrage(
   filters: Filters,
-  axis: "source" | "region",
-): Promise<QueryResult<Arbitrage>> {
+  axis: ArbitrageAxis,
+): Promise<QueryResult<Arbitrage | null>> {
   if (axis === "source") {
-    return preview(getArbitrage(filters, axis), "source axis needs multi-source data");
+    return empty(null, "source axis needs multi-source price data");
   }
   try {
     const supabase = createClient();
@@ -559,7 +525,7 @@ export async function fetchArbitrage(
       confidence_score: number;
     }>;
     if (rows.length === 0) {
-      return preview(getArbitrage(filters, axis), "no regional rows");
+      return empty(null, "no regional rows");
     }
     const byCombo = new Map<string, (typeof rows)[number][]>();
     for (const r of rows) {
@@ -601,7 +567,7 @@ export async function fetchArbitrage(
       .filter((r) => r.spreadAbs > 0)
       .sort((a, b) => b.spreadPct - a.spreadPct);
     if (outRows.length === 0) {
-      return preview(getArbitrage(filters, axis), "no non-zero spreads");
+      return empty(null, "no non-zero spreads");
     }
     const pcts = outRows.map((r) => r.spreadPct);
     return ok<Arbitrage>(
@@ -617,10 +583,7 @@ export async function fetchArbitrage(
       `v_regional_heatmap(${w}d) spread`,
     );
   } catch (e) {
-    return preview(
-      getArbitrage(filters, axis),
-      `fetchArbitrage error: ${errMsg(e)}`,
-    );
+    return empty(null, `fetchArbitrage error: ${errMsg(e)}`);
   }
 }
 
@@ -629,7 +592,7 @@ export async function fetchArbitrage(
 // ----------------------------------------------------------------------------
 export async function fetchSupplyPipeline(
   filters: Filters,
-): Promise<QueryResult<SupplyPipeline>> {
+): Promise<QueryResult<SupplyPipeline | null>> {
   try {
     const supabase = createClient();
     const { data, error } = await supabase
@@ -642,10 +605,7 @@ export async function fetchSupplyPipeline(
       projected_juveniles: number;
     }>;
     if (rows.length === 0) {
-      return preview(
-        getSupplyPipeline(filters),
-        "no breeding pairs / clutches yet",
-      );
+      return empty(null, "no breeding pairs / clutches yet");
     }
     const months = new Map<string, SupplyMonth>();
     const colorFor = supplyColor();
@@ -677,6 +637,7 @@ export async function fetchSupplyPipeline(
       .from("breeding_pairs")
       .select("id", { count: "exact", head: true })
       .eq("active", true);
+    void filters;
     return ok<SupplyPipeline>(
       {
         activePairs: pairs ? (pairs as unknown as { count?: number }).count ?? 0 : 0,
@@ -687,10 +648,7 @@ export async function fetchSupplyPipeline(
       "v_supply_pipeline_monthly",
     );
   } catch (e) {
-    return preview(
-      getSupplyPipeline(filters),
-      `fetchSupplyPipeline error: ${errMsg(e)}`,
-    );
+    return empty(null, `fetchSupplyPipeline error: ${errMsg(e)}`);
   }
 }
 
@@ -714,13 +672,12 @@ function supplyColor(): (combo: string) => string {
 // ----------------------------------------------------------------------------
 export async function fetchBreeders(
   filters: Filters,
-): Promise<QueryResult<BreedersData>> {
+): Promise<QueryResult<BreedersData | null>> {
   try {
     const supabase = createClient();
     const since = new Date(
       Date.now() - windowDays(filters) * 86400_000,
     ).toISOString();
-    // Seller core + listing counts.
     const { data: sellers, error } = await supabase
       .from("market_sellers")
       .select(
@@ -738,7 +695,7 @@ export async function fetchBreeders(
       feedback_count: number | null;
     }>;
     if (rows.length === 0) {
-      return preview(getBreeders(filters), "no sellers in market_sellers");
+      return empty(null, "no sellers in market_sellers");
     }
     const ids = rows.map((r) => r.seller_id);
     const [sold, statuses] = await Promise.all([
@@ -749,7 +706,9 @@ export async function fetchBreeders(
         .eq("current_status", "sold"),
       supabase
         .from("listing_status_events")
-        .select("listing_id, observed_at, days_since_first_seen, listing_id!inner(seller_id)")
+        .select(
+          "listing_id, observed_at, days_since_first_seen, listing_id!inner(seller_id)",
+        )
         .eq("status", "sold")
         .gte("observed_at", since)
         .limit(5000),
@@ -785,8 +744,6 @@ export async function fetchBreeders(
               daysArr.reduce((a, b) => a + b, 0) / daysArr.length,
             );
       const region = (regionOfText(s.seller_location) ?? "US") as RegionKey;
-      // Lineage heuristic: blend of listing volume + seller avg price +
-      // feedback_count presence. 0..100.
       const score =
         Math.min(
           100,
@@ -807,15 +764,7 @@ export async function fetchBreeders(
             ? Math.round(soldAgg.sumPx / soldAgg.total)
             : Math.round(s.avg_price ?? 0),
         avgDaysToSell: avgDays,
-        // Specialty is supposed to come from each seller's actual top
-        // trait combinations. Until that derivation lands we surface
-        // a non-misleading dash instead of pretending every seller
-        // breeds the same morph.
         specialty: "—" as BreedersData["rows"][number]["specialty"],
-        // Velocity sparkline needs a real 12-period sold count series.
-        // The current data layer doesn't bucket sales by month per
-        // seller; until it does we emit empty so the sparkline renders
-        // as a placeholder rather than a synthetic flat line.
         velocity: [],
         lineageScore: score,
         attribution: {
@@ -855,12 +804,10 @@ export async function fetchBreeders(
       "market_sellers + listing_status_events",
     );
   } catch (e) {
-    return preview(getBreeders(filters), `fetchBreeders error: ${errMsg(e)}`);
+    return empty(null, `fetchBreeders error: ${errMsg(e)}`);
   }
 }
 
-// Lightweight seller_location → region classifier mirroring region_of() in
-// 0005. Kept client-side to save a round trip on every row.
 function regionOfText(loc: string | null): RegionKey | null {
   if (!loc) return null;
   const s = loc.toLowerCase();

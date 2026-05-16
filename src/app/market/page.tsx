@@ -1,11 +1,15 @@
-// /market — Market Analytics dashboard. Public route; reads deterministic
-// fixtures today, swapping to Supabase queries per-widget as pipelines land
-// behind the same source-attribution interface.
+// /market — Market Analytics dashboard. Each widget reads real Supabase
+// data via src/lib/market/queries.ts and renders an EmptyState when its
+// underlying view returns no rows. The per-widget LivePreviewTag pill
+// is the single source of truth for whether a panel is showing real
+// vs preview data — there's no page-level "Live" badge because the
+// dashboard is a composite and individual widgets can be in different
+// states at any given time.
 //
 // Scoped theme: the `.market-theme` class in globals.css paints the
-// green-tinted atmospheric background (matches handoff screenshots) and
-// exposes `.forest-surface` for per-panel styling. Containing it to this
-// route keeps the rest of the app on the neutral slate theme.
+// green-tinted atmospheric background and exposes `.forest-surface`
+// for per-panel styling. Containing it to this route keeps the rest
+// of the app on the neutral slate theme.
 import MarketDashboard from "@/components/market/MarketDashboard";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +35,6 @@ export default function MarketPage() {
               and pricing decisions.
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-ready/40 bg-ready/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-ready">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-ready shadow-[0_0_0_3px_rgba(123,191,131,0.15)]" />
-            Live
-          </span>
         </header>
         <MarketDashboard />
       </div>

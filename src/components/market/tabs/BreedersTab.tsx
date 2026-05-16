@@ -9,6 +9,7 @@
 import type { Filters } from "@/lib/market/types";
 import { fetchBreeders } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
+import EmptyState from "@/components/market/EmptyState";
 import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
@@ -24,9 +25,11 @@ export default function BreedersTab({
   const q = useFilteredQuery(fetchBreeders, filters, [] as const);
   if (!q.data) {
     return (
-      <div className="forest-surface p-6 text-sm text-forest-400">
-        Loading breeders…
-      </div>
+      <EmptyState
+        status={q.status}
+        label="Breeders"
+        note={q.note}
+      />
     );
   }
   const data = q.data;

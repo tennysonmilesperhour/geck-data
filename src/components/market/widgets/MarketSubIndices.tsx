@@ -12,7 +12,7 @@ import { AreaChart } from "@/components/market/charts/InlineCharts";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
-import type { MarketSubIndex } from "@/lib/market/fixtures";
+import type { MarketSubIndex } from "@/lib/market/widget-types";
 
 export default function MarketSubIndices({
   data,

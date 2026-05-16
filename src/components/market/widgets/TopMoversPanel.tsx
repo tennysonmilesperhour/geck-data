@@ -8,7 +8,7 @@ import MiniSparkline from "@/components/charts/MiniSparkline";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
-import type { Mover } from "@/lib/market/fixtures";
+import type { Mover } from "@/lib/market/widget-types";
 
 export default function TopMoversPanel({
   appreciating,
