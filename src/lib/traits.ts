@@ -35,9 +35,11 @@ const KEY_PREFIXES = [
 
 // Matches a segment that either starts with "<known key>:" or that IS
 // the bare property name on its own (e.g., "Proven breeder" with no
-// value attached, which the extension sometimes emits).
+// value attached, which the extension sometimes emits). The trailing
+// "|" handles the case where pipe-splitting leaves a residual delimiter
+// in the segment (defensive — shouldn't happen after split, but cheap).
 const KEY_PREFIX_RE = new RegExp(
-  `^\\s*(?:${KEY_PREFIXES.join("|")})\\s*(?::|$)`,
+  `^\\s*(?:${KEY_PREFIXES.join("|")})\\s*(?::|$|\\|)`,
   "i",
 );
 

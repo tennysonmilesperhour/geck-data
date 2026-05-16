@@ -39,8 +39,8 @@ begin;
 with polluted as (
   select id, cached_traits as old_cached
   from public.market_listings
-  where cached_traits ~* '^\s*(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$)'
-     or cached_traits ~* '\|\s*(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$)'
+  where cached_traits ~* '^\s*(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$|\|)'
+     or cached_traits ~* '\|\s*(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$|\|)'
      or norm_traits   ~* '(^|\s)(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*:'
 ),
 cleaned as (
@@ -50,7 +50,7 @@ cleaned as (
            from (
              select trim(both ' ' from x) as seg
              from regexp_split_to_table(coalesce(l.cached_traits, ''), '\s*\|\s*') as x
-             where x !~* '^\s*(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$)'
+             where x !~* '^\s*(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$|\|)'
                and trim(both ' ' from x) <> ''
            ) sub
          ) as new_cached
@@ -70,7 +70,7 @@ declare remaining int;
 begin
   select count(*) into remaining
   from public.market_listings
-  where cached_traits ~* '(^|\|\s*)(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$)'
+  where cached_traits ~* '(^|\|\s*)(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*(:|$|\|)'
      or norm_traits   ~* '(^|\s)(diet|proven breeder|sex|maturity|weight|birth date|birthdate|hatched|origin|pet only|lineage|shipping|payment|scientific name|category)\s*:';
   if remaining > 0 then
     raise exception 'cleanup left % polluted rows; aborting', remaining;
