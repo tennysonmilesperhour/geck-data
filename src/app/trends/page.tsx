@@ -166,6 +166,14 @@ export default async function TrendsPage({
   const midpoint = new Date(now - (windowDays / 2) * DAY_MS);
   const endDate = new Date(now);
 
+  // Pull listings using the *MorphMarket listing date* (first_listed_at)
+  // when we have it, falling back to first_seen_at otherwise. The
+  // postgrest .or() filter lets the database do the coalesce-aware
+  // window selection in a single round trip. See migration 0020.
+  const listingWindowFilter =
+    `first_listed_at.gte.${sinceIso},` +
+    `and(first_listed_at.is.null,first_seen_at.gte.${sinceIso})`;
+
   const [
     addedRowsRaw,
     soldRowsRaw,
@@ -174,8 +182,8 @@ export default async function TrendsPage({
   ] = await Promise.all([
     supabase
       .from("market_listings")
-      .select("first_seen_at, price_usd_equivalent, price")
-      .gte("first_seen_at", sinceIso)
+      .select("first_seen_at, first_listed_at, price_usd_equivalent, price")
+      .or(listingWindowFilter)
       .limit(30000),
     // listing_status_events covers BOTH confirmed sold (source=scraper)
     // AND extension-inferred sold (source=extension_inferred). Both
@@ -199,20 +207,32 @@ export default async function TrendsPage({
 
   type AddedRow = {
     first_seen_at: string | null;
+    first_listed_at: string | null;
     price: number | null;
     price_usd_equivalent: number | null;
   };
   type SoldRow = { observed_at: string | null; source: string | null };
   type PriceRow = { observed_at: string | null; price: number | null };
 
-  const addedRows = ((addedRowsRaw.data ?? []) as AddedRow[]).filter(
-    (r): r is AddedRow & { first_seen_at: string } => r.first_seen_at != null,
-  );
+  // `t` is the effective chronological key: MorphMarket listing date
+  // when known, our scrape date otherwise. Everything downstream
+  // (buckets, deltas, supply/demand math) consumes `t` so the
+  // coalesce stays in one place.
+  type AddedEff = AddedRow & { t: string; hasMarketDate: boolean };
+  const addedRows: AddedEff[] = ((addedRowsRaw.data ?? []) as AddedRow[])
+    .map((r) => {
+      const t = r.first_listed_at ?? r.first_seen_at;
+      return { ...r, t: t ?? "", hasMarketDate: r.first_listed_at != null };
+    })
+    .filter((r) => r.t !== "");
   const soldRows = ((soldRowsRaw.data ?? []) as SoldRow[]).filter(
     (r): r is SoldRow & { observed_at: string } => r.observed_at != null,
   );
 
   const addedCount = addedRows.length;
+  const addedWithMarketDate = addedRows.filter((r) => r.hasMarketDate).length;
+  const marketDateCoverage =
+    addedCount === 0 ? 0 : (addedWithMarketDate / addedCount) * 100;
   const soldCount = soldRows.length;
   const soldInferredCount = soldRows.filter(
     (r) => r.source === "extension_inferred",
@@ -220,7 +240,7 @@ export default async function TrendsPage({
   const soldConfirmedCount = soldCount - soldInferredCount;
 
   const addedEarly = sumInRange(
-    addedRows.map((r) => ({ t: r.first_seen_at })),
+    addedRows.map((r) => ({ t: r.t })),
     since,
     midpoint,
   );
@@ -249,9 +269,11 @@ export default async function TrendsPage({
 
   // Weekly added/sold series for the production-vs-sales overlay and the
   // cumulative inventory delta. Filled to the full window so gaps render
-  // as zeros, not breaks.
+  // as zeros, not breaks. Bucketed on `r.t` (the coalesced
+  // first_listed_at || first_seen_at) so the timeline reflects market
+  // calendar not scrape calendar.
   const addedWeeklyRaw = series(
-    addedRows.map((r) => ({ t: r.first_seen_at })),
+    addedRows.map((r) => ({ t: r.t })),
     weekBucketISO,
   );
   const soldWeeklyRaw = series(
@@ -403,7 +425,49 @@ export default async function TrendsPage({
         eyebrow="Analysis / Trends"
         title="Market trends"
         description={`Longitudinal signal across the crested gecko market. Window = last ${windowDays} days; "vs prev" deltas compare the late ${windowDays / 2} days to the early ${windowDays / 2} so they're meaningful even before a full prior window has accumulated.`}
-        right={<DataFreshness updatedAt={Date.now()} window={`${windowDays} days`} />}
+        right={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* Market-date coverage: % of in-window listings keyed by
+                MorphMarket's listing date (first_listed_at) rather than
+                our scrape date (first_seen_at). 100% = fully reliable
+                market calendar; lower = some rows are dated by when
+                our scraper saw them. */}
+            <span
+              className="group relative inline-flex cursor-help items-center gap-1.5 rounded-full border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-300"
+              tabIndex={0}
+            >
+              <span
+                aria-hidden
+                className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  marketDateCoverage >= 90
+                    ? "bg-ready"
+                    : marketDateCoverage >= 50
+                      ? "bg-busy"
+                      : "bg-danger"
+                }`}
+              />
+              market-date {marketDateCoverage.toFixed(0)}%
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 hidden w-72 rounded-lg border border-ink-700 bg-ink-900/95 p-3 text-left text-xs normal-case font-normal leading-relaxed tracking-normal text-ink-200 shadow-glow backdrop-blur group-hover:block group-focus-within:block"
+              >
+                <span className="block font-display text-[13px] font-medium text-ink-50">
+                  Market-date coverage
+                </span>
+                <span className="mt-1 block text-ink-300">
+                  {addedWithMarketDate.toLocaleString()} of{" "}
+                  {addedCount.toLocaleString()} in-window listings are dated
+                  by MorphMarket&apos;s original listing date. The rest fall
+                  back to our scrape date, so longitudinal trend lines for
+                  those rows compress into our scrape window. Coverage will
+                  climb as the weekly detail scrape re-encounters more
+                  listings.
+                </span>
+              </span>
+            </span>
+            <DataFreshness updatedAt={Date.now()} window={`${windowDays} days`} />
+          </div>
+        }
       />
 
       {/* Window toggle — chip group so the 90/180 selection is visually

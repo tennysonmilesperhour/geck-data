@@ -241,6 +241,21 @@ def parse_detail_html(html: str, *, listing_id: str) -> Optional[dict[str, Any]]
     html_seller_slug, html_seller_name = _extract_seller_from_html(html)
 
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+
+    # MorphMarket exposes the original listing date as an additionalProperty
+    # entry on the detail page. We capture it both as the original raw text
+    # (in `first_listed`) and as a typed timestamptz at UTC midnight (in
+    # `first_listed_at`) so the trend queries can coalesce(first_listed_at,
+    # first_seen_at) without doing per-row string parsing.
+    first_listed_text = (
+        extras.get("first listed")
+        or extras.get("listed")
+        or extras.get("date listed")
+    )
+    first_listed_at: Optional[str] = None
+    if first_listed_text and re.fullmatch(r"\d{4}-\d{2}-\d{2}", first_listed_text.strip()):
+        first_listed_at = f"{first_listed_text.strip()}T00:00:00+00:00"
+
     row: dict[str, Any] = {
         "listing_id": normalise_listing_id(listing_id),
         "name": product.get("name"),
@@ -266,6 +281,8 @@ def parse_detail_html(html: str, *, listing_id: str) -> Optional[dict[str, Any]]
         "traits": "|".join(traits) if traits else None,
         "trait_array": traits or None,
         "trait_count": len(traits) if traits else None,
+        "first_listed": first_listed_text,
+        "first_listed_at": first_listed_at,
         "primary_image_url": images[0] if images else None,
         "all_image_urls": images or None,
         "image_count": len(images) or None,
