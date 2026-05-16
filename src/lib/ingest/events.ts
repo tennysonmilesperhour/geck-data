@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adaptLegacyEvent } from "./legacyAdapter";
 import { isCrested } from "./species";
+import { sanitizeCachedTraits, sanitizeNormTraits } from "@/lib/traits";
 
 export type EventType =
   | "listingSeen"
@@ -169,6 +170,27 @@ function projectListing(payload: Record<string, unknown>): Record<string, unknow
   for (const k of LISTING_COLUMNS) {
     if (k === "id") continue;
     if (k in payload) out[k] = payload[k] ?? null;
+  }
+  // Strip leaked key/value segments ("Diet: Meal Replacement",
+  // "Proven breeder: No") that the extension concatenates into the trait
+  // columns. Without this, those segments tokenize as fake morphs on
+  // /trends and the chart pages. See src/lib/traits.ts.
+  //
+  // We clean cached_traits first (it preserves the "|" structure) and
+  // then derive norm_traits from the cleaned cached_traits — that path
+  // is lossless. Falling back to sanitizing norm_traits directly is
+  // possible but can drop real traits that share a comma-segment with a
+  // key/value prefix (see migration 0018 commentary).
+  if ("cached_traits" in out) {
+    const cleaned = sanitizeCachedTraits(out.cached_traits);
+    out.cached_traits = cleaned;
+    if ("norm_traits" in out) {
+      out.norm_traits = cleaned
+        ? cleaned.toLowerCase().replace(/\|/g, " ")
+        : sanitizeNormTraits(out.norm_traits);
+    }
+  } else if ("norm_traits" in out) {
+    out.norm_traits = sanitizeNormTraits(out.norm_traits);
   }
   return out;
 }

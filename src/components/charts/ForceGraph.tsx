@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as d3 from "d3";
 import { chartTheme } from "./theme";
+import { parseTraitList } from "@/lib/traits";
 
 export type ForceInput = {
   cached_traits: string | null;
@@ -30,16 +31,7 @@ export default function ForceGraph({
     const traitCount = new Map<string, number>();
     const pairCount = new Map<string, number>();
     for (const d of data) {
-      const raw = (d.norm_traits || d.cached_traits || "").toLowerCase();
-      if (!raw) continue;
-      const tokens = Array.from(
-        new Set(
-          (raw.includes(",")
-            ? raw.split(",").map((t) => t.trim())
-            : raw.split(/\s+/).map((t) => t.trim())
-          ).filter((t) => t && t.length >= 3),
-        ),
-      );
+      const tokens = parseTraitList(d);
       for (const t of tokens) traitCount.set(t, (traitCount.get(t) ?? 0) + 1);
       for (let i = 0; i < tokens.length; i++) {
         for (let j = i + 1; j < tokens.length; j++) {
