@@ -20,12 +20,26 @@ Env vars consumed:
   SUPABASE_SERVICE_ROLE_KEY        (geck-data — writes to morph_eval_runs)
   GECK_INSPECT_FUNCTION_URL        e.g. https://<ref>.supabase.co/functions/v1
   GECK_INSPECT_ANON_KEY            anon JWT, for invoking the edge function
+  EVAL_DAILY_CAP_CALLS             default 300 — total images eval'd across
+                                   all morph_eval_runs today (UTC). New run
+                                   refuses to start if today's total would
+                                   exceed this cap. Set to 0 to disable.
 
 Usage:
-  python scripts/eval_morph_id.py --limit 50              # quick eval
-  python scripts/eval_morph_id.py --split test            # full test split
-  python scripts/eval_morph_id.py --limit 100 \
-    --notes "after prompt tweak v2"                       # tag the run
+  python scripts/eval_morph_id.py                         # 25-image haiku eval (default)
+  python scripts/eval_morph_id.py --model sonnet --limit 100 \
+    --notes "blessed v6 benchmark" --yes                  # full benchmark
+  python scripts/eval_morph_id.py --split test --limit 50 # quick on test split
+
+Spend-bounding behavior (added after 2026-05-15 incident):
+  - Default --model is haiku (cheapest); pass --model sonnet for benchmarks.
+  - Default --limit is 25 (was 200) so a no-arg invocation is cheap.
+  - On 429 from the edge function, the loop aborts immediately so we
+    don't keep accumulating rate-limit hits.
+  - On startup we sum today's eval_set_size across morph_eval_runs and
+    refuse to start if today + this run would exceed EVAL_DAILY_CAP_CALLS.
+  - We print the call count + estimated cost and wait for stdin
+    confirmation unless --yes is passed.
 """
 from __future__ import annotations
 
@@ -50,12 +64,43 @@ from lib.supabase_client import get_supabase  # noqa: E402
 
 PAGE_SIZE = 200
 
+# Default daily ceiling for total images sent to the edge function across
+# all eval runs in a UTC day. Tuned to ~$1/day worst-case at Sonnet rates
+# (100 calls × ~$0.01 per call) or ~5x that at Haiku rates with a budget
+# headroom. Override with EVAL_DAILY_CAP_CALLS env var; set to 0 to disable.
+DEFAULT_DAILY_CAP_CALLS = 300
+
+# Model aliases — keep them short so --model haiku / sonnet / opus works.
+MODEL_ALIASES = {
+    "haiku":  "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-4-6",
+    "opus":   "claude-opus-4-7",
+}
+
+# Rough per-call cost estimates for the confirmation prompt. Numbers are
+# pessimistic (assume max_tokens output) so the displayed cost is the
+# upper bound, not the average. Adjust if the per-call shape changes.
+PER_CALL_COST_USD = {
+    "claude-haiku-4-5":   0.005,
+    "claude-sonnet-4-6":  0.020,
+    "claude-opus-4-7":    0.080,
+}
+
+
+class RateLimited(Exception):
+    """Raised when the edge function reports a 429 from Anthropic. The
+    main loop catches this and aborts the eval immediately so we don't
+    accumulate further rate-limit hits."""
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--split", choices=("train", "val", "test"), default="test")
-    p.add_argument("--limit", type=int, default=200,
-                   help="Cap on images to eval (the edge function isn't free)")
+    p.add_argument("--limit", type=int, default=25,
+                   help="Cap on images to eval (default 25; raise explicitly for benchmarks).")
+    p.add_argument("--model", type=str, default="haiku",
+                   help="Model alias (haiku|sonnet|opus) or raw model id. "
+                        "Default haiku — switch to sonnet only for blessed benchmark runs.")
     p.add_argument("--out", type=Path, default=Path("./morph_id_eval.json"),
                    help="Where to write per-row results for forensics")
     p.add_argument("--qps", type=float, default=1.0,
@@ -64,23 +109,72 @@ def parse_args() -> argparse.Namespace:
                    help="Optional human note (e.g. 'after prompt tweak v2')")
     p.add_argument("--no-persist", action="store_true",
                    help="Skip writing the summary to public.morph_eval_runs")
+    p.add_argument("--yes", "-y", action="store_true",
+                   help="Skip the call-count confirmation prompt.")
     return p.parse_args()
 
 
-def call_recognize(image_url: str, fn_url: str, anon_key: str) -> dict[str, Any]:
+def resolve_model(raw: str) -> str:
+    """Translate --model haiku|sonnet|opus into the full model id, or
+    pass through a raw id verbatim. Unknown aliases raise."""
+    if raw in MODEL_ALIASES:
+        return MODEL_ALIASES[raw]
+    if raw.startswith("claude-"):
+        return raw
+    raise ValueError(
+        f"Unknown --model value '{raw}'. Use one of: "
+        f"{sorted(MODEL_ALIASES)} or a full model id like claude-sonnet-4-6."
+    )
+
+
+def todays_eval_call_count(supabase) -> int:
+    """Sum of eval_set_size across morph_eval_runs that *started* today
+    (UTC). Used to enforce EVAL_DAILY_CAP_CALLS. We use started_at rather
+    than finished_at so a long-running eval in flight still counts."""
+    today_utc_start = dt.datetime.now(dt.timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+    try:
+        res = supabase.table("morph_eval_runs").select(
+            "eval_set_size"
+        ).gte("started_at", today_utc_start).execute()
+        return sum(int(r.get("eval_set_size") or 0) for r in (res.data or []))
+    except Exception as exc:  # noqa: BLE001
+        # Don't block the run on a connection blip; surface the warning
+        # and assume zero so the user is at most ONE budget over.
+        print(f"WARN: could not check today's eval cap; assuming 0 ({exc})")
+        return 0
+
+
+def call_recognize(image_url: str, fn_url: str, anon_key: str,
+                   model: str) -> dict[str, Any]:
     res = requests.post(
         f"{fn_url}/recognize-gecko-morph",
         headers={
             "Authorization": f"Bearer {anon_key}",
             "Content-Type": "application/json",
         },
-        json={"imageUrl": image_url},
+        json={"imageUrl": image_url, "model": model},
         timeout=60,
     )
+    # The edge function returns 500 with the Anthropic error message in
+    # the body for upstream failures. Sniff for 429 / rate-limit text so
+    # we can abort the loop instead of grinding more requests through.
+    body_text = res.text[:400] if not res.ok else ""
+    if res.status_code == 429 or (
+        not res.ok and ("429" in body_text or "rate_limit" in body_text.lower()
+                        or "rate-limit" in body_text.lower())
+    ):
+        raise RateLimited(f"upstream rate limit hit (status={res.status_code}): {body_text}")
     res.raise_for_status()
     body = res.json()
     if not body.get("success"):
-        raise RuntimeError(f"edge function error: {body}")
+        # Edge function may also surface rate-limit info in the error
+        # JSON. Translate to RateLimited so the abort path triggers.
+        err = str(body)[:300]
+        if "429" in err or "rate_limit" in err.lower():
+            raise RateLimited(f"upstream rate limit hit in body: {err}")
+        raise RuntimeError(f"edge function error: {err}")
     return body["analysis"]
 
 
@@ -156,7 +250,49 @@ def main() -> int:
             "ERROR: set GECK_INSPECT_FUNCTION_URL and GECK_INSPECT_ANON_KEY."
         )
 
+    try:
+        requested_model = resolve_model(args.model)
+    except ValueError as exc:
+        sys.exit(f"ERROR: {exc}")
+
     supabase = get_supabase()
+
+    # Daily-cap check. Sum of eval_set_size for runs started today (UTC)
+    # plus this run's --limit must stay under EVAL_DAILY_CAP_CALLS.
+    daily_cap = int(os.environ.get(
+        "EVAL_DAILY_CAP_CALLS", str(DEFAULT_DAILY_CAP_CALLS),
+    ))
+    if daily_cap > 0:
+        today_used = todays_eval_call_count(supabase)
+        projected = today_used + args.limit
+        if projected > daily_cap:
+            sys.exit(
+                f"ERROR: today's eval calls would total {projected} "
+                f"({today_used} already + {args.limit} this run), exceeding "
+                f"EVAL_DAILY_CAP_CALLS={daily_cap}. Wait until tomorrow (UTC) "
+                f"or raise the cap with `EVAL_DAILY_CAP_CALLS=N python ...`."
+            )
+        print(f"daily cap: {today_used}/{daily_cap} used today, "
+              f"this run will use up to {args.limit} more.")
+
+    # Confirmation prompt with cost estimate. Bypass with --yes / -y.
+    per_call = PER_CALL_COST_USD.get(requested_model, 0.02)
+    est_cost = per_call * args.limit
+    if not args.yes:
+        prompt = (
+            f"\nAbout to run eval with model={requested_model}, "
+            f"split={args.split}, up to {args.limit} images.\n"
+            f"Estimated upper-bound cost: ${est_cost:.2f} "
+            f"(@ ~${per_call:.3f}/call).\n"
+            f"Proceed? [y/N] "
+        )
+        try:
+            answer = input(prompt).strip().lower()
+        except EOFError:
+            answer = ""
+        if answer not in {"y", "yes"}:
+            print("aborted.")
+            return 1
 
     # Pull canonical rows from the canonical view.
     rows: list[dict[str, Any]] = []
@@ -202,6 +338,7 @@ def main() -> int:
     last_t = 0.0
     model = None
 
+    aborted_on_rate_limit = False
     try:
         for i, row in enumerate(rows):
             wait = interval - (time.time() - last_t)
@@ -210,7 +347,16 @@ def main() -> int:
             last_t = time.time()
             url = row["image_url"]
             try:
-                analysis = call_recognize(url, fn_url, anon_key)
+                analysis = call_recognize(url, fn_url, anon_key, requested_model)
+            except RateLimited as exc:
+                # Stop the loop. Burning the rest of the eval set just
+                # generates more 429s and inflates the user's rate-limit
+                # hit count without producing any useful eval data.
+                print(f"  [{i+1}/{len(rows)}] ABORT — rate limit hit: {str(exc)[:120]}")
+                results.append({"image_url": url, "error": str(exc)[:160], "label": row,
+                                "aborted": True})
+                aborted_on_rate_limit = True
+                break
             except Exception as exc:  # noqa: BLE001
                 print(f"  [{i+1}/{len(rows)}] FAIL {url}: {str(exc)[:80]}")
                 results.append({"image_url": url, "error": str(exc)[:120], "label": row})
@@ -283,7 +429,7 @@ def main() -> int:
         if run_id is not None:
             try:
                 supabase.table("morph_eval_runs").update({
-                    "status":                      "success",
+                    "status":                      "failed" if aborted_on_rate_limit else "success",
                     "finished_at":                 dt.datetime.now(dt.timezone.utc).isoformat(),
                     "model":                       model,
                     "primary_morph_top1_accuracy": round(primary_acc, 4),
@@ -291,11 +437,15 @@ def main() -> int:
                     "base_color_accuracy":         round(bc_acc, 4) if bc_acc is not None else None,
                     "per_trait_metrics":           per_trait,
                     "top_confusions":              top_confusions,
+                    "error_message":               (
+                        f"aborted on upstream rate limit after {n_evaluated} of {len(rows)} images"
+                        if aborted_on_rate_limit else None
+                    ),
                 }).eq("id", run_id).execute()
                 print(f"persisted morph_eval_runs id={run_id}")
             except Exception as exc:  # noqa: BLE001
                 print(f"WARN: could not persist eval-run summary: {exc}")
-        return 0
+        return 2 if aborted_on_rate_limit else 0
     except Exception as exc:
         if run_id is not None:
             try:
