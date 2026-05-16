@@ -32,6 +32,9 @@ import { fmtInt, fmtPct, fmtUsd } from "@/lib/format";
 import TraitMomentumPanels, {
   TraitMomentumSkeleton,
 } from "@/components/trends/TraitMomentumPanels";
+import ProfitabilityTiers, {
+  ProfitabilityTiersSkeleton,
+} from "@/components/trends/ProfitabilityTiers";
 
 export const dynamic = "force-dynamic";
 
@@ -582,6 +585,10 @@ export default async function TrendsPage({
           </ul>
         )}
       </Panel>
+
+      <Suspense fallback={<ProfitabilityTiersSkeleton />}>
+        <ProfitabilityTiers windowDays={windowDays} />
+      </Suspense>
 
       <Suspense fallback={<TraitMomentumSkeleton />}>
         <TraitMomentumPanels windowDays={windowDays} />
