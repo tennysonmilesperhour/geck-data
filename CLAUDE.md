@@ -1,36 +1,51 @@
 # Geck Data: Claude Code Instructions
 
-## Auto-merge policy
+## Direct-to-main workflow
 
-When the user asks for a change in this repo, the default flow is:
+The user's standing instruction: **commit and push directly to `main`. No
+PRs, no preview review, no waiting.** Every push to main triggers a
+production Vercel deploy, and that's intentional.
 
-1. Open the PR (draft is fine if CI runs on PRs).
-2. Wait for required checks. The only required check today is the Vercel
-   preview deployment.
-3. Once checks are green, **mark the PR ready for review and merge it
-   into `main` without waiting for an explicit "go ahead"**. Use
-   `mcp__github__merge_pull_request` with `merge_method: 'squash'`
-   unless the user specified otherwise.
-4. If CI fails, investigate and fix in the same PR. Only escalate to
-   the user when the failure is ambiguous or architecturally significant.
+Default flow for every change:
 
-The user's standing instruction is: never make them be the one to
-merge. Don't ask "do you want me to merge?" once the PR is green;
-just merge it.
+1. Make the edit on a local working copy of `main`.
+2. Run `tsc --noEmit` and any relevant smoke checks.
+3. `git add` the specific files (never `git add -A` / `git add .`).
+4. Commit with a descriptive message.
+5. `git push origin main`.
+6. Watch the production Vercel deploy via `vercel ls` or
+   `vercel inspect <url> --logs` if it fails. Fix forward; do not roll
+   back unless the user explicitly asks.
 
-The exception is destructive or irreversible changes (history
-rewrites, schema drops, mass deletes of production rows). For those,
-ask first.
+Do **not** open PRs unless the user explicitly requests one. The
+review/preview ceremony was removed because the user wants speed over
+gatekeeping and is comfortable with main = prod.
+
+The exception is destructive or irreversible changes (history rewrites,
+schema drops, mass deletes of production rows, secret rotation). For
+those, ask first.
+
+## Before pushing to main, always
+
+- Run `tsc --noEmit --pretty false` and confirm clean. A type error in
+  `main` immediately breaks the Vercel production build.
+- Keep commits small and focused — one logical change per commit makes
+  `git revert` straightforward if a push needs to be backed out.
+- Never push files outside the change scope: `.env`, secrets, large
+  binaries, or untracked work-in-progress should be excluded by adding
+  files individually rather than `git add -A`.
 
 ## Production state, treat with care
 
 This repo's `main` branch deploys directly to
 `https://geck-data.vercel.app` (production). The Supabase project it
 talks to is the live one used by the Eye in the Sky extension and the
-Geck Inspect web app. Schema migrations land in `supabase/migrations/`
-but are not auto-applied; the user runs them by hand in Supabase SQL
-Editor after merge. Flag this when you ship a migration so the user
-remembers to apply it.
+Geck Inspect web app. Schema migrations land in `supabase/migrations/`.
+Apply them directly via the Supabase MCP (`mcp__supabase__apply_migration`
+for DDL, or `execute_sql` for idempotent `CREATE OR REPLACE` and data
+backfills) at the same time you push the migration file to main, so the
+schema state in prod always matches what `main` expects. Flag any DDL
+that drops or rewrites existing data; ask the user before running it.
 
 ## Companion repos
 

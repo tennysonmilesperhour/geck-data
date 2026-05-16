@@ -2,10 +2,16 @@
 // (effective_price × sell_through_rate). Source data is the
 // v_combo_profitability(window_days) function in migration 0019.
 //
-// Tier bucketing: take the top 25 combos with at least one sold event,
-// sort by score, bucket into 5 tiers of 5 each. The function itself
-// returns raw scores; tier cutoffs live here so we can adjust the
-// presentation without a migration.
+// Layout: each of 5 tiers is its own row across the full panel width
+// rather than a 5-up grid of narrow cards. The previous 5-up layout
+// truncated combo names like "Partial Pinstripe × Snowflake" to a few
+// letters; row-per-tier gives names full breathing room and matches
+// the way the user reads the ranking (top to bottom).
+//
+// Each combo cell exposes a hover popover with the full per-combo
+// readout (median sold, median ask, sold/live counts, confidence,
+// source). Popover uses the same z-50 / CSS-only group-hover pattern
+// as MorphTerm, so no client JS is needed.
 import { Panel } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd, fmtPct } from "@/lib/format";
@@ -27,37 +33,43 @@ const TIER_META: Array<{
   rank: number;
   label: string;
   headline: string;
-  cls: string;
+  borderCls: string;
+  labelCls: string;
 }> = [
   {
     rank: 1,
     label: "Tier 1",
     headline: "Highest expected revenue",
-    cls: "border-ready/60 bg-gradient-to-br from-ready/8 to-transparent",
+    borderCls: "border-ready/60 bg-ready/[0.06]",
+    labelCls: "text-ready",
   },
   {
     rank: 2,
     label: "Tier 2",
     headline: "Strong",
-    cls: "border-ready/30 bg-gradient-to-br from-ready/4 to-transparent",
+    borderCls: "border-ready/30 bg-ready/[0.03]",
+    labelCls: "text-ready",
   },
   {
     rank: 3,
     label: "Tier 3",
     headline: "Above average",
-    cls: "border-ink-700 bg-ink-850/40",
+    borderCls: "border-ink-700 bg-ink-850/40",
+    labelCls: "text-ink-200",
   },
   {
     rank: 4,
     label: "Tier 4",
     headline: "Mid-pack",
-    cls: "border-ink-700 bg-ink-850/30",
+    borderCls: "border-ink-700 bg-ink-850/30",
+    labelCls: "text-ink-300",
   },
   {
     rank: 5,
     label: "Tier 5",
     headline: "Bottom of ranked",
-    cls: "border-busy/30 bg-gradient-to-br from-busy/4 to-transparent",
+    borderCls: "border-busy/30 bg-busy/[0.04]",
+    labelCls: "text-busy",
   },
 ];
 
@@ -91,8 +103,7 @@ async function fetchTiers(
   const raw = (data ?? []) as Raw[];
   const all: Row[] = raw.map((r) => ({
     combo_name: r.combo_name,
-    combo_source:
-      r.combo_source === "anchor" ? "anchor" : "discovered",
+    combo_source: r.combo_source === "anchor" ? "anchor" : "discovered",
     sold_count: r.sold_count,
     live_count: r.live_count,
     median_sold: r.median_sold == null ? null : Number(r.median_sold),
@@ -102,46 +113,108 @@ async function fetchTiers(
     score: Number(r.score),
     confidence: r.confidence,
   }));
-  // Eligible for ranking: at least one sold event in the window. The
-  // others are surfaced as "watch list" insufficient-data combos in a
-  // footnote so the user knows what's being held back.
   const ranked = all
     .filter((r) => r.sold_count > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, TIER_META.length * COMBOS_PER_TIER);
-  return {
-    rows: ranked,
-    insufficient: all.length - ranked.length,
-  };
+  return { rows: ranked, insufficient: all.length - ranked.length };
 }
 
-function ComboRow({ row, index }: { row: Row; index: number }) {
+function ComboCell({ row, index }: { row: Row; index: number }) {
   return (
-    <li className="grid grid-cols-[28px_minmax(0,1fr)_auto_auto_auto] items-baseline gap-3 py-1.5 font-sans text-sm">
-      <span className="font-mono text-[11px] text-ink-500 tabular-nums">
-        {index + 1}.
-      </span>
-      <span className="truncate text-ink-100">
-        {row.combo_name}
-        {row.combo_source === "anchor" ? (
-          <span className="ml-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-ready/70">
-            anchor
-          </span>
-        ) : null}
-      </span>
-      <span className="font-mono text-[11px] tabular-nums text-ink-300">
-        {fmtUsd(row.effective_price)}
-      </span>
-      <span className="font-mono text-[11px] tabular-nums text-ink-300">
-        {fmtPct(row.sell_through_rate * 100, 1)}
-      </span>
+    <div className="group relative" tabIndex={0}>
+      <div className="flex items-baseline gap-2 rounded-md border border-ink-700/40 bg-ink-900/40 px-3 py-2 transition hover:border-ink-600 hover:bg-ink-850 group-focus:border-ink-600 group-focus:bg-ink-850">
+        <span className="w-7 shrink-0 font-mono text-[11px] tabular-nums text-ink-500">
+          #{index + 1}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="break-words text-sm text-ink-100">
+              {row.combo_name}
+            </span>
+            {row.combo_source === "anchor" ? (
+              <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-ready/70">
+                anchor
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-mono text-[10px] tabular-nums text-ink-400">
+            <span>
+              <span className="text-ink-200">{fmtUsd(row.effective_price)}</span>
+            </span>
+            <span>
+              <span className="text-ink-200">
+                {fmtPct(row.sell_through_rate * 100, 1)}
+              </span>{" "}
+              sell-thru
+            </span>
+            <span>n={row.sold_count + row.live_count}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Hover popover: full readout. Uses the same z-50 / CSS-only
+          group-hover pattern as MorphTerm. pointer-events-none so it
+          doesn't intercept hover/click on adjacent rows. */}
       <span
-        className="font-mono text-[11px] tabular-nums text-ink-400"
-        title={`${row.sold_count} sold / ${row.live_count} live · confidence ${row.confidence}/99`}
+        role="tooltip"
+        className="pointer-events-none absolute left-0 right-0 top-full z-50 mt-1 hidden rounded-lg border border-ink-700 bg-ink-900/95 p-3 text-left text-xs leading-relaxed text-ink-200 shadow-glow backdrop-blur group-hover:block group-focus-within:block"
       >
-        n={row.sold_count + row.live_count}
+        <div className="mb-1.5 flex items-baseline justify-between gap-3">
+          <span className="font-display text-[13px] font-medium text-ink-50">
+            {row.combo_name}
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-500">
+            {row.combo_source}
+          </span>
+        </div>
+        <dl className="space-y-1 font-mono text-[11px] tabular-nums">
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-400">Effective price</dt>
+            <dd className="text-ink-100">{fmtUsd(row.effective_price)}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-400">Median sold</dt>
+            <dd className="text-ink-200">
+              {row.median_sold != null ? fmtUsd(row.median_sold) : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-400">Median ask</dt>
+            <dd className="text-ink-200">
+              {row.median_ask != null ? fmtUsd(row.median_ask) : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-400">Sell-through</dt>
+            <dd className="text-ink-200">
+              {fmtPct(row.sell_through_rate * 100, 1)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-400">Sold / live</dt>
+            <dd className="text-ink-200">
+              {fmtInt(row.sold_count)} / {fmtInt(row.live_count)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3 border-t border-ink-700/60 pt-1">
+            <dt className="text-ink-400">Score</dt>
+            <dd className="font-semibold text-ink-50">
+              {row.score.toFixed(1)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-400">Confidence</dt>
+            <dd className="text-ink-300">{row.confidence}/99</dd>
+          </div>
+        </dl>
+        <p className="mt-2 text-[10px] leading-snug text-ink-500">
+          Effective price uses median sold when available, otherwise
+          median ask × 0.8 (typical clearing haircut). Score = effective
+          price × sell-through.
+        </p>
       </span>
-    </li>
+    </div>
   );
 }
 
@@ -170,14 +243,14 @@ export default async function ProfitabilityTiers({
   return (
     <Panel
       title={`Profitability tiers · last ${windowDays} days`}
-      subtitle="Combos ranked by expected revenue per listing: effective price × sell-through rate (sold ÷ (sold + live)). Anchor combos are from the curated catalog; the rest are auto-discovered top trait pairs. Hover the count for sample sizes + confidence."
+      subtitle="Combos ranked by expected revenue per listing: effective price × sell-through rate (sold ÷ (sold + live)). Hover any combo for the full readout. Anchor combos are from the curated catalog; the rest are auto-discovered top trait pairs."
       right={
         <span className="font-mono text-[11px]">
-          {fmtInt(rows.length)} of top combos
+          {fmtInt(rows.length)} combos · {TIER_META.length} tiers
         </span>
       }
     >
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="space-y-3">
         {TIER_META.map((tier) => {
           const start = (tier.rank - 1) * COMBOS_PER_TIER;
           const slice = rows.slice(start, start + COMBOS_PER_TIER);
@@ -187,36 +260,32 @@ export default async function ProfitabilityTiers({
           return (
             <div
               key={tier.rank}
-              className={`rounded-lg border ${tier.cls} p-3`}
+              className={`rounded-lg border p-3 ${tier.borderCls}`}
             >
-              <div className="mb-2 flex items-baseline justify-between">
-                <div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-400">
+              <div className="mb-2.5 flex items-baseline justify-between gap-3">
+                <div className="flex items-baseline gap-3">
+                  <span
+                    className={`font-mono text-[10px] uppercase tracking-[0.14em] ${tier.labelCls}`}
+                  >
                     {tier.label}
-                  </div>
-                  <div className="text-[13px] font-medium text-ink-50">
+                  </span>
+                  <span className="text-[13px] font-medium text-ink-50">
                     {tier.headline}
-                  </div>
+                  </span>
                 </div>
-                <div className="text-right font-mono text-[10px] tabular-nums text-ink-400">
-                  <div>score</div>
-                  <div className="text-ink-200">
-                    {bottom.score.toFixed(0)}–{top.score.toFixed(0)}
-                  </div>
-                </div>
+                <span className="font-mono text-[10px] tabular-nums text-ink-400">
+                  score {bottom.score.toFixed(0)}–{top.score.toFixed(0)}
+                </span>
               </div>
-              <div className="mb-1 grid grid-cols-[28px_minmax(0,1fr)_auto_auto_auto] gap-3 border-b border-ink-700/40 pb-1 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-500">
-                <span />
-                <span>combo</span>
-                <span className="text-right">price</span>
-                <span className="text-right">sell-thru</span>
-                <span className="text-right">n</span>
-              </div>
-              <ul className="divide-y divide-ink-700/30">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-5">
                 {slice.map((row, i) => (
-                  <ComboRow key={row.combo_name} row={row} index={start + i} />
+                  <ComboCell
+                    key={row.combo_name}
+                    row={row}
+                    index={start + i}
+                  />
                 ))}
-              </ul>
+              </div>
             </div>
           );
         })}
@@ -235,11 +304,11 @@ export function ProfitabilityTiersSkeleton() {
   return (
     <div className="surface p-5" aria-label="Loading profitability tiers">
       <div className="mb-3 h-5 w-56 animate-pulse rounded bg-ink-800" />
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="h-40 animate-pulse rounded-lg border border-ink-700 bg-ink-850/40"
+            className="h-32 animate-pulse rounded-lg border border-ink-700 bg-ink-850/40"
           />
         ))}
       </div>

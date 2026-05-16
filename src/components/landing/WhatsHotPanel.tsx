@@ -73,7 +73,7 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                   onClick={() => toggleCombo(combo.combo_name)}
                   onMouseEnter={() => setHoveredCombo(combo.combo_name)}
                   onMouseLeave={() => setHoveredCombo(null)}
-                  className={`group relative block w-full overflow-hidden rounded-md border px-3 py-2.5 text-left transition ${
+                  className={`group relative block w-full rounded-md border px-3 py-2.5 text-left transition ${
                     isSelected
                       ? "border-emerald-500/60 bg-emerald-500/[0.08]"
                       : isHovered
@@ -81,15 +81,23 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                         : "border-ink-700/60 bg-ink-900/40 hover:border-emerald-500/30 hover:bg-ink-800/60"
                   }`}
                 >
-                  <div
+                  {/* Gradient bar lives in its own overflow-hidden wrapper
+                      so the rounded clipping keeps the gradient tidy
+                      WITHOUT also clipping the MorphTerm hover tooltip
+                      that needs to extend below the button bounds. */}
+                  <span
                     aria-hidden
-                    className={`absolute inset-y-0 left-0 transition-all ${
-                      isSelected
-                        ? "bg-gradient-to-r from-emerald-500/15 to-emerald-500/0"
-                        : "bg-gradient-to-r from-emerald-500/[0.06] to-emerald-500/0"
-                    }`}
-                    style={{ width: `${widthPct}%` }}
-                  />
+                    className="pointer-events-none absolute inset-0 overflow-hidden rounded-md"
+                  >
+                    <span
+                      className={`absolute inset-y-0 left-0 transition-all ${
+                        isSelected
+                          ? "bg-gradient-to-r from-emerald-500/15 to-emerald-500/0"
+                          : "bg-gradient-to-r from-emerald-500/[0.06] to-emerald-500/0"
+                      }`}
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  </span>
                   <div className="relative flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <span className="w-5 font-mono text-[10px] text-ink-500">

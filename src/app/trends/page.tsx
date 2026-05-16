@@ -397,26 +397,41 @@ export default async function TrendsPage({
     },
   ];
 
-  const otherWindow: WindowDays = windowDays === 90 ? 180 : 90;
-
   return (
     <div className="page-rise space-y-8">
       <SectionHeader
         eyebrow="Analysis / Trends"
         title="Market trends"
         description={`Longitudinal signal across the crested gecko market. Window = last ${windowDays} days; "vs prev" deltas compare the late ${windowDays / 2} days to the early ${windowDays / 2} so they're meaningful even before a full prior window has accumulated.`}
-        right={
-          <div className="flex items-center gap-3">
-            <a
-              href={`?window=${otherWindow}`}
-              className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-300 underline-offset-4 hover:underline"
-            >
-              Show {otherWindow}d
-            </a>
-            <DataFreshness updatedAt={Date.now()} window={`${windowDays} days`} />
-          </div>
-        }
+        right={<DataFreshness updatedAt={Date.now()} window={`${windowDays} days`} />}
       />
+
+      {/* Window toggle — chip group so the 90/180 selection is visually
+          obvious instead of buried as a small text link in the header. */}
+      <div
+        role="group"
+        aria-label="Trend window"
+        className="inline-flex overflow-hidden rounded-lg border border-ink-700 bg-ink-850 font-mono text-[11px] uppercase tracking-[0.14em]"
+      >
+        {VALID_WINDOWS.map((w) => {
+          const active = w === windowDays;
+          return (
+            <a
+              key={w}
+              href={`?window=${w}`}
+              aria-current={active ? "page" : undefined}
+              className={
+                "px-3 py-1.5 transition " +
+                (active
+                  ? "bg-ready/15 text-ready"
+                  : "text-ink-400 hover:bg-ink-800 hover:text-ink-100")
+              }
+            >
+              {w}d
+            </a>
+          );
+        })}
+      </div>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard

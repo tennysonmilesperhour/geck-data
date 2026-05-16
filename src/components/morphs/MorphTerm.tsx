@@ -60,7 +60,11 @@ function Glossed({
       */}
       <span
         role="tooltip"
-        className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-72 normal-case rounded-lg border border-ink-700 bg-ink-900/95 p-3 text-left text-xs font-normal leading-relaxed tracking-normal text-ink-200 shadow-glow backdrop-blur transition group-hover:block group-focus-within:block"
+        // z-50: sit above siblings that establish stacking contexts via
+        // `transform`, `filter`, `will-change`, or `position: relative` +
+        // a z-index. The previous z-20 was getting beaten by inline
+        // sparkline filters / gradient layers on the same page.
+        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-72 normal-case rounded-lg border border-ink-700 bg-ink-900/95 p-3 text-left text-xs font-normal leading-relaxed tracking-normal text-ink-200 shadow-glow backdrop-blur transition group-hover:block group-focus-within:block"
       >
         <span className="block font-display text-[13px] font-medium text-ink-50">
           {name}
