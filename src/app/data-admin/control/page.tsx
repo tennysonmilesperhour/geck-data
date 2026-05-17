@@ -11,6 +11,7 @@ import {
   getSpend7d,
   getCombinedRuns,
   getRuntimeConfig,
+  getReconciliation7d,
 } from "@/lib/geck-data/queries";
 import { QuotaControls } from "./QuotaControls";
 
@@ -66,10 +67,11 @@ function statusBadge(status: string): string {
 }
 
 export default async function ControlPanel() {
-  const [spend, runs, config] = await Promise.all([
+  const [spend, runs, config, recon] = await Promise.all([
     getSpend7d(),
     getCombinedRuns(20),
     getRuntimeConfig(),
+    getReconciliation7d(),
   ]);
 
   const surfaceEntries = Object.entries(spend.by_surface).sort(
@@ -159,6 +161,20 @@ export default async function ControlPanel() {
       </section>
 
       <section>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-300">
+            Reconciliation (estimated vs actual)
+          </h2>
+          <span className="text-xs text-ink-400">
+            {recon.most_recent_fetch
+              ? `Anthropic billing last pulled ${new Date(recon.most_recent_fetch).toLocaleString()}`
+              : "Anthropic billing never pulled — run pull_anthropic_billing.py"}
+          </span>
+        </div>
+        <ReconciliationTable recon={recon} />
+      </section>
+
+      <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-300">
           Workflow runs (scrapes + evals, last 20)
         </h2>
@@ -233,6 +249,99 @@ export default async function ControlPanel() {
         <QuotaControls rows={config} />
       </section>
     </div>
+  );
+}
+
+function ReconciliationTable({
+  recon,
+}: {
+  recon: Awaited<ReturnType<typeof getReconciliation7d>>;
+}) {
+  if (recon.days.length === 0) {
+    return (
+      <div className="rounded-md border border-ink-700 bg-ink-850 p-4 text-sm text-ink-400">
+        No spend data yet. The first MorphID call (production or eval)
+        populates the Estimated column; running pull_anthropic_billing.py
+        populates Actual.
+      </div>
+    );
+  }
+  const totalDeltaCents =
+    recon.total_actual_cents !== null
+      ? recon.total_actual_cents - recon.total_estimated_cents
+      : null;
+  return (
+    <div className="overflow-x-auto rounded-md border border-ink-700 bg-ink-850">
+      <table className="w-full text-sm">
+        <thead className="bg-ink-800 text-left text-xs uppercase tracking-wide text-ink-400">
+          <tr>
+            <th className="px-3 py-2">day</th>
+            <th className="px-3 py-2">estimated</th>
+            <th className="px-3 py-2">actual</th>
+            <th className="px-3 py-2">delta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {recon.days.map((d) => (
+            <tr key={d.day} className="border-t border-ink-800">
+              <td className="px-3 py-2 text-ink-100">{formatDay(d.day)}</td>
+              <td className="px-3 py-2 text-ink-300">
+                {formatCents(d.estimated_cents)}
+              </td>
+              <td className="px-3 py-2 text-ink-300">
+                {d.actual_cents === null ? (
+                  <span className="text-ink-500">not pulled</span>
+                ) : (
+                  formatCents(d.actual_cents)
+                )}
+              </td>
+              <td className="px-3 py-2">
+                {d.delta_cents === null ? (
+                  <span className="text-ink-500">-</span>
+                ) : (
+                  <DeltaBadge cents={d.delta_cents} />
+                )}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-ink-700 bg-ink-900/60">
+            <td className="px-3 py-2 text-ink-100 font-semibold">total (7d)</td>
+            <td className="px-3 py-2 text-ink-100 font-semibold">
+              {formatCents(recon.total_estimated_cents)}
+            </td>
+            <td className="px-3 py-2 text-ink-100 font-semibold">
+              {recon.total_actual_cents === null
+                ? "-"
+                : formatCents(recon.total_actual_cents)}
+            </td>
+            <td className="px-3 py-2">
+              {totalDeltaCents === null ? (
+                <span className="text-ink-500">-</span>
+              ) : (
+                <DeltaBadge cents={totalDeltaCents} />
+              )}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DeltaBadge({ cents }: { cents: number }) {
+  const abs = Math.abs(cents);
+  const tone =
+    abs < 1
+      ? "border-ink-700 bg-ink-800 text-ink-300"
+      : cents > 0
+        ? "border-red-700 bg-red-900/40 text-red-200"
+        : "border-emerald-700 bg-emerald-900/40 text-emerald-200";
+  const sign = cents > 0 ? "+" : cents < 0 ? "-" : "";
+  return (
+    <span className={`rounded border px-2 py-0.5 text-xs ${tone}`}>
+      {sign}
+      {formatCents(abs)}
+    </span>
   );
 }
 

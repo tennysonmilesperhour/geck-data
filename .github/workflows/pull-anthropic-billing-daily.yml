@@ -1,0 +1,33 @@
+name: pull-anthropic-billing-daily
+
+# Pulls Anthropic's cost_report into anthropic_billing_daily so the
+# /data-admin/control panel can show Actual $ alongside Estimated $.
+#
+# workflow_dispatch only until the first successful manual run confirms
+# ANTHROPIC_ADMIN_API_KEY is wired up correctly. After that, uncomment
+# the schedule block to run every day at 09:30 UTC (after midnight in
+# every US timezone so the previous UTC day is settled on Anthropic's side).
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '30 9 * * *'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          pip install --quiet -r scripts/requirements.txt
+      - name: Pull cost report
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_ADMIN_API_KEY:   ${{ secrets.ANTHROPIC_ADMIN_API_KEY }}
+        run: python scripts/pull_anthropic_billing.py --days 7

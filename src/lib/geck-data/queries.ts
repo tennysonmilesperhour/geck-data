@@ -356,6 +356,96 @@ export type RuntimeConfigRow = {
   updated_by: string | null;
 };
 
+export type BillingDay = {
+  day: string;
+  cost_cents: number;
+  by_model: Record<string, number>;
+  by_token_type: Record<string, number>;
+  fetched_at: string;
+};
+
+export type Reconciliation = {
+  days: {
+    day: string;
+    estimated_cents: number;
+    actual_cents: number | null;
+    delta_cents: number | null;
+  }[];
+  total_estimated_cents: number;
+  total_actual_cents: number | null;
+  any_actual_present: boolean;
+  most_recent_fetch: string | null;
+};
+
+export async function getReconciliation7d(): Promise<Reconciliation> {
+  const supabase = createServerClient();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
+  sevenDaysAgo.setUTCHours(0, 0, 0, 0);
+
+  const [billingRes, spendRes] = await Promise.all([
+    supabase
+      .from("anthropic_billing_daily")
+      .select("*")
+      .gte("day", sevenDaysAgo.toISOString().slice(0, 10))
+      .order("day", { ascending: false }),
+    supabase
+      .from("v_model_spend_7d")
+      .select("day,cost_cents"),
+  ]);
+
+  const billingByDay = new Map<string, BillingDay>();
+  for (const row of billingRes.data ?? []) {
+    const day = String(row.day);
+    billingByDay.set(day, {
+      day,
+      cost_cents: Number(row.cost_cents) || 0,
+      by_model: (row.by_model ?? {}) as Record<string, number>,
+      by_token_type: (row.by_token_type ?? {}) as Record<string, number>,
+      fetched_at: String(row.fetched_at),
+    });
+  }
+  const estByDay = new Map<string, number>();
+  for (const row of spendRes.data ?? []) {
+    const day = String(row.day).slice(0, 10);
+    estByDay.set(day, (estByDay.get(day) ?? 0) + (Number(row.cost_cents) || 0));
+  }
+
+  const allDays = new Set<string>([
+    ...billingByDay.keys(),
+    ...estByDay.keys(),
+  ]);
+  const days = [...allDays]
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((day) => {
+      const estimated_cents = estByDay.get(day) ?? 0;
+      const actual = billingByDay.get(day);
+      const actual_cents = actual ? actual.cost_cents : null;
+      const delta_cents = actual_cents !== null ? actual_cents - estimated_cents : null;
+      return { day, estimated_cents, actual_cents, delta_cents };
+    });
+
+  const total_estimated_cents = days.reduce((a, b) => a + b.estimated_cents, 0);
+  const actuals = days.filter((d) => d.actual_cents !== null);
+  const any_actual_present = actuals.length > 0;
+  const total_actual_cents = any_actual_present
+    ? actuals.reduce((a, b) => a + (b.actual_cents ?? 0), 0)
+    : null;
+
+  const most_recent_fetch = [...billingByDay.values()]
+    .map((b) => b.fetched_at)
+    .sort()
+    .pop() ?? null;
+
+  return {
+    days,
+    total_estimated_cents,
+    total_actual_cents,
+    any_actual_present,
+    most_recent_fetch,
+  };
+}
+
 export async function getRuntimeConfig(): Promise<RuntimeConfigRow[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase
