@@ -20,10 +20,16 @@ Env vars consumed:
   SUPABASE_SERVICE_ROLE_KEY        (geck-data — writes to morph_eval_runs)
   GECK_INSPECT_FUNCTION_URL        e.g. https://<ref>.supabase.co/functions/v1
   GECK_INSPECT_ANON_KEY            anon JWT, for invoking the edge function
-  EVAL_DAILY_CAP_CALLS             default 300 — total images eval'd across
-                                   all morph_eval_runs today (UTC). New run
-                                   refuses to start if today's total would
-                                   exceed this cap. Set to 0 to disable.
+  EVAL_SHARED_SECRET               shared with the edge function so calls tag
+                                   themselves surface='morph_id_eval' in
+                                   model_invocations (instead of falling
+                                   through to 'morph_id_production'). Set the
+                                   same value on the edge function via
+                                   `supabase secrets set EVAL_SHARED_SECRET=...`.
+  EVAL_DAILY_CAP_CALLS             fallback default 300 — daily cap. Authority
+                                   is runtime_config.eval_daily_cap_calls;
+                                   env var only used if that row is missing.
+                                   Set to 0 to disable.
 
 Usage:
   python scripts/eval_morph_id.py                         # 25-image haiku eval (default)
@@ -128,17 +134,22 @@ def resolve_model(raw: str) -> str:
 
 
 def todays_eval_call_count(supabase) -> int:
-    """Sum of eval_set_size across morph_eval_runs that *started* today
-    (UTC). Used to enforce EVAL_DAILY_CAP_CALLS. We use started_at rather
-    than finished_at so a long-running eval in flight still counts."""
+    """Count rows in model_invocations from surface='morph_id_eval' that
+    were logged today (UTC). Used to enforce eval_daily_cap_calls.
+
+    Switched 2026-05-17 from summing morph_eval_runs.eval_set_size to
+    counting model_invocations: the latter reflects actual upstream
+    calls (so an aborted-on-rate-limit run doesn't lie about its size)
+    AND captures eval runs that crashed before opening a morph_eval_runs
+    row at all."""
     today_utc_start = dt.datetime.now(dt.timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).isoformat()
     try:
-        res = supabase.table("morph_eval_runs").select(
-            "eval_set_size"
-        ).gte("started_at", today_utc_start).execute()
-        return sum(int(r.get("eval_set_size") or 0) for r in (res.data or []))
+        res = supabase.table("model_invocations").select(
+            "id", count="exact",
+        ).eq("surface", "morph_id_eval").gte("called_at", today_utc_start).execute()
+        return int(getattr(res, "count", None) or 0)
     except Exception as exc:  # noqa: BLE001
         # Don't block the run on a connection blip; surface the warning
         # and assume zero so the user is at most ONE budget over.
@@ -146,15 +157,44 @@ def todays_eval_call_count(supabase) -> int:
         return 0
 
 
+def runtime_eval_cap(supabase) -> int:
+    """Authoritative cap from runtime_config; falls back to env var, then
+    DEFAULT_DAILY_CAP_CALLS. Returns 0 to mean 'disabled', matching the
+    original env-var semantics."""
+    try:
+        res = supabase.table("runtime_config").select("value").eq(
+            "key", "eval_daily_cap_calls",
+        ).maybe_single().execute()
+        if res.data is not None and res.data.get("value") is not None:
+            return int(res.data["value"])
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARN: could not read runtime_config.eval_daily_cap_calls; "
+              f"falling back to env var ({exc})")
+    return int(os.environ.get(
+        "EVAL_DAILY_CAP_CALLS", str(DEFAULT_DAILY_CAP_CALLS),
+    ))
+
+
 def call_recognize(image_url: str, fn_url: str, anon_key: str,
-                   model: str) -> dict[str, Any]:
+                   model: str, eval_secret: Optional[str]) -> dict[str, Any]:
+    headers = {
+        "Authorization": f"Bearer {anon_key}",
+        "Content-Type": "application/json",
+    }
+    # The shared secret tells the edge function to tag this row
+    # surface='morph_id_eval' in model_invocations instead of falling
+    # through to 'morph_id_production'. Without it the row still gets
+    # written but the dashboard can't distinguish eval from prod.
+    if eval_secret:
+        headers["x-eval-secret"] = eval_secret
     res = requests.post(
         f"{fn_url}/recognize-gecko-morph",
-        headers={
-            "Authorization": f"Bearer {anon_key}",
-            "Content-Type": "application/json",
+        headers=headers,
+        json={
+            "imageUrl": image_url,
+            "model": model,
+            "surface": "morph_id_eval",
         },
-        json={"imageUrl": image_url, "model": model},
         timeout=60,
     )
     # The edge function returns 500 with the Anthropic error message in
@@ -249,6 +289,13 @@ def main() -> int:
         sys.exit(
             "ERROR: set GECK_INSPECT_FUNCTION_URL and GECK_INSPECT_ANON_KEY."
         )
+    eval_secret = os.environ.get("EVAL_SHARED_SECRET")
+    if not eval_secret:
+        print(
+            "WARN: EVAL_SHARED_SECRET not set. Calls will land in "
+            "model_invocations as surface='morph_id_production' instead "
+            "of 'morph_id_eval', polluting the production spend panel."
+        )
 
     try:
         requested_model = resolve_model(args.model)
@@ -257,11 +304,10 @@ def main() -> int:
 
     supabase = get_supabase()
 
-    # Daily-cap check. Sum of eval_set_size for runs started today (UTC)
-    # plus this run's --limit must stay under EVAL_DAILY_CAP_CALLS.
-    daily_cap = int(os.environ.get(
-        "EVAL_DAILY_CAP_CALLS", str(DEFAULT_DAILY_CAP_CALLS),
-    ))
+    # Daily-cap check. Today's eval calls (from model_invocations) plus
+    # this run's --limit must stay under runtime_config.eval_daily_cap_calls
+    # (with EVAL_DAILY_CAP_CALLS env var as the fallback).
+    daily_cap = runtime_eval_cap(supabase)
     if daily_cap > 0:
         today_used = todays_eval_call_count(supabase)
         projected = today_used + args.limit
@@ -347,7 +393,9 @@ def main() -> int:
             last_t = time.time()
             url = row["image_url"]
             try:
-                analysis = call_recognize(url, fn_url, anon_key, requested_model)
+                analysis = call_recognize(
+                    url, fn_url, anon_key, requested_model, eval_secret,
+                )
             except RateLimited as exc:
                 # Stop the loop. Burning the rest of the eval set just
                 # generates more 429s and inflates the user's rate-limit

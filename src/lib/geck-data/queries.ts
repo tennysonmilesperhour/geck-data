@@ -200,3 +200,171 @@ export async function getSellerStats(): Promise<SellerStat[]> {
   }
   return (data ?? []) as SellerStat[];
 }
+
+// /data-admin/control queries ------------------------------------------------
+
+export type SpendBucket = {
+  day: string;
+  surface: string;
+  model: string;
+  call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_cents: number;
+  error_count: number;
+};
+
+export type SpendTotals = {
+  total_cents: number;
+  total_calls: number;
+  total_errors: number;
+  by_surface: Record<string, { cost_cents: number; calls: number }>;
+  by_day: { day: string; cost_cents: number; calls: number }[];
+  buckets: SpendBucket[];
+};
+
+export async function getSpend7d(): Promise<SpendTotals> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("v_model_spend_7d")
+    .select("*");
+  if (error) {
+    console.warn("[geck-data queries] v_model_spend_7d:", error.message);
+    return {
+      total_cents: 0,
+      total_calls: 0,
+      total_errors: 0,
+      by_surface: {},
+      by_day: [],
+      buckets: [],
+    };
+  }
+  const buckets = (data ?? []).map((r) => ({
+    day: String(r.day),
+    surface: String(r.surface),
+    model: String(r.model),
+    call_count: Number(r.call_count) || 0,
+    input_tokens: Number(r.input_tokens) || 0,
+    output_tokens: Number(r.output_tokens) || 0,
+    cost_cents: Number(r.cost_cents) || 0,
+    error_count: Number(r.error_count) || 0,
+  })) as SpendBucket[];
+
+  const by_surface: Record<string, { cost_cents: number; calls: number }> = {};
+  const dayMap = new Map<string, { cost_cents: number; calls: number }>();
+  let total_cents = 0;
+  let total_calls = 0;
+  let total_errors = 0;
+  for (const b of buckets) {
+    total_cents += b.cost_cents;
+    total_calls += b.call_count;
+    total_errors += b.error_count;
+    const s = by_surface[b.surface] ?? { cost_cents: 0, calls: 0 };
+    s.cost_cents += b.cost_cents;
+    s.calls += b.call_count;
+    by_surface[b.surface] = s;
+    const d = dayMap.get(b.day) ?? { cost_cents: 0, calls: 0 };
+    d.cost_cents += b.cost_cents;
+    d.calls += b.call_count;
+    dayMap.set(b.day, d);
+  }
+  const by_day = [...dayMap.entries()]
+    .map(([day, v]) => ({ day, ...v }))
+    .sort((a, b) => (a.day < b.day ? 1 : -1));
+
+  return {
+    total_cents,
+    total_calls,
+    total_errors,
+    by_surface,
+    by_day,
+    buckets,
+  };
+}
+
+export type CombinedRun = {
+  kind: "scrape" | "eval";
+  id: number;
+  label: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  detail: string;
+  triggered_by: string | null;
+};
+
+export async function getCombinedRuns(limit = 20): Promise<CombinedRun[]> {
+  const supabase = createServerClient();
+  const [scrapeRes, evalRes] = await Promise.all([
+    supabase
+      .from("scrape_runs")
+      .select(
+        "id,scrape_type,status,started_at,finished_at,records_attempted,records_succeeded,records_failed,triggered_by",
+      )
+      .order("started_at", { ascending: false })
+      .limit(limit),
+    supabase
+      .from("morph_eval_runs")
+      .select(
+        "id,model,status,started_at,finished_at,eval_set_size,primary_morph_top1_accuracy,triggered_by",
+      )
+      .order("started_at", { ascending: false })
+      .limit(limit),
+  ]);
+
+  const scrapeRuns: CombinedRun[] = (scrapeRes.data ?? []).map((r) => ({
+    kind: "scrape",
+    id: Number(r.id),
+    label: String(r.scrape_type),
+    status: String(r.status),
+    started_at: String(r.started_at),
+    finished_at: r.finished_at ? String(r.finished_at) : null,
+    detail: `${r.records_attempted ?? 0} attempted / ${r.records_succeeded ?? 0} ok / ${r.records_failed ?? 0} fail`,
+    triggered_by: r.triggered_by ? String(r.triggered_by) : null,
+  }));
+
+  const evalRuns: CombinedRun[] = (evalRes.data ?? []).map((r) => {
+    const acc = r.primary_morph_top1_accuracy;
+    const accStr = acc !== null && acc !== undefined
+      ? `acc ${(Number(acc) * 100).toFixed(1)}%`
+      : "no acc yet";
+    return {
+      kind: "eval" as const,
+      id: Number(r.id),
+      label: `eval (${r.model ?? "haiku?"})`,
+      status: String(r.status),
+      started_at: String(r.started_at),
+      finished_at: r.finished_at ? String(r.finished_at) : null,
+      detail: `${r.eval_set_size ?? 0} images, ${accStr}`,
+      triggered_by: r.triggered_by ? String(r.triggered_by) : null,
+    };
+  });
+
+  return [...scrapeRuns, ...evalRuns]
+    .sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
+    .slice(0, limit);
+}
+
+export type RuntimeConfigRow = {
+  key: string;
+  value: number | string | boolean | object | null;
+  value_kind: "integer" | "number" | "boolean" | "string" | "json";
+  description: string | null;
+  min_value: number | null;
+  max_value: number | null;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+export async function getRuntimeConfig(): Promise<RuntimeConfigRow[]> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("runtime_config")
+    .select("*")
+    .order("key", { ascending: true });
+  if (error) {
+    console.warn("[geck-data queries] runtime_config:", error.message);
+    return [];
+  }
+  return (data ?? []) as RuntimeConfigRow[];
+}

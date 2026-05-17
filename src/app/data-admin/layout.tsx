@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const NAV_ITEMS = [
+  { href: "/data-admin/control", label: "Control" },
   { href: "/data-admin", label: "Overview" },
   { href: "/data-admin/listings", label: "Listings" },
   { href: "/data-admin/morphs", label: "Morphs" },
