@@ -12,15 +12,16 @@ import Logo from "@/components/ui/Logo";
 type Tab = { href: string; label: string; group?: "core" | "analysis" | "ops" };
 
 const TABS: Tab[] = [
-  { href: "/",               label: "Pulse",         group: "core" },
-  { href: "/sold",           label: "Sold",          group: "core" },
-  { href: "/price-drops",    label: "Drops",         group: "core" },
-  { href: "/sellers",        label: "Sellers",       group: "core" },
-  { href: "/market",         label: "Market",        group: "analysis" },
-  { href: "/trends",         label: "Trends",        group: "analysis" },
-  { href: "/compare",        label: "Compare",       group: "analysis" },
-  { href: "/shows",          label: "Shows",         group: "ops" },
-  { href: "/cross-platform", label: "Cross-platform", group: "ops" },
+  { href: "/",                label: "Pulse",         group: "core" },
+  { href: "/whats-it-worth",  label: "What's it worth?", group: "core" },
+  { href: "/sold",            label: "Sold",          group: "core" },
+  { href: "/price-drops",     label: "Drops",         group: "core" },
+  { href: "/sellers",         label: "Sellers",       group: "core" },
+  { href: "/market",          label: "Market",        group: "analysis" },
+  { href: "/trends",          label: "Trends",        group: "analysis" },
+  { href: "/compare",         label: "Compare",       group: "analysis" },
+  { href: "/shows",           label: "Shows",         group: "ops" },
+  { href: "/cross-platform",  label: "Cross-platform", group: "ops" },
 ];
 
 export default function Header() {

@@ -6,11 +6,9 @@
 // front-end can treat live and preview snapshots identically.
 //
 // Strategy: derive transactions from market_listings + listing_status_events
-// + price_history. Map free-text traits to the canonical combos via a small
-// in-process matcher (the canonical combo list is duplicated below to avoid
-// taking a runtime dependency on the geck-inspect package). We leave
-// supply_pipeline / demand_signals / market_events as empty arrays / objects
-// when no internal data exists; geck-inspect renders empty states gracefully.
+// + price_history. Map free-text traits to the canonical combos via the
+// shared matcher in lib/market/combos.ts. Hydrate breeders with seller
+// reputation so lineage tiers reflect reality rather than a hardcoded value.
 //
 // Cached at the edge for 5 minutes via Cache-Control. The full table scan is
 // bounded by SNAPSHOT_LISTING_LIMIT so we don't accidentally serve a 50MB
@@ -18,49 +16,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { matchCombo } from "@/lib/market/combos";
+import { classifyAge } from "@/lib/market/age";
+import { classifyLineage, type LineageTier } from "@/lib/market/lineage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SNAPSHOT_LISTING_LIMIT = 5000;
-
-// Canonical combos — must stay in lockstep with geck-inspect's
-// src/lib/marketAnalytics/taxonomy.js. Trait order in `traits` is irrelevant;
-// the matcher does set-based comparison.
-const HIGH_VALUE_COMBOS: Array<{ id: string; name: string; traits: string[] }> = [
-  { id: "lw-axa",       name: "Lilly White x Axanthic",        traits: ["Lilly White", "Axanthic"] },
-  { id: "lw-cap",       name: "Lilly White x Cappuccino",      traits: ["Lilly White", "Cappuccino"] },
-  { id: "cap-pin",      name: "Cappuccino x Full Pinstripe",   traits: ["Cappuccino", "Full Pinstripe"] },
-  { id: "axa-pin",      name: "Axanthic x Full Pinstripe",     traits: ["Axanthic", "Full Pinstripe"] },
-  { id: "sable-harl",   name: "Sable x Extreme Harlequin",     traits: ["Sable", "Extreme Harlequin"] },
-  { id: "frap-pin",     name: "Frappuccino x Pinstripe",       traits: ["Frappuccino", "Pinstripe"] },
-  { id: "moonglow-dal", name: "Moonglow x Super Dalmatian",    traits: ["Moonglow", "Super Dalmatian"] },
-  { id: "lw-soft",      name: "Lilly White x Soft Scale",      traits: ["Lilly White", "Soft Scale"] },
-  { id: "axa-harl",     name: "Axanthic x Extreme Harlequin",  traits: ["Axanthic", "Extreme Harlequin"] },
-  { id: "cap-dal",      name: "Cappuccino x Super Dalmatian",  traits: ["Cappuccino", "Super Dalmatian"] },
-];
-
-function normTrait(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-function traitTokens(input: unknown): Set<string> {
-  if (Array.isArray(input)) return new Set(input.map((t) => normTrait(String(t))));
-  if (typeof input === "string") {
-    return new Set(
-      input.split(/[,;|/]+|\s+/).map((t) => normTrait(t)).filter(Boolean),
-    );
-  }
-  return new Set();
-}
-function matchCombo(traits: unknown): { id: string; name: string; traits: string[] } | null {
-  const tokens = traitTokens(traits);
-  if (tokens.size === 0) return null;
-  for (const c of HIGH_VALUE_COMBOS) {
-    const need = c.traits.map(normTrait);
-    if (need.every((n) => tokens.has(n))) return c;
-  }
-  return null;
-}
 
 function regionFromLocation(loc: string | null | undefined): string {
   if (!loc) return "US";
@@ -75,17 +38,6 @@ function regionFromLocation(loc: string | null | undefined): string {
   return "US";
 }
 
-function ageClassFromMaturity(mat: string | null | undefined): string {
-  if (!mat) return "subadult";
-  const m = mat.toLowerCase();
-  if (m.includes("hatch") || m.includes("baby")) return "hatchling";
-  if (m.includes("juven")) return "juvenile";
-  if (m.includes("sub")) return "subadult";
-  if (m.includes("adult")) return "adult";
-  if (m.includes("breed")) return "proven_breeder";
-  return "subadult";
-}
-
 type ListingRow = {
   id: string;
   title: string | null;
@@ -93,6 +45,9 @@ type ListingRow = {
   price_usd_equivalent: number | null;
   cached_traits: unknown;
   norm_traits: unknown;
+  maturity: string | null;
+  weight: number | string | null;
+  hatch_date: string | null;
   seller_id: string | null;
   seller_name: string | null;
   seller_location: string | null;
@@ -109,6 +64,15 @@ type StatusEventRow = {
   days_since_first_seen: number | null;
 };
 
+type SellerRow = {
+  seller_id: string;
+  seller_name: string | null;
+  feedback_count: number | null;
+  seller_rating_score: number | null;
+  total_listings: number | null;
+  membership: string | null;
+};
+
 export async function GET(_req: NextRequest) {
   let admin;
   try {
@@ -123,12 +87,11 @@ export async function GET(_req: NextRequest) {
   // 1. Pull recent crested listings only. Geck Inspect is crested-gecko-first;
   //    other species (leopards, gargoyles, etc.) get ingested and archived
   //    via migration 0010 but never surface in user-facing analytics. The
-  //    'unknown' default applies to legacy rows ingested before 0010 — those
-  //    show up too because the extension was crested-focused in practice.
+  //    'unknown' default applies to legacy rows ingested before 0010.
   const { data: listings, error: lErr } = (await admin
     .from("market_listings")
     .select(
-      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
+      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
     )
     .in("species", ["crested", "unknown"])
     .order("last_seen_at", { ascending: false, nullsFirst: false })
@@ -142,7 +105,7 @@ export async function GET(_req: NextRequest) {
   //    each transaction the correct sold/listed status and compute time on
   //    market.
   const ids = (listings ?? []).map((r) => r.id);
-  let statusByListing = new Map<string, StatusEventRow>();
+  const statusByListing = new Map<string, StatusEventRow>();
   if (ids.length) {
     const { data: events } = (await admin
       .from("listing_status_events")
@@ -153,12 +116,52 @@ export async function GET(_req: NextRequest) {
       error: { message: string } | null;
     };
     for (const ev of events ?? []) {
-      // First entry per listing wins because we sort observed_at desc.
       if (!statusByListing.has(ev.listing_id)) statusByListing.set(ev.listing_id, ev);
     }
   }
 
-  // 3. Build transactions. Drop listings without a recognizable combo so the
+  // 3. Hydrate seller reputation for lineage tier classification. One query
+  //    over all seller ids in the snapshot; the cardinality is at most a few
+  //    hundred for a 5000-listing window.
+  const sellerIds = Array.from(
+    new Set((listings ?? []).map((r) => r.seller_id).filter((id): id is string => !!id)),
+  );
+  const sellerById = new Map<string, SellerRow>();
+  const soldCountById = new Map<string, number>();
+  if (sellerIds.length) {
+    const { data: sellers } = (await admin
+      .from("market_sellers")
+      .select("seller_id, seller_name, feedback_count, seller_rating_score, total_listings, membership")
+      .in("seller_id", sellerIds)) as { data: SellerRow[] | null; error: { message: string } | null };
+    for (const s of sellers ?? []) sellerById.set(s.seller_id, s);
+
+    // Sold-in-window per seller: pull sold listing_status_events that match
+    // our listing set, group by seller_id via the parent listing map.
+    const listingToSeller = new Map<string, string>();
+    for (const r of listings ?? []) {
+      if (r.seller_id) listingToSeller.set(r.id, r.seller_id);
+    }
+    for (const ev of statusByListing.values()) {
+      if (ev.status !== "sold") continue;
+      const sid = listingToSeller.get(ev.listing_id);
+      if (sid) soldCountById.set(sid, (soldCountById.get(sid) ?? 0) + 1);
+    }
+  }
+
+  const tierFor = (sid: string | null): LineageTier => {
+    if (!sid) return "unknown";
+    const s = sellerById.get(sid);
+    if (!s) return "unknown";
+    return classifyLineage({
+      feedback_count: s.feedback_count,
+      seller_rating_score: s.seller_rating_score,
+      total_listings: s.total_listings,
+      sold_in_window: soldCountById.get(sid) ?? 0,
+      membership: s.membership,
+    });
+  };
+
+  // 4. Build transactions. Drop listings without a recognizable combo so the
   //    snapshot stays useful for the analytics combos page; non-combo
   //    listings still surface in the raw market_listings table for any
   //    consumer that wants them.
@@ -177,8 +180,12 @@ export async function GET(_req: NextRequest) {
       traits: combo.traits,
       primary_morph: combo.traits[0],
       region: regionFromLocation(r.seller_location),
-      age_class: ageClassFromMaturity(null),
-      lineage_tier: "regional_known",
+      age_class: classifyAge({
+        maturity: r.maturity,
+        weight: r.weight,
+        hatch_date: r.hatch_date,
+      }),
+      lineage_tier: tierFor(r.seller_id),
       breeder_id: r.seller_id ?? "unknown",
       breeder_name: r.seller_name ?? "Unknown",
       status,
@@ -190,20 +197,20 @@ export async function GET(_req: NextRequest) {
     });
   }
 
-  // 4. Breeders. Distinct sellers from the windowed listings.
-  const breederMap = new Map<string, { id: string; name: string; tier: string; region: string }>();
+  // 5. Breeders. Distinct sellers from the windowed listings, with real tier.
+  const breederMap = new Map<string, { id: string; name: string; tier: LineageTier; region: string }>();
   for (const r of listings ?? []) {
     if (!r.seller_id) continue;
     if (breederMap.has(r.seller_id)) continue;
     breederMap.set(r.seller_id, {
       id: r.seller_id,
       name: r.seller_name ?? r.seller_id,
-      tier: "regional_known",
+      tier: tierFor(r.seller_id),
       region: regionFromLocation(r.seller_location),
     });
   }
 
-  // 5. Show mentions become market_events.
+  // 6. Show mentions become market_events.
   const { data: shows } = await admin
     .from("show_mentions")
     .select("id, show_name, show_date, source_url, observed_at")
@@ -231,8 +238,6 @@ export async function GET(_req: NextRequest) {
 
   return NextResponse.json(body, {
     headers: {
-      // Snapshot is rebuilt cheaply; 5 minutes balances staleness vs DB load.
-      // SWR keeps users on a slightly stale snapshot while we revalidate.
       "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
       "Access-Control-Allow-Origin": "*",
     },

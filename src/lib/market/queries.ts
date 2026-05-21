@@ -755,6 +755,7 @@ export async function fetchBreeders(
           ),
         ) || 30 + (idx % 60);
       return {
+        id: s.seller_id,
         name: s.seller_name ?? s.seller_id,
         region,
         activeListings: Math.max(0, s.total_listings ?? 0),

@@ -1,0 +1,88 @@
+name: apply-migrations
+
+# Applies any new files under supabase/migrations/ to the production
+# Supabase project when they land on main. Replaces the manual "apply via
+# the Supabase MCP at the same time you push" step in CLAUDE.md.
+#
+# Strategy:
+#   1. Find migration files changed in the pushed commits.
+#   2. For each one, pipe it to `supabase db query` against the project URL
+#      using the service-role connection string.
+#   3. Idempotent: every migration in this repo uses IF NOT EXISTS /
+#      CREATE OR REPLACE, so re-running is safe.
+#
+# Required secrets:
+#   SUPABASE_DB_URL   — postgres:// connection string with DDL permissions.
+#
+# We DO NOT run on PRs / preview branches — DDL only ever lands on main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**.sql"
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Single migration file to re-apply (path relative to repo root)"
+        required: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repo (with previous commit for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Determine migrations to apply
+        id: pick
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.file }}" ]; then
+            echo "files=${{ github.event.inputs.file }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Diff the pushed commits' changes under supabase/migrations.
+          # The push event provides before/after SHAs in github.event.
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.event.after }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # First push to the branch — apply every migration. Safe because
+            # every file uses IF NOT EXISTS / CREATE OR REPLACE.
+            files=$(ls supabase/migrations/*.sql | sort)
+          else
+            files=$(git diff --name-only --diff-filter=AM "$BEFORE" "$AFTER" -- 'supabase/migrations/*.sql' | sort)
+          fi
+          echo "Files to apply:"
+          echo "$files"
+          {
+            echo "files<<EOF"
+            echo "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply migrations
+        if: steps.pick.outputs.files != ''
+        env:
+          PGURL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PGURL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set; cannot apply migrations."
+            exit 1
+          fi
+          IFS=$'\n'
+          for f in ${{ steps.pick.outputs.files }}; do
+            [ -z "$f" ] && continue
+            echo "------ applying $f ------"
+            psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          echo "------ done ------"

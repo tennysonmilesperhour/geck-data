@@ -19,6 +19,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { adaptLegacyEvent } from "./legacyAdapter";
 import { isCrested } from "./species";
 import { sanitizeCachedTraits, sanitizeNormTraits } from "@/lib/traits";
+import { evaluateAlerts, type AlertEvaluationContext } from "@/lib/alerts/matcher";
+import { dispatchMatches } from "@/lib/alerts/notify";
 
 export type EventType =
   | "listingSeen"
@@ -34,7 +36,9 @@ export type EventType =
   | "crossPlatformImage"
   | "alertMatch"
   | "listingImage"
-  | "listingLineage";
+  | "listingLineage"
+  | "listingView"
+  | "listingFavorite";
 
 export type EventEnvelope = {
   type: EventType;
@@ -64,6 +68,8 @@ const ALL_TYPES: EventType[] = [
   "alertMatch",
   "listingImage",
   "listingLineage",
+  "listingView",
+  "listingFavorite",
 ];
 
 function isEventType(s: unknown): s is EventType {
@@ -268,11 +274,50 @@ async function handleListingSeen(
       observed_at: observed,
       source: env.source ?? "extension_explicit",
       days_since_first_seen: await daysSinceFirstSeen(admin, row.id as string, observed),
+      // Direct observation of a live page = strongest possible signal.
+      inference_confidence: 1.0,
     },
     { onConflict: "listing_id,status,observed_at", ignoreDuplicates: true },
   );
 
+  // Fire alerts. Best-effort: a failure in the matcher must not fail the
+  // ingest of the underlying listing.
+  await fireAlertsBestEffort(admin, "listingSeen", row, env.payload);
+
   return { type: env.type, ok: true, detail: `listing ${row.id} upserted` };
+}
+
+/**
+ * Run the alert matcher against a just-written listing row and dispatch
+ * notifications for hits. Errors are swallowed and logged so an outage in
+ * the matcher or notifier never propagates to the extension's POST.
+ */
+async function fireAlertsBestEffort(
+  admin: Admin,
+  trigger: "listingSeen" | "priceDrop",
+  listingRow: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const ctx: AlertEvaluationContext = {
+      trigger,
+      listing: {
+        id: listingRow.id as string,
+        cached_traits: (listingRow.cached_traits as string | null) ?? null,
+        norm_traits: (listingRow.norm_traits as string | null) ?? null,
+        species: (listingRow.species as string | null) ?? null,
+        price_usd: num(listingRow.price_usd_equivalent) ?? num(payload.new_price_usd),
+        seller_id: (listingRow.seller_id as string | null) ?? null,
+        seller_location: (listingRow.seller_location as string | null) ?? null,
+      },
+    };
+    const matches = await evaluateAlerts(admin, ctx);
+    if (matches.length > 0) {
+      await dispatchMatches(admin, matches, ctx.listing.id, ctx.listing.price_usd ?? null, trigger);
+    }
+  } catch (e) {
+    console.error("[ingest] alert fire failed:", e);
+  }
 }
 
 async function handleSearchResultBatch(
@@ -354,7 +399,68 @@ async function handlePriceDrop(
       })
       .eq("id", listingId);
   }
+
+  // Fire alerts for must_be_drop subscribers. We need to hydrate the
+  // current listing snapshot for the matcher — one extra round trip.
+  try {
+    const { data: hydrated } = await admin
+      .from("market_listings")
+      .select("id, cached_traits, norm_traits, species, price_usd_equivalent, seller_id, seller_location")
+      .eq("id", listingId)
+      .maybeSingle();
+    if (hydrated) {
+      await fireAlertsBestEffort(admin, "priceDrop", hydrated, env.payload);
+    }
+  } catch (e) {
+    console.error("[ingest] priceDrop alert fire failed:", e);
+  }
+
   return { type: env.type, ok: true, detail: `drop ${pct?.toFixed(1)}% on ${listingId}` };
+}
+
+async function handleListingView(
+  admin: Admin,
+  env: EventEnvelope,
+): Promise<EventResult> {
+  const listingId = str(env.payload.listing_id) ?? str(env.payload.id);
+  if (!listingId) return { type: env.type, ok: false, detail: "missing listing_id" };
+  await ensureListingStub(admin, listingId);
+  const { error } = await admin.from("listing_views").insert(
+    {
+      listing_id: listingId,
+      anon_hash: str(env.payload.anon_hash),
+      observed_at: toIso(env.occurred_at, nowIso()),
+      referrer_kind: str(env.payload.referrer_kind),
+      source: env.source ?? "extension",
+    },
+  );
+  // unique (listing_id, anon_hash, view_day) — duplicates on the same day
+  // are expected and not an error worth flagging.
+  if (error && !/duplicate/i.test(error.message)) {
+    return { type: env.type, ok: false, detail: error.message };
+  }
+  return { type: env.type, ok: true, detail: `view of ${listingId}` };
+}
+
+async function handleListingFavorite(
+  admin: Admin,
+  env: EventEnvelope,
+): Promise<EventResult> {
+  const listingId = str(env.payload.listing_id) ?? str(env.payload.id);
+  if (!listingId) return { type: env.type, ok: false, detail: "missing listing_id" };
+  await ensureListingStub(admin, listingId);
+  const { error } = await admin.from("listing_favorites").insert(
+    {
+      listing_id: listingId,
+      anon_hash: str(env.payload.anon_hash),
+      observed_at: toIso(env.occurred_at, nowIso()),
+      source: env.source ?? "extension",
+    },
+  );
+  if (error && !/duplicate/i.test(error.message)) {
+    return { type: env.type, ok: false, detail: error.message };
+  }
+  return { type: env.type, ok: true, detail: `favorite of ${listingId}` };
 }
 
 async function handleSoldInferred(
@@ -366,6 +472,12 @@ async function handleSoldInferred(
   if (!listingId) return { type: env.type, ok: false, detail: "missing listing id" };
   await ensureListingStub(admin, listingId);
   const days = await daysSinceFirstSeen(admin, listingId, observed);
+  // Inferred sold: the listing disappeared but we never saw a "Sold" badge.
+  // Confidence scales with how long it's been gone — encoded in the payload
+  // as `days_gone` when the inferrer can compute it.
+  const daysGone = num(env.payload.days_gone);
+  const confidence =
+    daysGone == null ? 0.6 : Math.max(0.4, Math.min(0.9, 0.4 + daysGone * 0.05));
   const { error } = await admin.from("listing_status_events").upsert(
     {
       listing_id: listingId,
@@ -373,6 +485,7 @@ async function handleSoldInferred(
       observed_at: observed,
       source: env.source ?? "extension_inferred",
       days_since_first_seen: days,
+      inference_confidence: confidence,
     },
     { onConflict: "listing_id,status,observed_at", ignoreDuplicates: true },
   );
@@ -416,6 +529,8 @@ async function handleAuctionClose(
         observed_at: row.closed_at,
         source: "auction_close",
         days_since_first_seen: await daysSinceFirstSeen(admin, listingId, row.closed_at),
+        // Auction with a real final bid is a definitive sale.
+        inference_confidence: row.bid_count && row.bid_count > 0 ? 0.95 : 0.7,
       },
       { onConflict: "listing_id,status,observed_at", ignoreDuplicates: true },
     );
@@ -955,6 +1070,10 @@ export async function handleEvent(
         return await handleListingImage(admin, env);
       case "listingLineage":
         return await handleListingLineage(admin, env);
+      case "listingView":
+        return await handleListingView(admin, env);
+      case "listingFavorite":
+        return await handleListingFavorite(admin, env);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

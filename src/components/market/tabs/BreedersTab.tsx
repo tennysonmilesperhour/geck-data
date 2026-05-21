@@ -14,6 +14,7 @@ import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
 import MiniSparkline from "@/components/charts/MiniSparkline";
+import Link from "next/link";
 
 export default function BreedersTab({
   filters,
@@ -92,9 +93,18 @@ export default function BreedersTab({
             </thead>
             <tbody className="divide-y divide-forest-700/60">
               {data.rows.map((r) => (
-                <tr key={r.name} className="row-hover">
+                <tr key={r.id ?? r.name} className="row-hover">
                   <td className="px-3 py-3 align-middle font-medium text-forest-50">
-                    {r.name}
+                    {r.id ? (
+                      <Link
+                        href={`/sellers/${encodeURIComponent(r.id)}`}
+                        className="text-forest-50 underline-offset-2 hover:text-ready hover:underline"
+                      >
+                        {r.name}
+                      </Link>
+                    ) : (
+                      r.name
+                    )}
                   </td>
                   <td className="px-3 py-3 align-middle font-mono text-[11px] text-forest-300">
                     {r.region}
