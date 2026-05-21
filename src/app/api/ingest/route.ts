@@ -26,6 +26,7 @@ import {
   recordIngestAudit,
   type AuditRow,
 } from "@/lib/ingest/audit";
+import { verifyHmac } from "@/lib/ingest/hmac";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -252,9 +253,36 @@ async function handle(req: NextRequest, audit: AuditRow): Promise<NextResponse> 
   const admin = createAdminClient();
 
   if (contentType.includes("application/json")) {
+    // Read once as text so HMAC verification operates on the exact bytes
+    // the signer used. req.json() consumes the stream and would force a
+    // re-serialization round trip whose whitespace/key-order doesn't match.
+    let raw: string;
+    try {
+      raw = await req.text();
+    } catch {
+      audit.error_summary = "could not read body";
+      return withCors(
+        NextResponse.json({ error: "could not read body" }, { status: 400 }),
+        req,
+      );
+    }
+    const hmac = verifyHmac({
+      body: raw,
+      timestampHeader: req.headers.get("x-ingest-timestamp"),
+      signatureHeader: req.headers.get("x-ingest-signature"),
+      required: process.env.INGEST_REQUIRE_HMAC === "1",
+      secret: process.env.INGEST_HMAC_SECRET,
+    });
+    if (!hmac.ok) {
+      audit.error_summary = `hmac: ${hmac.reason}`;
+      return withCors(
+        NextResponse.json({ error: `hmac: ${hmac.reason}` }, { status: 401 }),
+        req,
+      );
+    }
     let body: unknown;
     try {
-      body = await req.json();
+      body = raw ? JSON.parse(raw) : null;
     } catch {
       audit.error_summary = "invalid JSON body";
       return withCors(
