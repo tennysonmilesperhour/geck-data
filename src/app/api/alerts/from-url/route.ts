@@ -5,83 +5,18 @@
 //
 // Reads the URL's query string and translates the supported filter params
 // into the alerts.query jsonb shape that lib/alerts/matcher.ts understands.
-//
-// Supported params:
-//   ?combo=lw-axa            -> trait_all derived from combo definition
-//   ?traits=axanthic,pinstripe -> trait_all
-//   ?min_price=100&max_price=500
-//   ?regions=US,UK
-//   ?seller=<id>             -> seller_ids
-//   ?must_be_drop=1
+// The translator lives in lib/alerts/from-url.ts so it can be unit-tested
+// without importing this route file (Next.js routes can't export anything
+// that isn't an HTTP method handler).
 //
 // Auth: requires a session; the alert is owned by the user.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
+import { queryFromUrl } from "@/lib/alerts/from-url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type AlertQuery = {
-  trait_all?: string[];
-  min_price?: number;
-  max_price?: number;
-  regions?: string[];
-  seller_ids?: string[];
-  must_be_drop?: boolean;
-};
-
-function parseList(v: string | null): string[] {
-  return (v ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function queryFromUrl(input: string): AlertQuery {
-  // Accept: absolute URLs ("https://…?x=y"), path+query ("/market?x=y"),
-  // or bare query string ("x=y&z=w"). For the relative cases we re-parse
-  // against a placeholder base so URL() is happy and the searchParams API
-  // does the heavy lifting.
-  let parsed: URL;
-  try {
-    parsed = new URL(input);
-  } catch {
-    const norm = input.includes("?")
-      ? `http://x${input.startsWith("/") ? input : "/" + input}`
-      : `http://x/?${input}`;
-    parsed = new URL(norm);
-  }
-  const sp = parsed.searchParams;
-  const out: AlertQuery = {};
-
-  const combo = sp.get("combo");
-  if (combo) {
-    const def = HIGH_VALUE_COMBOS.find((c) => c.id === combo);
-    if (def) out.trait_all = def.traits;
-  }
-
-  const traits = parseList(sp.get("traits"));
-  if (traits.length) out.trait_all = [...(out.trait_all ?? []), ...traits];
-
-  const min = Number(sp.get("min_price"));
-  if (Number.isFinite(min) && min > 0) out.min_price = min;
-  const max = Number(sp.get("max_price"));
-  if (Number.isFinite(max) && max > 0) out.max_price = max;
-
-  const regions = parseList(sp.get("regions"));
-  if (regions.length) out.regions = regions;
-
-  const seller = sp.get("seller");
-  if (seller) out.seller_ids = [seller];
-
-  if (sp.get("must_be_drop") === "1" || sp.get("must_be_drop") === "true") {
-    out.must_be_drop = true;
-  }
-
-  return out;
-}
 
 export async function POST(req: NextRequest) {
   const supa = createServerClient();
@@ -125,6 +60,3 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ alert: data });
 }
-
-// Exposed for the test suite.
-export const _internal = { queryFromUrl };

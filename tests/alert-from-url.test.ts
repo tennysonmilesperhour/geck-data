@@ -1,8 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { _internal } from "../src/app/api/alerts/from-url/route";
-
-const { queryFromUrl } = _internal;
+import { queryFromUrl } from "../src/lib/alerts/from-url";
 
 test("queryFromUrl maps combo id to trait_all", () => {
   const q = queryFromUrl("/market?combo=lw-axa");
