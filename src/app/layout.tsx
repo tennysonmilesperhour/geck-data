@@ -4,6 +4,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TelemetryClient from "@/components/TelemetryClient";
+import { MorphTermProvider } from "@/components/morphs/MorphTerm";
 
 // Typography. The pairing follows the UI Pro Max "Dashboard Data"
 // recommendation for analytics-first products, swapped to keep our
@@ -62,7 +63,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <TelemetryClient />
         <Header />
         <main className="mx-auto max-w-7xl px-6 py-8">
-          <ErrorBoundary>{children}</ErrorBoundary>
+          <MorphTermProvider>
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </MorphTermProvider>
         </main>
       </body>
     </html>
