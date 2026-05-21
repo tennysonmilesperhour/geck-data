@@ -1,12 +1,41 @@
+"use client";
 // Combo / morph term renderer. Drops a dotted underline + hover-popover
 // on any term the glossary recognises; everything else renders as plain
-// text. CSS-only popover (group hover/focus) so it works in server
-// components and respects keyboard focus on the trigger.
+// text. Wraps the page in a tiny context so only ONE tooltip is visible
+// at a time — the previous CSS-only group-hover + group-focus-within
+// approach let a keyboard-focused term stay open while a neighbour got
+// hovered, producing the overlapping tooltips reported on /pulse.
 //
 // Typical usage:
 //   <MorphTerm name="Lilly White × Pinstripe" />
 //   <MorphTerm name="Cappuccino" />
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { lookupMorph, splitComboParts } from "@/lib/morphs/glossary";
+
+type ActiveCtx = {
+  active: string | null;
+  setActive: (id: string | null) => void;
+};
+// A context with a working default lets MorphTerm work outside a provider
+// (e.g., in unit-test renders) — the singleton state just lives at the
+// document root level.
+const ActiveTooltip = createContext<ActiveCtx>({
+  active: null,
+  setActive: () => {},
+});
+
+export function MorphTermProvider({ children }: { children: React.ReactNode }) {
+  const [active, setActive] = useState<string | null>(null);
+  const value = useMemo(() => ({ active, setActive }), [active]);
+  return <ActiveTooltip.Provider value={value}>{children}</ActiveTooltip.Provider>;
+}
 
 export default function MorphTerm({
   name,
@@ -17,11 +46,6 @@ export default function MorphTerm({
 }) {
   if (!name) return null;
   const parts = splitComboParts(name);
-  // Preserve the original separator string between parts. We re-derive
-  // it by finding non-token substrings in the original — but for the
-  // simple set of separators (× / x / + / /) the visual cost of
-  // normalising to " × " is negligible and improves consistency. Keep
-  // a join character that hints at compound meaning.
   return (
     <span className={className}>
       {parts.map((part, idx) => {
@@ -38,33 +62,39 @@ export default function MorphTerm({
   );
 }
 
-function Glossed({
-  name,
-  description,
-}: {
-  name: string;
-  description: string;
-}) {
+function Glossed({ name, description }: { name: string; description: string }) {
+  const id = useId();
+  const { active, setActive } = useContext(ActiveTooltip);
+  const isOpen = active === id;
+
+  const open = useCallback(() => setActive(id), [id, setActive]);
+  const close = useCallback(() => {
+    // Only clear if we are still the active tooltip — protects against a
+    // mouseleave on the previous trigger racing past a mouseenter on the
+    // new one and accidentally closing the new tooltip.
+    if (active === id) setActive(null);
+  }, [active, id, setActive]);
+
   return (
     <span
-      tabIndex={0}
-      className="group relative inline cursor-help underline decoration-dotted decoration-ink-500 underline-offset-[3px] outline-none transition hover:decoration-claude-glow focus-visible:decoration-claude-glow"
+      className="relative inline cursor-help underline decoration-dotted decoration-ink-500 underline-offset-[3px] outline-none transition hover:decoration-claude-glow focus-visible:decoration-claude-glow"
       aria-label={`${name}: ${description}`}
+      tabIndex={0}
+      onMouseEnter={open}
+      onMouseLeave={close}
+      onFocus={open}
+      onBlur={close}
     >
       {name}
-      {/*
-        Popover. Positioned below the term, max-width capped so long
-        descriptions wrap. group-hover + group-focus-within so the
-        popover opens on hover OR keyboard focus. Pointer-events: none
-        on the inactive state keeps it from intercepting clicks.
-      */}
       <span
         role="tooltip"
-        // z-50: sit above siblings that establish stacking contexts via
-        // `transform`, `filter`, `will-change`, or `position: relative` +
-        // a z-index. The previous z-20 was getting beaten by inline
-        // sparkline filters / gradient layers on the same page.
-        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-72 normal-case rounded-lg border border-ink-700 bg-ink-900/95 p-3 text-left text-xs font-normal leading-relaxed tracking-normal text-ink-200 shadow-glow backdrop-blur transition group-hover:block group-focus-within:block"
+        // z-50 keeps the popover above sparkline filters / gradient overlays.
+        // pointer-events-none so the popover never intercepts a hover/click
+        // that should reach the trigger or its siblings.
+        className={
+          "pointer-events-none absolute left-0 top-full z-50 mt-2 w-72 normal-case rounded-lg border border-ink-700 bg-ink-900/95 p-3 text-left text-xs font-normal leading-relaxed tracking-normal text-ink-200 shadow-glow backdrop-blur " +
+          (isOpen ? "block" : "hidden")
+        }
       >
         <span className="block font-display text-[13px] font-medium text-ink-50">
           {name}
