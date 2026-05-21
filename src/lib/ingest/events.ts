@@ -274,6 +274,8 @@ async function handleListingSeen(
       observed_at: observed,
       source: env.source ?? "extension_explicit",
       days_since_first_seen: await daysSinceFirstSeen(admin, row.id as string, observed),
+      // Direct observation of a live page = strongest possible signal.
+      inference_confidence: 1.0,
     },
     { onConflict: "listing_id,status,observed_at", ignoreDuplicates: true },
   );
@@ -470,6 +472,12 @@ async function handleSoldInferred(
   if (!listingId) return { type: env.type, ok: false, detail: "missing listing id" };
   await ensureListingStub(admin, listingId);
   const days = await daysSinceFirstSeen(admin, listingId, observed);
+  // Inferred sold: the listing disappeared but we never saw a "Sold" badge.
+  // Confidence scales with how long it's been gone — encoded in the payload
+  // as `days_gone` when the inferrer can compute it.
+  const daysGone = num(env.payload.days_gone);
+  const confidence =
+    daysGone == null ? 0.6 : Math.max(0.4, Math.min(0.9, 0.4 + daysGone * 0.05));
   const { error } = await admin.from("listing_status_events").upsert(
     {
       listing_id: listingId,
@@ -477,6 +485,7 @@ async function handleSoldInferred(
       observed_at: observed,
       source: env.source ?? "extension_inferred",
       days_since_first_seen: days,
+      inference_confidence: confidence,
     },
     { onConflict: "listing_id,status,observed_at", ignoreDuplicates: true },
   );
@@ -520,6 +529,8 @@ async function handleAuctionClose(
         observed_at: row.closed_at,
         source: "auction_close",
         days_since_first_seen: await daysSinceFirstSeen(admin, listingId, row.closed_at),
+        // Auction with a real final bid is a definitive sale.
+        inference_confidence: row.bid_count && row.bid_count > 0 ? 0.95 : 0.7,
       },
       { onConflict: "listing_id,status,observed_at", ignoreDuplicates: true },
     );

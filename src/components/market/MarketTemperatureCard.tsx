@@ -5,7 +5,12 @@
 //
 // Designed to sit at the very top of /market as the headline number — one
 // scalar a viewer can read without parsing 30 charts.
+//
+// Clicking the card jumps to /trends?timeframe=12mo so a viewer who wants to
+// understand WHY the number is at its current level can drill into the
+// underlying supply/demand/velocity series.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 
 type WeekPoint = {
@@ -58,7 +63,10 @@ export default function MarketTemperatureCard() {
   const sparkValues = series.map((p) => p.temperature);
 
   return (
-    <section className="forest-surface flex items-center justify-between gap-4 p-4">
+    <Link
+      href="/trends?timeframe=12mo"
+      className="forest-surface group flex items-center justify-between gap-4 p-4 transition hover:border-ready/40"
+    >
       <div>
         <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-forest-400">
           Market temperature
@@ -98,6 +106,6 @@ export default function MarketTemperatureCard() {
           <MiniSparkline values={sparkValues} width={160} height={36} />
         </div>
       )}
-    </section>
+    </Link>
   );
 }

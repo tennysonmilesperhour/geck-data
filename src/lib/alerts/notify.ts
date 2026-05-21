@@ -39,20 +39,37 @@ export async function dispatchMatches(
   listingId: string,
   priceUsd: number | null,
   trigger: string,
-): Promise<{ sent: number; failed: number }> {
-  if (matches.length === 0) return { sent: 0, failed: 0 };
+): Promise<{ sent: number; failed: number; snoozed: number }> {
+  if (matches.length === 0) return { sent: 0, failed: 0, snoozed: 0 };
+
+  // Honour per-alert snoozes (idea #9). A snoozed match still gets written
+  // to alert_matches by the caller for completeness, but we don't fan out
+  // a notification while snoozed_until is in the future. Look up the most
+  // recent snooze per alert in one query.
+  const alertIds = matches.map((m) => m.alert.id);
+  const { data: snoozedRows } = await admin
+    .from("alert_matches")
+    .select("alert_id, snoozed_until")
+    .in("alert_id", alertIds)
+    .not("snoozed_until", "is", null)
+    .gt("snoozed_until", new Date().toISOString());
+  const snoozedAlertIds = new Set(
+    ((snoozedRows ?? []) as { alert_id: string }[]).map((r) => r.alert_id),
+  );
+  const active = matches.filter((m) => !snoozedAlertIds.has(m.alert.id));
+  const snoozedCount = matches.length - active.length;
 
   const ownerIds = Array.from(
-    new Set(matches.map((m) => m.alert.owner_id).filter((id): id is string => !!id)),
+    new Set(active.map((m) => m.alert.owner_id).filter((id): id is string => !!id)),
   );
-  if (ownerIds.length === 0) return { sent: 0, failed: 0 };
+  if (ownerIds.length === 0) return { sent: 0, failed: 0, snoozed: snoozedCount };
 
   const { data: channels } = await admin
     .from("user_notification_channels")
     .select("id, owner_id, kind, endpoint, enabled")
     .eq("enabled", true)
     .in("owner_id", ownerIds);
-  if (!channels?.length) return { sent: 0, failed: 0 };
+  if (!channels?.length) return { sent: 0, failed: 0, snoozed: snoozedCount };
 
   const byOwner = new Map<string, NotificationChannel[]>();
   for (const c of channels as NotificationChannel[]) {
@@ -65,8 +82,13 @@ export async function dispatchMatches(
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://geck-data.vercel.app";
   let sent = 0;
   let failed = 0;
+  // Resolve the match_id for each AlertMatch — needed for the delivery
+  // attempts row. The caller wrote alert_matches just before; we look up
+  // the freshly-inserted match by (alert_id, listing_id) ordered desc.
+  const matchIdByAlert = await resolveMatchIds(admin, active.map((m) => m.alert.id), listingId);
+
   await Promise.all(
-    matches.flatMap((m) => {
+    active.flatMap((m) => {
       const dests = byOwner.get(m.alert.owner_id ?? "") ?? [];
       const payload: Payload = {
         alert_id: m.alert.id,
@@ -77,21 +99,66 @@ export async function dispatchMatches(
         reason: m.reason,
         url: `${base}/listings/${listingId}`,
       };
+      const matchId = matchIdByAlert.get(m.alert.id);
       return dests.map(async (d) => {
+        let ok = false;
+        let httpStatus: number | null = null;
+        let errorSummary: string | null = null;
         try {
-          const ok = await sendTo(d, payload);
-          if (ok) sent++;
-          else failed++;
-        } catch {
-          failed++;
+          const res = await sendTo(d, payload);
+          ok = res.ok;
+          httpStatus = res.status;
+          if (!ok) errorSummary = `HTTP ${res.status}`;
+        } catch (e) {
+          errorSummary = e instanceof Error ? e.message : String(e);
+        }
+        if (ok) sent++;
+        else failed++;
+        // Write a delivery attempt row. Best-effort: a delivery-receipt
+        // logging failure must not block the actual notification path.
+        if (matchId) {
+          try {
+            await admin.from("alert_delivery_attempts").insert({
+              match_id: matchId,
+              channel_id: d.id,
+              attempt_no: 1,
+              status: ok ? "sent" : "failed",
+              http_status: httpStatus,
+              error_summary: errorSummary?.slice(0, 500) ?? null,
+            });
+          } catch {
+            // swallow
+          }
         }
       });
     }),
   );
-  return { sent, failed };
+  return { sent, failed, snoozed: snoozedCount };
 }
 
-async function sendTo(d: NotificationChannel, p: Payload): Promise<boolean> {
+async function resolveMatchIds(
+  admin: SupabaseClient,
+  alertIds: string[],
+  listingId: string,
+): Promise<Map<string, string>> {
+  if (alertIds.length === 0) return new Map();
+  const { data } = await admin
+    .from("alert_matches")
+    .select("id, alert_id, matched_at")
+    .in("alert_id", alertIds)
+    .eq("listing_id", listingId)
+    .order("matched_at", { ascending: false });
+  const out = new Map<string, string>();
+  for (const r of (data ?? []) as { id: string; alert_id: string }[]) {
+    if (!out.has(r.alert_id)) out.set(r.alert_id, r.id);
+  }
+  return out;
+}
+
+async function sendTo(
+  d: NotificationChannel,
+  p: Payload,
+): Promise<{ ok: boolean; status: number | null }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
@@ -117,7 +184,7 @@ async function sendTo(d: NotificationChannel, p: Payload): Promise<boolean> {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      return r.ok;
+      return { ok: r.ok, status: r.status };
     }
     if (d.kind === "generic_webhook") {
       const r = await fetch(d.endpoint, {
@@ -126,12 +193,12 @@ async function sendTo(d: NotificationChannel, p: Payload): Promise<boolean> {
         body: JSON.stringify(p),
         signal: controller.signal,
       });
-      return r.ok;
+      return { ok: r.ok, status: r.status };
     }
     // Email channel: not wired up here. The presence of an "email" row in
     // user_notification_channels is honoured by a separate worker that
     // reads alert_matches and batches digests.
-    return false;
+    return { ok: false, status: null };
   } finally {
     clearTimeout(timer);
   }
