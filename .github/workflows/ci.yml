@@ -1,0 +1,24 @@
+name: CI
+
+# Runs typecheck + unit tests on every push and PR. main also deploys to
+# Vercel on push, so a green tsc here is what stands between a bad commit
+# and a broken production build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit --pretty false
+      - run: npm test

@@ -14,6 +14,7 @@ import RegionalTab from "./tabs/RegionalTab";
 import ArbitrageTab from "./tabs/ArbitrageTab";
 import SupplyTab from "./tabs/SupplyTab";
 import BreedersTab from "./tabs/BreedersTab";
+import MarketTemperatureCard from "./MarketTemperatureCard";
 
 const DEFAULT_FILTERS: Filters = {
   timeframe: "12mo",
@@ -35,6 +36,7 @@ export default function MarketDashboard() {
 
   return (
     <div className="space-y-4">
+      <MarketTemperatureCard />
       <FilterBar filters={filters} onChange={setFilters} />
       <OnboardingPanel />
       <TabNav tab={tab} onChange={setTab} />

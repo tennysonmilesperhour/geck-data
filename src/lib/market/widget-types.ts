@@ -219,6 +219,10 @@ export type SupplyPipeline = {
 };
 
 export type BreederRow = {
+  /** Stable id (seller_id) for routing to /sellers/[id]. Optional so older
+   *  call sites that pre-date this field still type-check while the data
+   *  source catches up. */
+  id?: string;
   name: string;
   region: RegionKey;
   activeListings: number;

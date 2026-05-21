@@ -25,7 +25,6 @@
 // queries: callers must provide the listing row.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { parseTraitList } from "@/lib/traits";
 
 export type AlertQuery = {
   species?: "crested" | "unknown" | "any";
@@ -69,6 +68,25 @@ function normTrait(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+/** Tokenize trait input for alert matching. Splits on pipe / comma /
+ *  semicolon / slash delimiters only — never whitespace — so that
+ *  multi-word traits like "Lilly White" survive as a single normalized
+ *  token "lillywhite". This intentionally differs from lib/traits.ts
+ *  parseTraitList, which splits on whitespace because the chart code
+ *  consuming it wants per-word histograms. */
+function alertTraitTokens(row: {
+  cached_traits?: string | null;
+  norm_traits?: string | null;
+}): Set<string> {
+  const raw = (row.cached_traits ?? row.norm_traits ?? "").trim();
+  if (!raw) return new Set();
+  const segments = raw
+    .split(/[,;|/]+/)
+    .map((s) => s.trim())
+    .filter((s) => s && !s.includes(":"));
+  return new Set(segments.map(normTrait).filter(Boolean));
+}
+
 function regionFromLocation(loc: string | null | undefined): string {
   if (!loc) return "US";
   const lower = loc.toLowerCase();
@@ -100,12 +118,10 @@ export function listingMatchesAlert(
     }
   }
 
-  const traitTokens = new Set(
-    parseTraitList({
-      cached_traits: ctx.listing.cached_traits ?? null,
-      norm_traits: ctx.listing.norm_traits ?? null,
-    }).map(normTrait),
-  );
+  const traitTokens = alertTraitTokens({
+    cached_traits: ctx.listing.cached_traits ?? null,
+    norm_traits: ctx.listing.norm_traits ?? null,
+  });
 
   if (query.trait_all?.length) {
     for (const t of query.trait_all) {

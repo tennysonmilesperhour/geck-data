@@ -46,9 +46,13 @@ export function traitTokens(input: unknown): Set<string> {
     return new Set(input.map((t) => normTrait(String(t))));
   }
   if (typeof input === "string") {
-    return new Set(
-      input.split(/[,;|/]+|\s+/).map((t) => normTrait(t)).filter(Boolean),
-    );
+    // Prefer comma/semicolon/pipe/slash delimiters so multi-word traits like
+    // "Lilly White" survive as one normalized token ("lillywhite"). We fall
+    // back to whitespace ONLY when no real delimiter is present (legacy rows
+    // that ship a single trait as bare text).
+    const hasDelim = /[,;|/]/.test(input);
+    const parts = hasDelim ? input.split(/[,;|/]+/) : input.split(/\s+/);
+    return new Set(parts.map((t) => normTrait(t)).filter(Boolean));
   }
   return new Set();
 }
