@@ -2,23 +2,18 @@
 // the fixture generators in src/lib/market/fixtures.ts; pulling them
 // out so the dashboard can render real-data and empty states without
 // any synthetic-data code in the bundle.
+//
+// The combo list itself now lives in lib/market/combos.ts (single source
+// of truth, also consumed by /api/data/market.json). We re-derive the
+// display-string union here for backward compatibility with widgets that
+// already type their `combo` field as a literal union.
 import type { Attribution, SourceId } from "./types";
+import { HIGH_VALUE_COMBOS } from "./combos";
 
-export const COMBOS = [
-  "Lilly White × Axanthic",
-  "Lilly White × Cappuccino",
-  "Cappuccino × Full Pinstripe",
-  "Axanthic × Full Pinstripe",
-  "Sable × Extreme Harlequin",
-  "Frappuccino × Pinstripe",
-  "Moonglow × Super Dalmatian",
-  "Lilly White × Soft Scale",
-  "Axanthic × Extreme Harlequin",
-  "Cappuccino × Super Dalmatian",
-  "Red Harlequin",
-  "Tiger × Pinstripe",
-] as const;
-export type Combo = (typeof COMBOS)[number];
+export const COMBOS = HIGH_VALUE_COMBOS.map((c) => c.display) as ReadonlyArray<string>;
+// Combo is a wider `string` type now — the dashboard widgets only use it as
+// a label key, never as an exhaustive switch.
+export type Combo = string;
 
 export type IndexPoint = { t: string; v: number };
 

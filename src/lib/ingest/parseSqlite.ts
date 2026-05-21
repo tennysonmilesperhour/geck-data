@@ -2,6 +2,7 @@
 // sql.js (a WASM build of SQLite). Returns the rows from the two tables
 // we care about, as JS objects ready to upsert into Supabase.
 import initSqlJs, { type SqlJsStatic, type Database } from "sql.js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 let _sql: SqlJsStatic | null = null;
 
@@ -20,7 +21,21 @@ export type ParsedDb = {
   sellers: Record<string, unknown>[];
 };
 
+// Whitelisted tables that rowsFromTable is allowed to read. Sourced from
+// the morphmarket SQLite export schema; any other identifier is rejected to
+// keep a defence-in-depth boundary even though all current callers pass
+// constants. This protects against any future caller threading user input
+// through `table` and landing in the dynamic SQL below.
+const ALLOWED_TABLES = new Set<string>([
+  "morphmarket_listings",
+  "morphmarket_sellers",
+]);
+
 function rowsFromTable(db: Database, table: string): Record<string, unknown>[] {
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`rowsFromTable: table "${table}" is not in the allow list`);
+  }
+  // `table` is now guaranteed to be a constant from the allow list.
   const stmt = db.prepare(`SELECT * FROM ${table}`);
   const out: Record<string, unknown>[] = [];
   while (stmt.step()) {
@@ -46,7 +61,7 @@ export async function parseMorphmarketDb(buf: ArrayBuffer): Promise<ParsedDb> {
 // Generic batched upsert helper. Supabase accepts up to 1000 rows per call;
 // we use 50 to keep failures small and progress visible.
 export async function upsertBatched<T extends Record<string, unknown>>(
-  client: { from: (t: string) => any },
+  client: SupabaseClient,
   table: string,
   rows: T[],
   pk: string,
