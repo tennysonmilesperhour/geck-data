@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { matchCombo } from "@/lib/market/combos";
-import { classifyAge } from "@/lib/market/age";
+import { classifyAge, type AgeClass } from "@/lib/market/age";
 import { classifyLineage, type LineageTier } from "@/lib/market/lineage";
 
 export const runtime = "nodejs";
@@ -38,6 +38,40 @@ function regionFromLocation(loc: string | null | undefined): string {
   return "US";
 }
 
+// Translate internal vocabularies into the codes geck-inspect's market
+// analytics taxonomy filters on (see geck-inspect/src/lib/marketAnalytics
+// /taxonomy.js AGE_CLASSES / LINEAGE_TIERS). If the published snapshot
+// uses any other code string the filter dropdowns silently exclude every
+// row, which was the original cause of the empty drill-downs.
+function ageClassForSnapshot(internal: AgeClass, sex: string | null | undefined): string {
+  switch (internal) {
+    case "hatchling":     return "baby";
+    case "juvenile":      return "juvenile";
+    case "subadult":      return "subadult";
+    case "adult":         return "adult";
+    case "proven_breeder": {
+      const s = (sex ?? "").toLowerCase();
+      if (s.startsWith("f")) return "proven_f";
+      if (s.startsWith("m")) return "proven_m";
+      // Default proven animals to female since they command the largest
+      // premium and the consumer's price_multiplier ladder treats
+      // proven_f as the strongest signal.
+      return "proven_f";
+    }
+    default:              return "unknown";
+  }
+}
+
+function lineageTierForSnapshot(internal: LineageTier): string {
+  switch (internal) {
+    case "foundational":    return "og_line";
+    case "proven_breeder":  return "named";
+    case "regional_known":  return "regional_known";
+    case "emerging":        return "hobby";
+    default:                return "unknown";
+  }
+}
+
 type ListingRow = {
   id: string;
   title: string | null;
@@ -48,6 +82,7 @@ type ListingRow = {
   maturity: string | null;
   weight: number | string | null;
   hatch_date: string | null;
+  sex: string | null;
   seller_id: string | null;
   seller_name: string | null;
   seller_location: string | null;
@@ -67,6 +102,7 @@ type StatusEventRow = {
 type SellerRow = {
   seller_id: string;
   seller_name: string | null;
+  seller_location: string | null;
   feedback_count: number | null;
   seller_rating_score: number | null;
   total_listings: number | null;
@@ -91,7 +127,7 @@ export async function GET(_req: NextRequest) {
   const { data: listings, error: lErr } = (await admin
     .from("market_listings")
     .select(
-      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
+      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, sex, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
     )
     .in("species", ["crested", "unknown"])
     .order("last_seen_at", { ascending: false, nullsFirst: false })
@@ -131,7 +167,7 @@ export async function GET(_req: NextRequest) {
   if (sellerIds.length) {
     const { data: sellers } = (await admin
       .from("market_sellers")
-      .select("seller_id, seller_name, feedback_count, seller_rating_score, total_listings, membership")
+      .select("seller_id, seller_name, seller_location, feedback_count, seller_rating_score, total_listings, membership")
       .in("seller_id", sellerIds)) as { data: SellerRow[] | null; error: { message: string } | null };
     for (const s of sellers ?? []) sellerById.set(s.seller_id, s);
 
@@ -161,31 +197,45 @@ export async function GET(_req: NextRequest) {
     });
   };
 
+  // Resolve a region for the listing: prefer the listing's own seller_location
+  // (often null in the scrape), then fall back to the hydrated market_sellers
+  // record, then to the regionFromLocation default ("US").
+  const regionForListing = (r: ListingRow): string => {
+    const loc = r.seller_location ?? sellerById.get(r.seller_id ?? "")?.seller_location ?? null;
+    return regionFromLocation(loc);
+  };
+
   // 4. Build transactions. Drop listings without a recognizable combo so the
   //    snapshot stays useful for the analytics combos page; non-combo
   //    listings still surface in the raw market_listings table for any
-  //    consumer that wants them.
+  //    consumer that wants them. cached_traits and norm_traits are null on
+  //    the majority of rows; fall through to the listing title so the
+  //    combo matcher has something to chew on.
   const transactions = [];
   for (const r of listings ?? []) {
-    const combo = matchCombo(r.cached_traits ?? r.norm_traits);
+    const combo =
+      matchCombo(r.cached_traits) ??
+      matchCombo(r.norm_traits) ??
+      matchCombo(r.title);
     if (!combo) continue;
     const ev = statusByListing.get(r.id);
     const status = (ev?.status ?? r.current_status ?? "listed") === "sold" ? "sold" : "listed";
     const date =
       ev?.observed_at ?? r.last_seen_at ?? r.first_seen_at ?? r.first_listed_at ?? generatedAt;
+    const internalAge = classifyAge({
+      maturity: r.maturity,
+      weight: r.weight,
+      hatch_date: r.hatch_date,
+    });
     transactions.push({
       id: r.id,
       combo_id: combo.id,
       combo_name: combo.name,
       traits: combo.traits,
       primary_morph: combo.traits[0],
-      region: regionFromLocation(r.seller_location),
-      age_class: classifyAge({
-        maturity: r.maturity,
-        weight: r.weight,
-        hatch_date: r.hatch_date,
-      }),
-      lineage_tier: tierFor(r.seller_id),
+      region: regionForListing(r),
+      age_class: ageClassForSnapshot(internalAge, r.sex),
+      lineage_tier: lineageTierForSnapshot(tierFor(r.seller_id)),
       breeder_id: r.seller_id ?? "unknown",
       breeder_name: r.seller_name ?? "Unknown",
       status,
@@ -197,16 +247,17 @@ export async function GET(_req: NextRequest) {
     });
   }
 
-  // 5. Breeders. Distinct sellers from the windowed listings, with real tier.
-  const breederMap = new Map<string, { id: string; name: string; tier: LineageTier; region: string }>();
+  // 5. Breeders. Distinct sellers from the windowed listings, with real tier
+  //    mapped to the consumer's taxonomy.
+  const breederMap = new Map<string, { id: string; name: string; tier: string; region: string }>();
   for (const r of listings ?? []) {
     if (!r.seller_id) continue;
     if (breederMap.has(r.seller_id)) continue;
     breederMap.set(r.seller_id, {
       id: r.seller_id,
       name: r.seller_name ?? r.seller_id,
-      tier: tierFor(r.seller_id),
-      region: regionFromLocation(r.seller_location),
+      tier: lineageTierForSnapshot(tierFor(r.seller_id)),
+      region: regionForListing(r),
     });
   }
 

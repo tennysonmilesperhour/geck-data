@@ -46,13 +46,30 @@ export function traitTokens(input: unknown): Set<string> {
     return new Set(input.map((t) => normTrait(String(t))));
   }
   if (typeof input === "string") {
-    // Prefer comma/semicolon/pipe/slash delimiters so multi-word traits like
-    // "Lilly White" survive as one normalized token ("lillywhite"). We fall
-    // back to whitespace ONLY when no real delimiter is present (legacy rows
-    // that ship a single trait as bare text).
+    // Prefer comma/semicolon/pipe/slash delimiters: each chunk is one trait
+    // phrase, so multi-word traits like "Lilly White" stay one normalized
+    // token ("lillywhite").
     const hasDelim = /[,;|/]/.test(input);
-    const parts = hasDelim ? input.split(/[,;|/]+/) : input.split(/\s+/);
-    return new Set(parts.map((t) => normTrait(t)).filter(Boolean));
+    if (hasDelim) {
+      const parts = input.split(/[,;|/]+/);
+      return new Set(parts.map((t) => normTrait(t)).filter(Boolean));
+    }
+    // No delimiter: treat as title text. The scraper's title field looks
+    // like "Lilly White Axanthic Female - Crested Gecko"; splitting on
+    // whitespace alone would drop "Lilly White" into ["lilly", "white"],
+    // which never matches the combo trait "lillywhite". Emit every
+    // contiguous 1..3-word concatenation so multi-word traits survive
+    // while single-word ones still match.
+    const words = input.split(/\s+/).map(normTrait).filter(Boolean);
+    const out = new Set<string>();
+    for (let i = 0; i < words.length; i++) {
+      let joined = "";
+      for (let j = i; j < Math.min(i + 3, words.length); j++) {
+        joined += words[j];
+        out.add(joined);
+      }
+    }
+    return out;
   }
   return new Set();
 }

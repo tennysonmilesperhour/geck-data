@@ -34,3 +34,33 @@ test("HIGH_VALUE_COMBOS has unique ids", () => {
   const ids = new Set(HIGH_VALUE_COMBOS.map((c) => c.id));
   assert.equal(ids.size, HIGH_VALUE_COMBOS.length);
 });
+
+// Most rows in market_listings have null cached_traits/norm_traits; the
+// route falls back to matching against the listing title. That input is
+// whitespace-delimited, so the matcher must reconstruct multi-word traits
+// like "Lilly White" from adjacent words.
+test("matchCombo finds Lilly White x Axanthic from a whitespace title", () => {
+  const m = matchCombo("Lilly White Axanthic Female - Crested Gecko");
+  assert.equal(m?.id, "lw-axa");
+});
+
+test("matchCombo finds Cappuccino x Full Pinstripe from a title", () => {
+  const m = matchCombo("Cappuccino Full Pinstripe Juvenile");
+  assert.equal(m?.id, "cap-pin");
+});
+
+test("matchCombo from title still requires the 'Full' qualifier on Full Pinstripe", () => {
+  // "Cappuccino Pinstripe" (without "Full") must NOT match cap-pin.
+  const m = matchCombo("Cappuccino Pinstripe Tiger");
+  assert.notEqual(m?.id, "cap-pin");
+});
+
+test("matchCombo finds Red Harlequin from a title", () => {
+  const m = matchCombo("Red Harlequin Male Crested Gecko");
+  assert.equal(m?.id, "red-harl");
+});
+
+test("matchCombo from title does not falsely match unrelated text", () => {
+  // No combo traits present — must return null.
+  assert.equal(matchCombo("Dark Tricolor Whitewall NPV"), null);
+});

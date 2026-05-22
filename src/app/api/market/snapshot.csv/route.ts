@@ -57,7 +57,7 @@ export async function GET(_req: NextRequest) {
   const { data: listings, error } = await admin
     .from("market_listings")
     .select(
-      "id, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, seller_id, seller_name, seller_location, current_status, first_seen_at, last_seen_at",
+      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, seller_id, seller_name, seller_location, current_status, first_seen_at, last_seen_at",
     )
     .in("species", ["crested", "unknown"])
     .order("last_seen_at", { ascending: false, nullsFirst: false })
@@ -89,6 +89,7 @@ export async function GET(_req: NextRequest) {
   lines.push(CSV_COLUMNS.join(","));
   for (const r of (listings ?? []) as Array<{
     id: string;
+    title: string | null;
     price: number | null;
     price_usd_equivalent: number | null;
     cached_traits: string | null;
@@ -103,7 +104,12 @@ export async function GET(_req: NextRequest) {
     first_seen_at: string | null;
     last_seen_at: string | null;
   }>) {
-    const combo = matchCombo(r.cached_traits ?? r.norm_traits);
+    // cached_traits/norm_traits are null on most rows; fall through to the
+    // listing title so the combo matcher still has signal.
+    const combo =
+      matchCombo(r.cached_traits) ??
+      matchCombo(r.norm_traits) ??
+      matchCombo(r.title);
     if (!combo) continue;
     const ev = statusByListing.get(r.id);
     const status = (ev?.status ?? r.current_status ?? "listed") === "sold" ? "sold" : "listed";
