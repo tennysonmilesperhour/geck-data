@@ -1,6 +1,5 @@
 // Recent price drops, sorted by observed_at. Joins against market_listings to
 // show the title and current price context.
-import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
@@ -119,21 +118,14 @@ export default async function PriceDropsPage() {
       align: "right",
       render: (r) => fmtUsd(r.new_price_usd ?? r.new_price),
     },
-    {
-      key: "seller",
-      header: "Seller",
-      render: (r) =>
-        r.market_listings?.seller_id ? (
-          <Link
-            href={`/sellers/${r.market_listings.seller_id}`}
-            className="text-claude hover:underline"
-          >
-            {r.market_listings.seller_id}
-          </Link>
-        ) : (
-          "—"
-        ),
-    },
+    // Seller column removed: market_listings rows created via priceDrop
+    // events arrive as stubs (id only) without seller info, and the
+    // ingest stream rarely backfills seller_id for these specific rows.
+    // The result was a column of "—" placeholders that read as a layout
+    // bug. Restore once handlePriceDrop hydrates seller info — see
+    // src/lib/ingest/events.ts handlePriceDrop, around the
+    // ensureListingStub call: it could pull the parent listing's seller
+    // fields from a search-result batch when present.
     { key: "when", header: "When", render: (r) => fmtRelative(r.observed_at) },
     {
       key: "watch",

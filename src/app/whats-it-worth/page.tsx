@@ -1,26 +1,38 @@
 "use client";
-// What's it worth? — the public-facing estimator for crested gecko price.
+// What's it worth? — public-facing crested gecko price estimator.
 //
-// Single-input flow:
-//   1. Pick a combo (chips) — covers the 12 canonical combos we track.
-//   2. (Optional) Refine: age, sex, weight, proven status.
-//   3. Result: adjusted price band + base band + recent comparable sales.
+// Trait-set flow: the user types or picks any combination of traits, and
+// the endpoint returns the percentile band for all sold listings in the
+// last 180 days that contain every selected trait. No 12-combo whitelist
+// — the trait picker is fed by /api/market/traits which enumerates the
+// full vocabulary observed in the database.
 //
-// Calls /api/market/fair-price (POST with traits + attributes). The same
-// endpoint powers the inline morph-card estimate on Geck Inspect, so this
-// page IS the canonical experience — Geck Inspect just splices the
-// `adjusted` field into its morph badge.
-//
-// Designed for a hobbyist: no jargon, no setup, results in one screen.
-import { useEffect, useState } from "react";
-import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
+// The same /api/market/fair-price endpoint powers Geck Inspect's
+// classifier card; that consumer still passes a canonical combo id for
+// backwards compatibility, but new callers (this page + future tooling)
+// use the trait[] form.
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type TraitOption = { trait: string; listing_count: number };
 
 type ApiResponse = {
-  combo_id: string;
+  traits?: string[];
   matched?: { id: string; name: string; display: string } | null;
   n: number;
-  base: { p10: number | null; p25: number | null; p50: number | null; p75: number | null; p90: number | null } | null;
-  adjusted: { p10: number | null; p25: number | null; p50: number | null; p75: number | null; p90: number | null } | null;
+  base: {
+    p10: number | null;
+    p25: number | null;
+    p50: number | null;
+    p75: number | null;
+    p90: number | null;
+  } | null;
+  adjusted: {
+    p10: number | null;
+    p25: number | null;
+    p50: number | null;
+    p75: number | null;
+    p90: number | null;
+  } | null;
   applied?: Record<string, number> | null;
   multiplier_total?: number;
   confidence: "low" | "medium" | "high";
@@ -32,6 +44,7 @@ type ApiResponse = {
     days_to_sell: number | null;
     seller_name: string | null;
     source_url: string | null;
+    cached_traits: string | null;
   }>;
   message?: string;
 };
@@ -50,8 +63,12 @@ const SEXES = [
   { v: "unknown", label: "Not sure" },
 ] as const;
 
+const INPUT_CLASS =
+  "w-full rounded-md border border-forest-700 bg-forest-950 px-3 py-2 text-sm text-forest-100 focus:border-ready focus:outline-none";
+
 export default function WhatsItWorthPage() {
-  const [comboId, setComboId] = useState<string>("");
+  const [vocab, setVocab] = useState<TraitOption[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [age, setAge] = useState<string>("subadult");
   const [sex, setSex] = useState<string>("unknown");
   const [weight, setWeight] = useState<string>("");
@@ -60,8 +77,27 @@ export default function WhatsItWorthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Load trait vocabulary once.
   useEffect(() => {
-    if (!comboId) {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/market/traits");
+        if (!r.ok) return;
+        const j = (await r.json()) as { traits: TraitOption[] };
+        if (!cancelled) setVocab(j.traits ?? []);
+      } catch {
+        /* picker degrades to free-typed traits if vocab fetch fails */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Refetch the price band when any input changes.
+  useEffect(() => {
+    if (selected.length === 0) {
       setData(null);
       return;
     }
@@ -71,7 +107,7 @@ export default function WhatsItWorthPage() {
     (async () => {
       try {
         const params = new URLSearchParams({
-          combo: comboId,
+          traits: selected.join(","),
           age,
           sex,
           proven: String(proven),
@@ -91,7 +127,7 @@ export default function WhatsItWorthPage() {
     return () => {
       cancelled = true;
     };
-  }, [comboId, age, sex, weight, proven]);
+  }, [selected, age, sex, weight, proven]);
 
   return (
     <div className="market-theme space-y-8">
@@ -103,47 +139,31 @@ export default function WhatsItWorthPage() {
           What&apos;s it worth?
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-forest-300">
-          Crested gecko price estimate from recent MorphMarket sales. Pick a
-          combo, refine for age and sex, and we&apos;ll show you the band most
-          listings sell in plus a few recent comparable sales.
+          Crested gecko price estimate from recent MorphMarket sales. Pick the
+          traits your gecko has — any combination — and we&apos;ll show you the
+          band most listings sell in plus a few recent comparable sales.
         </p>
       </header>
 
       <section>
         <h2 className="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-forest-400">
-          1. Combo
+          1. Traits
         </h2>
-        <div className="flex flex-wrap gap-2">
-          {HIGH_VALUE_COMBOS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setComboId(c.id)}
-              className={
-                "rounded-full border px-3 py-1.5 text-sm transition " +
-                (comboId === c.id
-                  ? "border-ready/60 bg-ready/10 text-ready"
-                  : "border-forest-700 bg-forest-950/60 text-forest-200 hover:border-forest-500")
-              }
-            >
-              {c.display}
-            </button>
-          ))}
-        </div>
+        <TraitPicker
+          vocab={vocab}
+          selected={selected}
+          onChange={setSelected}
+        />
       </section>
 
-      {comboId && (
+      {selected.length > 0 && (
         <section>
           <h2 className="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-forest-400">
             2. Refine (optional)
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <Field label="Age">
-              <select
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                className="w-full rounded-md border border-forest-700 bg-forest-950 px-3 py-2 text-sm text-forest-100 focus:border-ready focus:outline-none"
-              >
+              <select value={age} onChange={(e) => setAge(e.target.value)} className={INPUT_CLASS}>
                 {AGES.map((a) => (
                   <option key={a.v} value={a.v}>
                     {a.label}
@@ -152,11 +172,7 @@ export default function WhatsItWorthPage() {
               </select>
             </Field>
             <Field label="Sex">
-              <select
-                value={sex}
-                onChange={(e) => setSex(e.target.value)}
-                className="w-full rounded-md border border-forest-700 bg-forest-950 px-3 py-2 text-sm text-forest-100 focus:border-ready focus:outline-none"
-              >
+              <select value={sex} onChange={(e) => setSex(e.target.value)} className={INPUT_CLASS}>
                 {SEXES.map((s) => (
                   <option key={s.v} value={s.v}>
                     {s.label}
@@ -170,7 +186,7 @@ export default function WhatsItWorthPage() {
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 placeholder="e.g. 45"
-                className="w-full rounded-md border border-forest-700 bg-forest-950 px-3 py-2 text-sm text-forest-100 focus:border-ready focus:outline-none"
+                className={INPUT_CLASS}
               />
             </Field>
             <Field label="Proven breeder">
@@ -188,7 +204,7 @@ export default function WhatsItWorthPage() {
         </section>
       )}
 
-      {comboId && (
+      {selected.length > 0 && (
         <section>
           <h2 className="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-forest-400">
             3. Estimate
@@ -200,7 +216,13 @@ export default function WhatsItWorthPage() {
       )}
 
       <footer className="border-t border-forest-700/60 pt-4 text-xs text-forest-500">
-        Got a photo? <a href="https://geck-inspect.vercel.app" className="underline hover:text-ready">Recognize a gecko from a photo with Geck Inspect</a>{" "}
+        Got a photo?{" "}
+        <a
+          href="https://geck-inspect.vercel.app"
+          className="underline hover:text-ready"
+        >
+          Recognize a gecko from a photo with Geck Inspect
+        </a>{" "}
         — the same estimate appears under every morph it identifies.
       </footer>
     </div>
@@ -217,6 +239,135 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+
+// ----- Trait picker --------------------------------------------------------
+
+function TraitPicker({
+  vocab,
+  selected,
+  onChange,
+}: {
+  vocab: TraitOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedSet = useMemo(() => new Set(selected.map((s) => s.toLowerCase())), [selected]);
+
+  const suggestions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      // Pre-empty state: show the most-common traits as quick-pick chips.
+      return vocab.slice(0, 18).filter((t) => !selectedSet.has(t.trait.toLowerCase()));
+    }
+    return vocab
+      .filter((t) => t.trait.toLowerCase().includes(q) && !selectedSet.has(t.trait.toLowerCase()))
+      .slice(0, 12);
+  }, [vocab, query, selectedSet]);
+
+  function add(trait: string) {
+    const norm = trait.trim();
+    if (!norm) return;
+    if (selectedSet.has(norm.toLowerCase())) return;
+    onChange([...selected, norm]);
+    setQuery("");
+    inputRef.current?.focus();
+  }
+
+  function remove(trait: string) {
+    onChange(selected.filter((s) => s !== trait));
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Selected chips. */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selected.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => remove(t)}
+              className="rounded-full border border-ready/60 bg-ready/10 px-3 py-1 text-sm text-ready transition hover:bg-ready/20"
+              title="Remove"
+            >
+              {t} <span className="ml-1 text-ready/60">×</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="text-xs text-forest-400 underline hover:text-forest-200"
+          >
+            clear all
+          </button>
+        </div>
+      )}
+
+      {/* Input + suggestion grid. */}
+      <div>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && query.trim()) {
+              e.preventDefault();
+              // Prefer an exact-prefix vocab match if there is one; otherwise
+              // accept whatever the user typed (lets them add traits we haven't
+              // seen yet without blocking).
+              const exact =
+                vocab.find((v) => v.trait.toLowerCase() === query.toLowerCase()) ??
+                vocab.find((v) =>
+                  v.trait.toLowerCase().startsWith(query.toLowerCase()),
+                );
+              add(exact?.trait ?? query.trim());
+            }
+            if (e.key === "Backspace" && !query && selected.length > 0) {
+              remove(selected[selected.length - 1]);
+            }
+          }}
+          placeholder={
+            vocab.length > 0
+              ? "Type a trait (e.g. 'lilly white'). Press Enter to add."
+              : "Type a trait. Press Enter to add."
+          }
+          className={INPUT_CLASS}
+          autoComplete="off"
+        />
+        <div className="mt-2 text-[11px] text-forest-500">
+          {vocab.length > 0
+            ? `${vocab.length} traits known. Start typing to filter; press Enter to add the highlighted match.`
+            : "Type any trait — we'll search sold listings for matches."}
+        </div>
+      </div>
+
+      {/* Suggestions. */}
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {suggestions.map((s) => (
+            <button
+              key={s.trait}
+              type="button"
+              onClick={() => add(s.trait)}
+              className="rounded-full border border-forest-700 bg-forest-950/60 px-2.5 py-1 text-xs text-forest-200 transition hover:border-ready/40 hover:text-ready"
+              title={`${s.listing_count} listings`}
+            >
+              {s.trait}
+              <span className="ml-1 font-mono text-[10px] text-forest-500">
+                {s.listing_count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----- Result --------------------------------------------------------------
 
 function Result({ data }: { data: ApiResponse }) {
   if (data.message && !data.adjusted) {
@@ -249,6 +400,11 @@ function Result({ data }: { data: ApiResponse }) {
             <div className="mt-1 text-xs text-forest-400">
               Midpoint ≈ ${p50.toLocaleString()} · range ${p10.toLocaleString()}–${p90.toLocaleString()}
             </div>
+            {data.matched && (
+              <div className="mt-1 text-[11px] text-ready">
+                Recognised combo: {data.matched.display}
+              </div>
+            )}
           </div>
           <ConfidenceTag confidence={data.confidence} n={data.n} />
         </div>
@@ -283,18 +439,18 @@ function Result({ data }: { data: ApiResponse }) {
           </div>
           <ul className="divide-y divide-forest-700/40">
             {data.recent_sales.map((s) => (
-              <li key={s.listing_id} className="flex items-center justify-between py-2 text-sm">
+              <li key={s.listing_id} className="flex items-center justify-between gap-3 py-2 text-sm">
                 <span className="font-mono text-forest-100">
                   ${s.sold_usd ? Math.round(s.sold_usd).toLocaleString() : "—"}
+                </span>
+                <span className="flex-1 truncate text-xs text-forest-400">
+                  {s.cached_traits ?? ""}
                 </span>
                 <span className="text-xs text-forest-400">
                   {new Date(s.sold_at).toLocaleDateString()}
                 </span>
-                <span className="text-xs text-forest-400">
-                  {s.days_to_sell != null ? `${s.days_to_sell}d to sell` : ""}
-                </span>
                 <span className="text-xs text-forest-500">
-                  {s.seller_name ?? ""}
+                  {s.days_to_sell != null ? `${s.days_to_sell}d` : ""}
                 </span>
                 {s.source_url && (
                   <a
@@ -303,7 +459,7 @@ function Result({ data }: { data: ApiResponse }) {
                     rel="noreferrer"
                     className="text-xs text-ready hover:underline"
                   >
-                    source ↗
+                    ↗
                   </a>
                 )}
               </li>
@@ -351,8 +507,6 @@ function PriceBar({
   p75: number;
   p90: number;
 }) {
-  // The visual: a horizontal axis from p10 to p90 with markers at p25/p50/p75.
-  // Bar fills the IQR (p25..p75) so the eye is drawn to the "typical" range.
   if (p90 <= p10) return null;
   const pct = (v: number) => ((v - p10) / (p90 - p10)) * 100;
   return (
