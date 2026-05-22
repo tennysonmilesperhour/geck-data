@@ -109,16 +109,28 @@ export default function Header() {
             );
           })}
           {loaded && user ? (
-            <Link
-              href="/alerts"
-              className={`ml-1 rounded-md px-2.5 py-1.5 ${
-                isActive("/alerts")
-                  ? "bg-ink-800 text-ink-50 shadow-panel"
-                  : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
-              }`}
-            >
-              Alerts
-            </Link>
+            <>
+              <Link
+                href="/watchlist"
+                className={`ml-1 rounded-md px-2.5 py-1.5 ${
+                  isActive("/watchlist")
+                    ? "bg-ink-800 text-ink-50 shadow-panel"
+                    : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
+                }`}
+              >
+                Watchlist
+              </Link>
+              <Link
+                href="/alerts"
+                className={`rounded-md px-2.5 py-1.5 ${
+                  isActive("/alerts")
+                    ? "bg-ink-800 text-ink-50 shadow-panel"
+                    : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
+                }`}
+              >
+                Alerts
+              </Link>
+            </>
           ) : null}
           {loaded && role === "admin" ? (
             <>

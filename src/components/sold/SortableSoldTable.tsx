@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
+import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 import WatchButton from "@/components/alerts/WatchButton";
 
@@ -180,12 +181,38 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
     },
   ];
 
+  const exportRows = useMemo(
+    () =>
+      sorted.map((r) => ({
+        listing_id: r.id,
+        title: r.title,
+        seller_id: r.seller_id,
+        price_usd: r.price_usd_equivalent ?? r.price,
+        maturity: r.maturity,
+        sex: r.sex,
+        first_seen_at: r.first_seen_at,
+        sold_at: r.sold_at,
+        days_to_sell: r.days_to_sell,
+        sold_source: r.sold_source,
+      })),
+    [sorted],
+  );
+
   return (
-    <DataTable
-      columns={columns}
-      rows={sorted.slice(0, 200)}
-      rowKey={(r) => r.id}
-      emptyMessage="No sold listings recorded yet."
-    />
+    <div className="space-y-2">
+      <div className="flex items-center justify-end">
+        <CsvDownloadButton
+          rows={exportRows}
+          filename={`sold-${new Date().toISOString().slice(0, 10)}.csv`}
+          label="Download CSV"
+        />
+      </div>
+      <DataTable
+        columns={columns}
+        rows={sorted.slice(0, 200)}
+        rowKey={(r) => r.id}
+        emptyMessage="No sold listings recorded yet."
+      />
+    </div>
   );
 }
