@@ -22,6 +22,7 @@ import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import WatchButton from "@/components/alerts/WatchButton";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -295,6 +296,12 @@ export default async function TraitPage({
           </ul>
         </Panel>
       )}
+
+      <SourceFootnote
+        sources={["market_listings (trait substring match)", "sold_listings_v"]}
+        n={liveFiltered.length + soldRows.length}
+        methodologyAnchor="sub-index"
+      />
     </div>
   );
 }

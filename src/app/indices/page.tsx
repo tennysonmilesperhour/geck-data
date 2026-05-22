@@ -17,6 +17,8 @@ import MiniSparkline from "@/components/charts/MiniSparkline";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { serverHref } from "@/lib/filters/link";
 import { paletteFor, anchorOf, type AnchorKey } from "@/lib/market/anchors";
+import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -275,6 +277,21 @@ export default async function IndicesPage({
         title="Per-combo indices"
         subtitle="Daily median sold price plus 7d / 30d / 90d trailing deltas, sourced from combo_index_daily. Click any combo to land on its entity page."
         padded={false}
+        right={
+          <CsvDownloadButton
+            rows={comboData.map((r) => ({
+              combo_id: r.combo_id,
+              display: r.display,
+              latest_day: r.latest_day,
+              current_value: r.current_value,
+              delta_7d: r.delta_7d,
+              delta_30d: r.delta_30d,
+              delta_90d: r.delta_90d,
+              latest_n: r.latest_n,
+            }))}
+            filename={`indices-${new Date().toISOString().slice(0, 10)}`}
+          />
+        }
       >
         {comboData.length === 0 ? (
           <div className="p-6 text-center text-sm text-ink-400">
@@ -285,6 +302,12 @@ export default async function IndicesPage({
           <DataTable columns={comboCols} rows={comboData} rowKey={(r) => r.combo_id} />
         )}
       </Panel>
+
+      <SourceFootnote
+        sources={["combo_index_daily", "v_market_sub_index", "price_history"]}
+        n={comboData.length}
+        methodologyAnchor="combo-index"
+      />
     </div>
   );
 }

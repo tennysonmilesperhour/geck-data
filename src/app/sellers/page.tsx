@@ -20,6 +20,8 @@ import DataFreshness from "@/components/ui/DataFreshness";
 import { getSellerDailyActivity } from "@/lib/sellers/activity";
 import { parseFilters } from "@/lib/filters/link";
 import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
+import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -226,16 +228,35 @@ export default async function SellersPage({
       </div>
 
       <section>
-        <div className="mb-4 flex items-baseline justify-between">
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="font-display text-[22px] font-medium tracking-tight text-ink-50">
             All sellers
           </h2>
-          <span className="text-xs text-ink-400">
-            {fmtInt(rows.length)} rows
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-ink-400">{fmtInt(rows.length)} rows</span>
+            <CsvDownloadButton
+              rows={rows.map((r) => ({
+                seller_id: r.seller_id,
+                seller_name: r.seller_name,
+                seller_location: r.seller_location,
+                membership: r.membership,
+                total_listings: r.total_listings,
+                avg_price: r.avg_price,
+                feedback_count: r.feedback_count,
+                seller_rating_score: r.seller_rating_score,
+              }))}
+              filename={`sellers-${new Date().toISOString().slice(0, 10)}`}
+            />
+          </div>
         </div>
         <DataTable columns={columns} rows={rows} rowKey={(s) => s.seller_id} />
       </section>
+
+      <SourceFootnote
+        sources={["MorphMarket sellers", "Eye in the Sky extension"]}
+        n={rows.length}
+        methodologyAnchor="confidence"
+      />
     </div>
   );
 }

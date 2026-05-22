@@ -35,6 +35,7 @@ import TraitMomentumPanels, {
 import ProfitabilityTiers, {
   ProfitabilityTiersSkeleton,
 } from "@/components/trends/ProfitabilityTiers";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -672,6 +673,12 @@ export default async function TrendsPage({
       <Suspense fallback={<TraitMomentumSkeleton />}>
         <TraitMomentumPanels windowDays={windowDays} />
       </Suspense>
+
+      <SourceFootnote
+        sources={["MorphMarket listings + price_history", "listing_status_events"]}
+        n={addedCount + soldCount}
+        methodologyAnchor="market-index"
+      />
     </div>
   );
 }

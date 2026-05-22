@@ -23,6 +23,8 @@ import DataTable, { type Column } from "@/components/ui/DataTable";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import WatchButton from "@/components/alerts/WatchButton";
 import { anchorOf, paletteFor } from "@/lib/market/anchors";
+import SourceFootnote from "@/components/ui/SourceFootnote";
+import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
 
 export const dynamic = "force-dynamic";
 
@@ -461,6 +463,31 @@ export default async function ComboPage({
         title="Current listings"
         subtitle={`Live MorphMarket listings carrying every trait in ${combo.display}. Click a listing to open its full page; click a seller to drill into their inventory with this combo pre-filtered.`}
         padded={false}
+        right={
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/compare?combos=${combo.id},${HIGH_VALUE_COMBOS.find((c) => c.id !== combo.id)?.id ?? ""}`}
+              className="rounded-md border border-ink-700 bg-ink-850 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-ink-300 transition hover:bg-ink-800 hover:text-ink-100"
+            >
+              Compare →
+            </Link>
+            <CsvDownloadButton
+              rows={filteredLive.map((r) => ({
+                listing_id: r.id,
+                title: r.title,
+                price: r.price_usd_equivalent ?? r.price,
+                seller_id: r.seller_id,
+                seller_name: r.seller_name,
+                seller_location: r.seller_location,
+                maturity: r.maturity,
+                sex: r.sex,
+                first_seen_at: r.first_seen_at,
+              }))}
+              filename={`${combo.id}-live-${new Date().toISOString().slice(0, 10)}`}
+              label="CSV"
+            />
+          </div>
+        }
       >
         <DataTable
           columns={liveCols}
@@ -534,6 +561,12 @@ export default async function ComboPage({
           </ul>
         </Panel>
       </div>
+
+      <SourceFootnote
+        sources={["market_listings", "sold_listings_v", "price_history"]}
+        n={filteredLive.length + soldRows.length}
+        methodologyAnchor="combo-index"
+      />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { fmtInt, fmtUsd } from "@/lib/format";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -249,6 +250,12 @@ export default async function RegionPage({
           )}
         </ul>
       </Panel>
+
+      <SourceFootnote
+        sources={["market_listings", "market_sellers", "seller_location regex"]}
+        n={live.length}
+        methodologyAnchor="confidence"
+      />
     </div>
   );
 }

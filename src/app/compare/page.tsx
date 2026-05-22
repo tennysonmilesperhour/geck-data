@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
+import MiniSparkline from "@/components/charts/MiniSparkline";
 import { chartTheme } from "@/components/charts/theme";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
@@ -16,6 +17,9 @@ import {
   computeTraitPremiums,
 } from "@/lib/market/trait-premium";
 import TraitPremiumPanel from "@/components/morphs/TraitPremiumPanel";
+import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
+import { anchorOf, paletteFor } from "@/lib/market/anchors";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +59,19 @@ function median(arr: number[]): number | null {
 export default async function ComparePage({
   searchParams,
 }: {
-  searchParams?: { sellers?: string };
+  searchParams?: { sellers?: string; combos?: string };
 }) {
+  // Combos comparison: ?combos=lw-cap,axa-pin pulls the per-combo
+  // indices for both and renders them side-by-side. Independent of
+  // the seller h2h section so a link can carry both.
+  const focusedComboIds = (searchParams?.combos ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const focusedCombos = focusedComboIds
+    .map((id) => HIGH_VALUE_COMBOS.find((c) => c.id === id))
+    .filter((c): c is (typeof HIGH_VALUE_COMBOS)[number] => Boolean(c));
+
   // ?sellers=id1,id2,id3 narrows the head-to-head section to those
   // sellers. Empty / missing param falls back to "top 15 by inventory
   // value" so existing links and direct visits still get a useful page.
@@ -85,6 +100,68 @@ export default async function ComparePage({
 
   const listings = (listingsRes.data ?? []) as Listing[];
   const sellers = (sellersRes.data ?? []) as Seller[];
+
+  // Combo h2h: only fetched when ?combos=... is set. Pulls daily index
+  // series + the latest summary so the panel can render value, deltas
+  // and a sparkline per side.
+  type ComboSeries = {
+    combo_id: string;
+    display: string;
+    spark: number[];
+    current: number;
+    delta30: number | null;
+    delta7: number | null;
+  };
+  let comboSeries: ComboSeries[] = [];
+  if (focusedCombos.length >= 2) {
+    const ids = focusedCombos.map((c) => c.id);
+    const [{ data: dailyRows }, { data: summaryRows }] = await Promise.all([
+      supabase
+        .from("combo_index_daily")
+        .select("combo_id, day, median_price")
+        .in("combo_id", ids)
+        .gte("day", new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10))
+        .order("day", { ascending: true })
+        .limit(5000),
+      supabase
+        .from("v_combo_index_summary")
+        .select("combo_id, current_value, delta_7d, delta_30d")
+        .in("combo_id", ids),
+    ]);
+    const sparkBy = new Map<string, number[]>();
+    for (const r of (dailyRows ?? []) as Array<{ combo_id: string; median_price: number | string | null }>) {
+      if (r.median_price == null) continue;
+      const v = Number(r.median_price);
+      if (!Number.isFinite(v)) continue;
+      const arr = sparkBy.get(r.combo_id) ?? [];
+      arr.push(v);
+      sparkBy.set(r.combo_id, arr);
+    }
+    const sumBy = new Map<string, { current: number; d7: number | null; d30: number | null }>();
+    for (const r of (summaryRows ?? []) as Array<{
+      combo_id: string;
+      current_value: number | string | null;
+      delta_7d: number | string | null;
+      delta_30d: number | string | null;
+    }>) {
+      sumBy.set(r.combo_id, {
+        current: Number(r.current_value ?? 0),
+        d7: r.delta_7d == null ? null : Number(r.delta_7d),
+        d30: r.delta_30d == null ? null : Number(r.delta_30d),
+      });
+    }
+    comboSeries = focusedCombos.map((c) => {
+      const sum = sumBy.get(c.id);
+      return {
+        combo_id: c.id,
+        display: c.display,
+        spark: sparkBy.get(c.id) ?? [],
+        current: sum?.current ?? 0,
+        delta30: sum?.d30 ?? null,
+        delta7: sum?.d7 ?? null,
+      };
+    });
+  }
 
   // Market baselines — shared module so the same trait-premium
   // numbers are available on every surface that wants them.
@@ -246,6 +323,84 @@ export default async function ComparePage({
         <KpiCard label="Maturity cohorts" value={fmtInt(bands.length)} />
       </section>
 
+      {comboSeries.length >= 2 ? (
+        <Panel
+          title="Combos head-to-head"
+          subtitle={`Daily median observed price for ${comboSeries.map((s) => s.display).join(" vs ")} over the last 90 days. Linked from a combo entity page's "compare" link or via ?combos=lw-cap,axa-pin in the URL.`}
+        >
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              comboSeries.length >= 4
+                ? "md:grid-cols-4"
+                : comboSeries.length === 3
+                  ? "md:grid-cols-3"
+                  : "md:grid-cols-2"
+            }`}
+          >
+            {comboSeries.map((s) => {
+              const palette = paletteFor(anchorOf(s.display));
+              return (
+                <div
+                  key={s.combo_id}
+                  className="relative overflow-hidden rounded-lg border border-ink-700 bg-ink-800 p-4"
+                  style={{
+                    backgroundImage: `linear-gradient(135deg, ${palette?.soft ?? "transparent"} 0%, transparent 70%)`,
+                  }}
+                >
+                  <div
+                    aria-hidden
+                    className="absolute inset-y-0 left-0 w-1"
+                    style={{ background: palette?.hex ?? "#447256", opacity: 0.9 }}
+                  />
+                  <Link
+                    href={`/combo/${s.combo_id}`}
+                    className="relative font-display text-[16px] font-medium text-ink-50 hover:text-claude-glow"
+                  >
+                    {s.display}
+                  </Link>
+                  <div className="relative mt-2 font-display text-[26px] font-medium tabular-nums text-ink-50">
+                    {s.current ? fmtUsd(s.current) : "—"}
+                  </div>
+                  <div className="relative mt-1 flex items-center gap-3 font-mono text-[11px] tabular-nums">
+                    <span
+                      className={
+                        s.delta7 == null
+                          ? "text-ink-500"
+                          : s.delta7 >= 0
+                            ? "text-ready"
+                            : "text-danger"
+                      }
+                    >
+                      7d {s.delta7 == null ? "—" : `${s.delta7 >= 0 ? "+" : ""}${s.delta7.toFixed(1)}%`}
+                    </span>
+                    <span
+                      className={
+                        s.delta30 == null
+                          ? "text-ink-500"
+                          : s.delta30 >= 0
+                            ? "text-ready"
+                            : "text-danger"
+                      }
+                    >
+                      30d {s.delta30 == null ? "—" : `${s.delta30 >= 0 ? "+" : ""}${s.delta30.toFixed(1)}%`}
+                    </span>
+                  </div>
+                  <div className="relative mt-2 -mx-1">
+                    <MiniSparkline
+                      values={s.spark}
+                      width={220}
+                      height={48}
+                      fill
+                      color={palette?.hex}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      ) : null}
+
       <TraitPremiumPanel rows={traitRows} limit={12} />
 
       <Panel
@@ -330,8 +485,24 @@ export default async function ComparePage({
             currently-live, priced listings per seller — a rough proxy for
             &quot;skin in the market&quot; right now.
           </li>
+          <li>
+            <span className="text-ink-100">Combos head-to-head</span> (when
+            <code className="ml-1 rounded bg-ink-850 px-1 py-0.5 text-xs">?combos=</code>
+            is set) pulls the per-combo daily index, so deltas reflect
+            month-over-month price movement, not snapshot dispersion.
+          </li>
         </ul>
       </Panel>
+
+      <SourceFootnote
+        sources={[
+          "market_listings",
+          "market_sellers",
+          ...(comboSeries.length >= 2 ? ["combo_index_daily"] : []),
+        ]}
+        n={listings.length}
+        methodologyAnchor="confidence"
+      />
     </div>
   );
 }

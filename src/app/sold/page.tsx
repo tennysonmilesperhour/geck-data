@@ -15,6 +15,7 @@ import SoldFilters from "@/components/sold/SoldFilters";
 import SortableSoldTable, {
   type SoldRow,
 } from "@/components/sold/SortableSoldTable";
+import SourceFootnote from "@/components/ui/SourceFootnote";
 
 export const dynamic = "force-dynamic";
 
@@ -163,6 +164,12 @@ export default async function SoldPage({
         </h2>
         <SortableSoldTable rows={rows} />
       </section>
+
+      <SourceFootnote
+        sources={["MorphMarket", "Eye in the Sky extension", "scraper-inferred sold"]}
+        n={rows.length}
+        methodologyAnchor="days-to-sell"
+      />
     </div>
   );
 }

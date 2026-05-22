@@ -17,6 +17,8 @@ import FilterChips from "@/components/landing/FilterChips";
 import PriceBandSlider from "@/components/landing/PriceBandSlider";
 import ComboFilter from "@/components/landing/ComboFilter";
 import SectionOrnament from "@/components/ui/SectionOrnament";
+import AnchorIndicesStrip from "@/components/landing/AnchorIndicesStrip";
+import BrowseStrip from "@/components/landing/BrowseStrip";
 import {
   getComboDailyAppearances,
   getMarketSnapshot,
@@ -44,6 +46,10 @@ export default async function LandingPage() {
     <LandingFiltersProvider>
       <div className="page-rise space-y-12">
         <HeroBand snapshot={snapshot} />
+
+        <BrowseStrip />
+
+        <AnchorIndicesStrip />
 
         <FilterChips />
 
