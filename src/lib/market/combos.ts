@@ -66,3 +66,28 @@ export function matchCombo(traits: unknown): CanonicalCombo | null {
   }
   return null;
 }
+
+/**
+ * Look up a canonical combo from any display, ASCII, or set-form name.
+ * Returns the combo entry whose name/display matches case-insensitively,
+ * or null. Used by widgets that have a combo's display name in hand
+ * and want to link to /combo/[id].
+ */
+export function comboFromName(name: string | null | undefined): CanonicalCombo | null {
+  if (!name) return null;
+  const norm = name.toLowerCase().trim();
+  for (const c of HIGH_VALUE_COMBOS) {
+    if (c.name.toLowerCase() === norm) return c;
+    if (c.display.toLowerCase() === norm) return c;
+    if (c.id.toLowerCase() === norm) return c;
+  }
+  // Fallback: split on either × or x and try as a trait set so callers
+  // who pass a free-typed "Lilly White x Cappuccino" still resolve.
+  const set = matchCombo(name);
+  return set;
+}
+
+/** Slug used in /combo/[slug] URLs. */
+export function comboSlug(combo: CanonicalCombo): string {
+  return combo.id;
+}

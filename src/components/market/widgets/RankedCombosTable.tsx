@@ -3,11 +3,15 @@
 // when selected so the right-hand detail panel reflects the choice.
 // Sort metric is a dropdown in the header (Volume / Median sold / Ask /
 // Spread / Days). Column headers are also click-to-sort for consistency.
+// Combo name is a Link to the per-combo entity page; the row body stays
+// as the in-tab selector.
+import Link from "next/link";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
 import MorphTerm from "@/components/morphs/MorphTerm";
+import { comboFromName } from "@/lib/market/combos";
 import type { ComboRow, ComboRankSort } from "@/lib/market/widget-types";
 
 export default function RankedCombosTable({
@@ -102,10 +106,20 @@ export default function RankedCombosTable({
                   }`}
                 >
                   <td className="px-3 py-3 align-top">
-                    <MorphTerm
-                      name={r.combo}
-                      className="font-medium text-forest-50"
-                    />
+                    {(() => {
+                      const canonical = comboFromName(r.combo);
+                      return canonical ? (
+                        <Link
+                          href={`/combo/${canonical.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-forest-50 hover:text-claude-glow"
+                        >
+                          <MorphTerm name={r.combo} />
+                        </Link>
+                      ) : (
+                        <MorphTerm name={r.combo} className="font-medium text-forest-50" />
+                      );
+                    })()}
                     <div className="font-mono text-[10px] text-forest-500">
                       {r.traits[0]} · {r.traits[1]}
                     </div>

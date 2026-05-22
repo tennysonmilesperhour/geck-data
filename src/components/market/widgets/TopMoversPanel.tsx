@@ -2,12 +2,14 @@
 // Two-column Top Movers card (APPRECIATING / DEPRECIATING). Each row:
 //   [ combo name + sample size/avg ]   [ sparkline ]   [ % delta + arrow ]
 //
-// Matches the handoff screenshots. Row click is reserved for task 4
-// (Combos tab detail drill-in) — placeholder handler for now.
+// Combo names link to /combo/[slug]; clicking elsewhere in the row
+// still fires onSelectCombo for in-tab drill-in.
+import Link from "next/link";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
+import { comboFromName } from "@/lib/market/combos";
 import type { Mover } from "@/lib/market/widget-types";
 
 export default function TopMoversPanel({
@@ -96,7 +98,20 @@ function Column({
               onClick={onSelect ? () => onSelect(m.combo) : undefined}
             >
               <div className="min-w-0">
-                <div className="truncate text-sm text-forest-100">{m.combo}</div>
+                {(() => {
+                  const canonical = comboFromName(m.combo);
+                  return canonical ? (
+                    <Link
+                      href={`/combo/${canonical.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="truncate text-sm text-forest-100 hover:text-claude-glow"
+                    >
+                      {m.combo}
+                    </Link>
+                  ) : (
+                    <div className="truncate text-sm text-forest-100">{m.combo}</div>
+                  );
+                })()}
                 <div className="font-mono text-[10px] text-forest-500">
                   ${m.avgPrice.toLocaleString()} avg · n={m.n}
                 </div>

@@ -11,6 +11,7 @@ import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import MorphTerm from "@/components/morphs/MorphTerm";
 import PopulationBadge from "@/components/morphs/PopulationBadge";
 import MiniSparkline from "@/components/charts/MiniSparkline";
+import { comboFromName } from "@/lib/market/combos";
 import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
@@ -103,10 +104,21 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                       <span className="w-5 font-mono text-[10px] text-ink-500">
                         {String(idx + 1).padStart(2, "0")}
                       </span>
-                      <MorphTerm
-                        name={combo.combo_name}
-                        className={`font-medium ${isSelected ? "text-emerald-100" : "text-ink-100"}`}
-                      />
+                      {(() => {
+                        const canonical = comboFromName(combo.combo_name);
+                        const cls = `font-medium ${isSelected ? "text-emerald-100" : "text-ink-100"}`;
+                        return canonical ? (
+                          <Link
+                            href={`/combo/${canonical.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`${cls} hover:text-claude-glow`}
+                          >
+                            <MorphTerm name={combo.combo_name} />
+                          </Link>
+                        ) : (
+                          <MorphTerm name={combo.combo_name} className={cls} />
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-4 font-mono text-[11px] tabular-nums text-ink-300">
                       {comboDaily?.get(combo.combo_name) ? (
