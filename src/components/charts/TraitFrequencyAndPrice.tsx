@@ -1,10 +1,14 @@
 "use client";
 // Top-N traits by listing count, with median price overlay.
 // Bars = count (left axis). Dots = median price (right axis, log scale).
+// Click any bar to navigate to that trait's entity page (preserves any
+// existing canonical filter state via the URL).
 import { useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import * as d3 from "d3";
 import { chartTheme } from "./theme";
 import { parseTraitList } from "@/lib/traits";
+import { slugifyTrait } from "@/lib/filters/schema";
 
 export type TraitInput = {
   cached_traits: string | null;
@@ -16,10 +20,14 @@ export type TraitInput = {
 export default function TraitFrequencyAndPrice({
   data,
   topN = 25,
+  onTraitClick,
 }: {
   data: TraitInput[];
   topN?: number;
+  /** Optional override: if not provided, click navigates to /trait/[slug]. */
+  onTraitClick?: (trait: string) => void;
 }) {
+  const router = useRouter();
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Aggregate: for each trait token, collect listings carrying it.
@@ -93,7 +101,7 @@ export default function TraitFrequencyAndPrice({
       .attr("fill", chartTheme.label)
       .text("listings");
 
-    // Bars
+    // Bars (clickable: navigates to /trait/[slug] or calls override).
     g.append("g")
       .selectAll("rect")
       .data(traitStats)
@@ -103,7 +111,20 @@ export default function TraitFrequencyAndPrice({
       .attr("height", y.bandwidth())
       .attr("width", (d) => xCount(d.count))
       .attr("fill", chartTheme.primary)
-      .attr("fill-opacity", 0.85);
+      .attr("fill-opacity", 0.85)
+      .style("cursor", "pointer")
+      .on("click", (_event, d) => {
+        if (onTraitClick) onTraitClick(d.trait);
+        else router.push(`/trait/${slugifyTrait(d.trait)}`);
+      })
+      .on("mouseenter", function () {
+        d3.select(this).attr("fill-opacity", 1);
+      })
+      .on("mouseleave", function () {
+        d3.select(this).attr("fill-opacity", 0.85);
+      })
+      .append("title")
+      .text((d) => `${d.trait}: ${d.count} listings - click to drill in`);
 
     // Median price dots, on the same axis space (different scale)
     g.append("g")

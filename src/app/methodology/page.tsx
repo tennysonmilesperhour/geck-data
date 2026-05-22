@@ -128,27 +128,49 @@ export default function MethodologyPage() {
 
       <section id="sub-index" className="scroll-mt-16"><Panel title="Anchor morph sub-indices">
         <p className="text-sm text-ink-300">
-          Per-anchor weekly median price, rebased to 1000 at the start of
-          the window. Anchors are coarse morph families: Lilly White,
-          Axanthic, Harlequin, Cappuccino (the last grouping Cappuccino,
-          Sable, and Frappuccino because they share parentage and price
-          together in practice).
+          Per-anchor weekly median observed market price, rebased to
+          1000 at the start of the window. Anchors are coarse morph
+          families: Lilly White, Axanthic, Harlequin, Cappuccino (the
+          last grouping Cappuccino, Sable, and Frappuccino because they
+          share parentage and price together in practice).
         </p>
         <p className="mt-2 text-sm text-ink-300">
-          A listing can contribute to multiple anchors. The view is
-          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_market_sub_index</code> (migration 0035).
+          A listing can contribute to multiple anchors. The view is{" "}
+          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_market_sub_index</code>{" "}
+          (migrations 0035, 0036). Sourced from{" "}
+          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">price_history</code>{" "}
+          (live observations), not only confirmed sold events, because
+          our sold-events stream is thin enough that a sold-only
+          definition would render most weeks empty. This is similar to
+          how Zillow ZHVI smooths over all observed sales rather than
+          waiting for closed deals only.
         </p>
       </Panel></section>
 
       <section id="combo-index" className="scroll-mt-16"><Panel title="Per-combo index">
         <p className="text-sm text-ink-300">
-          Daily median sold price per canonical combo. Available for the
-          dozen canonical high-value combos. Powered by the materialised
-          view{" "}
+          Daily median observed market price per canonical combo,
+          available for the dozen canonical high-value combos. Powered
+          by the materialised view{" "}
           <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">combo_index_daily</code>{" "}
-          (migration 0035), refreshed nightly. The summary view{" "}
+          (migrations 0035, 0036), refreshed nightly via{" "}
+          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">refresh_combo_index_daily()</code>.
+          The summary view{" "}
           <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_combo_index_summary</code>{" "}
-          adds 7d / 30d / 90d deltas.
+          adds 7d / 30d / 90d deltas, which the per-combo entity hero
+          and the{" "}
+          <Link href="/indices" className="underline">/indices</Link>{" "}
+          dashboard read directly.
+        </p>
+        <p className="mt-2 text-sm text-ink-300">
+          Source: every observation in{" "}
+          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">price_history</code>{" "}
+          for the trailing 365 days whose listing matches one of the
+          canonical combos (via{" "}
+          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">_combo_id_from_traits()</code>).
+          We use observed asks rather than confirmed sold prices because
+          the sold-events stream is currently too sparse to drive a
+          daily series for most combos.
         </p>
       </Panel></section>
 

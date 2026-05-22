@@ -238,6 +238,44 @@ export async function fetchCombosRanked(
 ): Promise<QueryResult<ComboRow[] | null>> {
   const { rows, live, reason } = await fetchRollups(filters);
   if (!live) return empty(null, reason ?? "no data");
+
+  // In parallel with the rollup, pull the recent daily medians so each
+  // row can render a 60-day sparkline. The MV combo_index_daily is
+  // bounded to 365 days; we slice to the most recent 60 client-side.
+  // Failure here is non-fatal: rows render without sparklines.
+  const supabase = createClient();
+  const sparkByCombo = new Map<string, number[]>();
+  try {
+    const cutoff = new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10);
+    const { data: sparkRows } = await supabase
+      .from("combo_index_daily")
+      .select("combo_id, day, median_price")
+      .gte("day", cutoff)
+      .order("day", { ascending: true })
+      .limit(5000);
+    // Cross-walk combo_id (canonical short id) -> combo_name (display
+    // name) so we can key the sparkline by the same string the rollup
+    // uses.
+    const { HIGH_VALUE_COMBOS } = await import("@/lib/market/combos");
+    const idToDisplay = new Map(
+      HIGH_VALUE_COMBOS.map((c) => [c.id, c.display]),
+    );
+    for (const r of (sparkRows ?? []) as Array<{
+      combo_id: string;
+      median_price: number | string | null;
+    }>) {
+      if (r.median_price == null) continue;
+      const v = Number(r.median_price);
+      if (!Number.isFinite(v)) continue;
+      const display = idToDisplay.get(r.combo_id) ?? r.combo_id;
+      const arr = sparkByCombo.get(display) ?? [];
+      arr.push(v);
+      sparkByCombo.set(display, arr);
+    }
+  } catch {
+    // Non-fatal; rows just render without sparklines.
+  }
+
   const mapped: ComboRow[] = rows.map((r) => {
     const parts = r.combo_name.split(" × ");
     const medianSold = r.median_sold ? Number(r.median_sold) : 0;
@@ -256,6 +294,7 @@ export async function fetchCombosRanked(
         sources: confidenceSources(filters),
         confidence: { score: r.confidence_score },
       },
+      spark: sparkByCombo.get(r.combo_name) ?? [],
     };
   });
   return ok(sortComboRows(mapped, sort), `v_combo_rollups(${windowDays(filters)}d)`);

@@ -4,13 +4,15 @@
 // Sort metric is a dropdown in the header (Volume / Median sold / Ask /
 // Spread / Days). Column headers are also click-to-sort for consistency.
 // Combo name is a Link to the per-combo entity page; the row body stays
-// as the in-tab selector.
+// as the in-tab selector. Last column is a 60-day price sparkline
+// sourced from combo_index_daily (migration 0035).
 import Link from "next/link";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
 import MorphTerm from "@/components/morphs/MorphTerm";
+import MiniSparkline from "@/components/charts/MiniSparkline";
 import { comboFromName } from "@/lib/market/combos";
 import type { ComboRow, ComboRankSort } from "@/lib/market/widget-types";
 
@@ -91,6 +93,7 @@ export default function RankedCombosTable({
               <ThNum sort="volume" current={sort} onClick={onSortChange}>
                 Vol
               </ThNum>
+              <Th className="text-right">60d</Th>
               <Th className="text-right">Conf</Th>
             </tr>
           </thead>
@@ -148,6 +151,13 @@ export default function RankedCombosTable({
                   </td>
                   <td className="px-3 py-3 text-right align-top font-mono tabular-nums text-forest-200">
                     {r.volume}
+                  </td>
+                  <td className="px-3 py-3 text-right align-top">
+                    {r.spark && r.spark.length > 1 ? (
+                      <MiniSparkline values={r.spark} width={88} height={22} />
+                    ) : (
+                      <span className="text-forest-600">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right align-top">
                     <ConfidenceBadge score={r.attribution.confidence.score} size="sm" />

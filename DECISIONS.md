@@ -164,6 +164,54 @@ watchlist link`, `phase 4: /sellers narrows by combos URL param`.
   `combo_index_daily` if migration 0035 is applied; the wiring
   was not bundled into this pass.
 
+### Follow-up pass (2026-05-22 PM): substrate pivot + sparkline column + trait click-through
+
+After applying 0035 the audit query showed only 92 sold events total
+over 180 days, 4 anchor week-buckets, 3 combos with daily data, and
+zero candidates for a sold-inference backfill (every listing has
+been seen in the last 14 days). The sold-events stream is thin
+because most listings have not actually flipped to sold yet, not
+because the inference rule is failing.
+
+Pivoted the index substrate from sold events to
+`price_history` observations. The price_history table holds ~17K
+ticks over 7585 distinct listings in the last 180 days, with
+~135-226 listings per anchor. The indices' definition changes from
+"median sold price" to "median observed market price"; this is the
+same trade-off Zillow ZHVI makes (smoothed over all observed
+prices, not only closed deals). Methodology page updated to reflect
+this in the same push.
+
+Migration `0036_indices_use_price_history.sql` applied to prod
+(same session, via Supabase MCP). Post-pivot smoke test:
+  v_market_sub_index_weekly  -> 8 rows, 2 weeks per anchor (was 4 rows, 1 week)
+  v_market_sub_index(365)    -> 8 rows
+  combo_index_daily          -> 8 rows, 4 distinct combos (was 5 / 3)
+  v_combo_index_summary      -> 4 rows
+  combos with 7d delta       -> 4 (was 0)
+
+Anchor tiles on `/market` and `/indices` will now render real data
+(the `series.length >= 2` gate in `fetchMarketSubIndices` is met).
+
+Same push also lands two visible Phase 2/3 finishing touches:
+
+- **Sparkline column on `RankedCombosTable`**. `fetchCombosRanked`
+  now fetches `combo_index_daily` slices (last 60 days) and attaches
+  a `spark: number[]` to each row. The table renders a `MiniSparkline`
+  in the new `60d` column. Non-fatal on fetch failure; rows just
+  render without sparklines.
+- **Trait click-through on `TraitFrequencyAndPrice`**. The trait
+  ridge on Pulse (and anywhere else the chart is mounted via
+  `ChartGrid`) is now click-actionable: clicking any bar navigates
+  to `/trait/[slug]` by default. Hover state added so the
+  affordance is visible. Callers can pass `onTraitClick` to override
+  the default navigation (e.g. write `traits` to URL filters on
+  `/market` for in-page cross-filtering).
+
+This brings Phase 3's headline acceptance ("clicking a trait
+narrows the page") into a reachable place: the chart now emits the
+event; widget-level wiring to consume it is per-chart polish.
+
 ### Operational notes for the next session
 
 - **Migration 0035 has been applied to prod** (2026-05-22, via the

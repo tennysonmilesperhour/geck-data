@@ -89,6 +89,10 @@ export type ComboRow = {
   daysToSell: number;
   volume: number;
   attribution: Attribution;
+  /** Recent daily medians for this combo (oldest first), sourced from
+   *  combo_index_daily. Empty if the MV is empty or the combo has no
+   *  observations in the lookback window. */
+  spark?: number[];
 };
 
 export type ComboRankSort =
