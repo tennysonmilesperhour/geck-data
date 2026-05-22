@@ -116,6 +116,44 @@ async function lookupDistribution(comboId: string) {
   return { admin, error: null, row: data as DistRow | null };
 }
 
+/** Free-form trait-set lookup. Uses f_price_band_for_traits (migration 0034)
+ *  to support ANY combination of traits, not just the 12 canonical combos.
+ *  Returns the same DistRow shape as v_combo_price_distribution. */
+async function lookupTraitBand(traits: string[]) {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("f_price_band_for_traits", {
+    p_traits: traits,
+    p_lookback_days: 180,
+  });
+  if (error) return { admin, error: error.message, row: null };
+  const arr = (data ?? []) as Array<{
+    n: number;
+    p10: number | null;
+    p25: number | null;
+    p50: number | null;
+    p75: number | null;
+    p90: number | null;
+    mean_usd: number | null;
+    stddev_usd: number | null;
+  }>;
+  const first = arr[0];
+  const row: DistRow | null =
+    first && first.n > 0
+      ? {
+          combo_id: traits.join(" + "),
+          n: first.n,
+          p10: first.p10,
+          p25: first.p25,
+          p50: first.p50,
+          p75: first.p75,
+          p90: first.p90,
+          mean_usd: first.mean_usd,
+          stddev_usd: first.stddev_usd,
+        }
+      : null;
+  return { admin, error: null, row };
+}
+
 async function buildResponse(opts: {
   comboId: string;
   inputs: Inputs;
@@ -181,6 +219,71 @@ async function buildResponse(opts: {
   };
 }
 
+/** Trait-set response builder. Uses lookupTraitBand + f_recent_sales_for_traits
+ *  so the caller can pass any traits, not just the curated 12 combos. */
+async function buildTraitResponse(opts: {
+  traits: string[];
+  inputs: Inputs;
+  recentSalesN: number;
+}) {
+  const { row, admin, error } = await lookupTraitBand(opts.traits);
+  if (error) return { error };
+
+  if (!row || row.n === 0) {
+    return {
+      body: {
+        traits: opts.traits,
+        n: 0,
+        base: null,
+        adjusted: null,
+        applied: null,
+        confidence: "low" as const,
+        note: DISCLAIMER,
+        message:
+          opts.traits.length === 0
+            ? "Pick at least one trait."
+            : `No sold listings in the last 180 days contain all of: ${opts.traits.join(", ")}. Try fewer traits or broader synonyms.`,
+      },
+    };
+  }
+
+  const map = await loadMultipliers(admin);
+  const { total, applied } = combinedMultiplier(opts.inputs, map);
+  const base = {
+    p10: row.p10,
+    p25: row.p25,
+    p50: row.p50,
+    p75: row.p75,
+    p90: row.p90,
+    mean: row.mean_usd,
+  };
+  const adjusted = applyToBand(base, total);
+
+  let recentSales: RecentSale[] = [];
+  if (opts.recentSalesN > 0) {
+    const { data } = await admin.rpc("f_recent_sales_for_traits", {
+      p_traits: opts.traits,
+      p_limit: opts.recentSalesN,
+      p_lookback_days: 180,
+    });
+    recentSales = ((data ?? []) as RecentSale[]).slice(0, opts.recentSalesN);
+  }
+
+  return {
+    body: {
+      traits: opts.traits,
+      n: row.n,
+      base,
+      adjusted,
+      applied,
+      multiplier_total: total,
+      confidence: confidence(row.n),
+      note: DISCLAIMER,
+      recent_sales: opts.recentSalesN > 0 ? recentSales : undefined,
+    },
+  };
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 200, headers: corsHeaders });
 }
@@ -188,24 +291,7 @@ export async function OPTIONS() {
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const comboId = url.searchParams.get("combo")?.trim();
-  if (!comboId) {
-    return NextResponse.json(
-      {
-        error: "?combo=<id> required (or POST { traits })",
-        supported: HIGH_VALUE_COMBOS.map((c) => c.id),
-      },
-      { status: 400, headers: corsHeaders },
-    );
-  }
-  if (!HIGH_VALUE_COMBOS.find((c) => c.id === comboId)) {
-    return NextResponse.json(
-      {
-        error: `unknown combo id ${comboId}`,
-        supported: HIGH_VALUE_COMBOS.map((c) => c.id),
-      },
-      { status: 404, headers: corsHeaders },
-    );
-  }
+  const traitsParam = url.searchParams.get("traits")?.trim();
 
   const inputs: Inputs = {
     age: parseAge(url.searchParams.get("age")),
@@ -218,6 +304,45 @@ export async function GET(req: NextRequest) {
     10,
   );
 
+  // Free-form trait mode — preferred. Any number of traits, no whitelist.
+  if (traitsParam) {
+    const traits = traitsParam
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (traits.length === 0) {
+      return NextResponse.json(
+        { error: "traits param empty" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+    const out = await buildTraitResponse({ traits, inputs, recentSalesN });
+    if ("error" in out) {
+      return NextResponse.json({ error: out.error }, { status: 500, headers: corsHeaders });
+    }
+    return NextResponse.json(out.body, { headers: corsHeaders });
+  }
+
+  // Legacy combo-id mode — kept for the Geck Inspect classifier card
+  // which still passes canonical combo ids derived from the morph model.
+  if (!comboId) {
+    return NextResponse.json(
+      {
+        error: "?traits=trait1,trait2 (preferred) or ?combo=<id>",
+        supported_combos: HIGH_VALUE_COMBOS.map((c) => c.id),
+      },
+      { status: 400, headers: corsHeaders },
+    );
+  }
+  if (!HIGH_VALUE_COMBOS.find((c) => c.id === comboId)) {
+    return NextResponse.json(
+      {
+        error: `unknown combo id ${comboId}`,
+        supported_combos: HIGH_VALUE_COMBOS.map((c) => c.id),
+      },
+      { status: 404, headers: corsHeaders },
+    );
+  }
   const out = await buildResponse({ comboId, inputs, recentSalesN });
   if ("error" in out) {
     return NextResponse.json({ error: out.error }, { status: 500, headers: corsHeaders });
@@ -246,17 +371,9 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: corsHeaders },
     );
   }
-  const combo = matchCombo(b.traits);
-  if (!combo) {
-    return NextResponse.json(
-      {
-        combo_id: null,
-        message: "Traits do not match any canonical combo we track.",
-        supported: HIGH_VALUE_COMBOS.map((c) => ({ id: c.id, name: c.name })),
-      },
-      { headers: corsHeaders },
-    );
-  }
+  const traits = b.traits
+    .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+    .map((t) => t.trim());
   const inputs: Inputs = {
     age: parseAge(typeof b.age === "string" ? b.age : null),
     sex: parseSex(typeof b.sex === "string" ? b.sex : null),
@@ -268,16 +385,19 @@ export async function POST(req: NextRequest) {
     10,
   );
 
-  const out = await buildResponse({
-    comboId: combo.id,
-    inputs,
-    recentSalesN,
-    matchedFromTraits: combo,
-  });
+  // Trait-set mode (default) — always answers, not limited to 12 combos.
+  // Also report whether the traits happened to match one of the canonical
+  // combos so the Geck Inspect card can show "Lilly White × Axanthic" as
+  // a name when applicable.
+  const matched = matchCombo(traits);
+  const out = await buildTraitResponse({ traits, inputs, recentSalesN });
   if ("error" in out) {
     return NextResponse.json({ error: out.error }, { status: 500, headers: corsHeaders });
   }
-  return NextResponse.json(out.body, { headers: corsHeaders });
+  return NextResponse.json(
+    { ...out.body, matched: matched ?? null },
+    { headers: corsHeaders },
+  );
 }
 
 function numOrNull(v: unknown): number | null {
