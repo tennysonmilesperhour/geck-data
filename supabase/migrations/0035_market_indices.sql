@@ -1,5 +1,5 @@
 -- ============================================================================
--- Geck Data 0034: composite anchor-morph sub-indices + combo daily history.
+-- Geck Data 0035: composite anchor-morph sub-indices + combo daily history.
 --
 -- Activates the previously-stubbed v_market_sub_index RPC (was referenced
 -- by src/lib/market/queries.ts and always returned the empty state) and

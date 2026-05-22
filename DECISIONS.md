@@ -49,7 +49,7 @@ per-seller narrowing).
 
 Commits: `phase 2: indices, sub-indices, methodology`.
 
-- Migration `0034_market_indices.sql`. Lands the previously-stubbed
+- Migration `0035_market_indices.sql`. Lands the previously-stubbed
   `v_market_sub_index` (the four-up anchor morph tile on `/market`
   had been rendering empty since `fetchMarketSubIndices` returned
   the "not implemented" state). Also adds:
@@ -161,16 +161,27 @@ watchlist link`, `phase 4: /sellers narrows by combos URL param`.
 - Per-combo cross-filter handlers on the trait ridge / geo /
   velocity widgets. Substrate ready (see Phase 3 deferred).
 - Sparkline column on `RankedCombosTable`. Backed by
-  `combo_index_daily` if migration 0034 is applied; the wiring
+  `combo_index_daily` if migration 0035 is applied; the wiring
   was not bundled into this pass.
 
 ### Operational notes for the next session
 
-- **Migration 0034 needs to be applied to prod** for `/indices`
-  and the four-up anchor tiles on `/market` to render real data.
-  Either run via the `apply-migrations.yml` workflow, or via the
-  Supabase SQL editor. Refresh the materialised view nightly via
-  `select public.refresh_combo_index_daily();`.
+- **Migration 0035 has been applied to prod** (2026-05-22, via the
+  Supabase MCP `apply_migration` tool as `0035_market_indices`).
+  The file was renamed from `0034_market_indices.sql` to
+  `0035_market_indices.sql` to avoid a prefix collision with the
+  pre-existing `0034_trait_vocabulary_and_price_band` migration
+  that landed earlier in the day. The new views and the
+  materialised view all return real rows; the sample is sparse
+  (~5 combo-day rows, one week per anchor) because the
+  sold-events stream itself is thin. Anchor tiles will stay
+  empty-state until at least two weeks of sold events accumulate
+  per anchor (the fetcher in `src/lib/market/queries.ts` rejects
+  single-week anchors as uninformative). Refresh
+  `combo_index_daily` nightly via
+  `select public.refresh_combo_index_daily();` from the Supabase
+  SQL editor or a scheduled GH Action; the function is
+  SECURITY DEFINER so it runs with sufficient privileges.
 - The Vercel production deploy at `geck-data.vercel.app` (custom
   domain `geckintellect.geckinspect.com`) updates on every push to
   main; the audit branch `claude/market-analytics-visualization-zHvqT`

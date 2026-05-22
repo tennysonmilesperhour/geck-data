@@ -126,7 +126,7 @@ export async function fetchMarketIndex(
 }
 
 // ----------------------------------------------------------------------------
-// Market Sub-Indices — v_market_sub_index(window_days), 0034
+// Market Sub-Indices — v_market_sub_index(window_days), 0035
 // ----------------------------------------------------------------------------
 type SubIndexRow = {
   anchor: string;

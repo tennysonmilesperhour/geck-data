@@ -136,7 +136,7 @@ export default function MethodologyPage() {
         </p>
         <p className="mt-2 text-sm text-ink-300">
           A listing can contribute to multiple anchors. The view is
-          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_market_sub_index</code> (migration 0034).
+          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_market_sub_index</code> (migration 0035).
         </p>
       </Panel></section>
 
@@ -146,7 +146,7 @@ export default function MethodologyPage() {
           dozen canonical high-value combos. Powered by the materialised
           view{" "}
           <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">combo_index_daily</code>{" "}
-          (migration 0034), refreshed nightly. The summary view{" "}
+          (migration 0035), refreshed nightly. The summary view{" "}
           <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_combo_index_summary</code>{" "}
           adds 7d / 30d / 90d deltas.
         </p>

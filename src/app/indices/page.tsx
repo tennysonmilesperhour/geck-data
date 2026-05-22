@@ -4,7 +4,7 @@
 // Cappuccino) at the top with current value, 7d / 30d delta, and a
 // 26-week sparkline. Below, every canonical high-value combo with its
 // own current value + 7d / 30d / 90d deltas, sourced from the
-// v_combo_index_summary view (migration 0034).
+// v_combo_index_summary view (migration 0035).
 //
 // Server-rendered. URL state preserved for cross-page nav.
 import Link from "next/link";
@@ -193,7 +193,7 @@ export default async function IndicesPage({
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {anchors.length === 0 ? (
           <div className="col-span-full rounded-md border border-dashed border-ink-700 bg-ink-850 p-6 text-center text-sm text-ink-400">
-            Sub-index view is empty. Run migration 0034 or refresh
+            Sub-index view is empty. Run migration 0035 or refresh
             v_market_sub_index source data.
           </div>
         ) : (
@@ -236,7 +236,7 @@ export default async function IndicesPage({
       >
         {comboData.length === 0 ? (
           <div className="p-6 text-center text-sm text-ink-400">
-            combo_index_daily is empty. Apply migration 0034 and refresh
+            combo_index_daily is empty. Apply migration 0035 and refresh
             the materialised view (refresh_combo_index_daily()).
           </div>
         ) : (
