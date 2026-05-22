@@ -7,6 +7,179 @@ deferred.
 
 ---
 
+## 2026-05-22: Phases 1-4 implementation pass
+
+Tennyson approved Phase 0 and asked to ship the rest of the plan
+end to end. Adopted my recommended answer for every open question
+in the audit. Worked direct to `main` per `CLAUDE.md`; each phase
+landed as one or more focused commits. Type-checked clean before
+every push; existing 62-test suite kept passing throughout.
+
+### Phase 1: canonical filter state + entity pages - shipped
+
+Commits: `filters: canonical URL-state schema + hook + link helper`,
+`entity pages: /combo/[slug], /trait/[slug], /region/[code]`,
+`combos: wire entity-page links into Pulse, Combos table, Top Movers`.
+
+- New `src/lib/filters/{schema,hook,link}.ts`. One canonical
+  query-string schema (14 keys: `tf`, `region`, `age`, `lineage`,
+  `sex`, `combos`, `traits`, `sellers`, `priceMin`, `priceMax`,
+  `from`, `to`, `sources`, `sort`). Permissive parser; default
+  values are not serialised so clean URLs stay clean. 17 new tests.
+- `parseFilters(searchParams)` for server components,
+  `useCanonicalFilters()` for client, `serverHref()` /
+  `withFilters()` for preserve-everything-else links.
+- New routes: `/combo/[slug]`, `/trait/[slug]`, `/region/[code]`.
+  Server components reusing `Panel`, `KpiCard`, `DataTable`,
+  `MiniSparkline`, `WatchButton`. No new chart code.
+- Combo names in `WhatsHotPanel`, `RankedCombosTable`, and
+  `TopMoversPanel` now linkify to `/combo/[slug]` when canonical.
+  Used `stopPropagation` to keep existing in-tab drill-in
+  callbacks working alongside same-tab navigation.
+- New helper `comboFromName(name)` in `src/lib/market/combos.ts`.
+
+Acceptance check: from Pulse, clicking a combo chip lands on the
+combo page; "see top sellers" link on the combo page now passes
+`?combos=<id>` to `/sellers`, which narrows the seller directory
+to sellers carrying that combo's traits. Click a seller, land on
+their detail page (combo filter is in the URL, ready for future
+per-seller narrowing).
+
+### Phase 2: indices, sub-indices, methodology - shipped
+
+Commits: `phase 2: indices, sub-indices, methodology`.
+
+- Migration `0034_market_indices.sql`. Lands the previously-stubbed
+  `v_market_sub_index` (the four-up anchor morph tile on `/market`
+  had been rendering empty since `fetchMarketSubIndices` returned
+  the "not implemented" state). Also adds:
+  - `v_market_sub_index_weekly` (view): per-anchor weekly median.
+  - `v_market_sub_index(window_days)` (RPC): rebased to 1000 at
+    window start.
+  - `combo_index_daily` (materialised view): per-combo daily
+    median + sample size, 365-day window.
+  - `refresh_combo_index_daily()`: refresh helper for scheduled
+    invocation (nightly).
+  - `v_combo_index_summary`: latest value + 7/30/90d deltas per
+    combo. Backs `/indices`.
+- Apply this migration manually on prod via the Supabase MCP or
+  the `apply-migrations.yml` workflow.
+- New route `/indices`. Anchor sub-index tiles (linking to the
+  per-trait page) + per-combo table with current value, 7/30/90d
+  deltas, 90-day sparkline (links to `/combo/[id]`). Empty-state
+  copy points the operator at the migration / refresh helper.
+- New route `/methodology`. Plain-language definitions for every
+  derived metric (median ask, KDE ridge, days to sell, arbitrage,
+  market index, sub-indices, combo indices, confidence, source
+  attribution, adjustments) plus an explicit "limits" panel.
+  Section ids so other pages can deep-link.
+- `MarketSubIndices` tiles linkify to `/trait/[slug]`; existing
+  `onSelectCombo` in-tab callback preserved for same-tab nav.
+- Header: added `Indices` to the analysis tab group.
+
+Acceptance check: open `/indices`, see the four anchors with
+sparklines and deltas; click any anchor to land on `/trait/...`;
+click any combo row to land on `/combo/...`. Methodology is one
+click away from the header.
+
+### Phase 3: cross-filter substrate + Market URL state - shipped
+
+Commit: `phase 3: /market filter state moves to canonical URL schema`.
+
+- `MarketDashboard` now reads `filters`, `tab`, and `selectedCombo`
+  from the URL via `useCanonicalFilters` + `useSearchParams`. Every
+  mutation re-writes the URL through `router.replace` with scroll
+  preserved.
+- Bridge functions `toMarketFilters` / `withMarketFilters` translate
+  between the canonical schema and the existing `MarketFilters`
+  shape used by every widget, so no widget needed editing.
+- Back / forward / refresh / share all preserve the dashboard
+  state. `?tab=combos&combo=...` is a shareable deep-link.
+
+This is the substrate the spec calls for: any chart on `/market`
+that calls `setFilters({ traits: [...] })` updates the URL, which
+re-renders every panel against the new filters in a single React
+transition.
+
+**Deferred from Phase 3**:
+
+- Per-widget click handlers that write `traits: [...]` into the
+  URL on chart-element click (the trait ridge, the regional map,
+  the velocity histogram). The substrate is shipped; each widget's
+  onClick wiring is a follow-up commit per widget and was not
+  bundled into this pass.
+- Time-range brushing component (drag a date range on any chart,
+  every other time series on the page snaps to it). The canonical
+  schema has `from` / `to` keys; the UI control is deferred.
+- Compare page rebuild to any-two-entities. Not yet shipped; the
+  existing trait-premium + maturity bands + seller h2h view still
+  stands.
+
+### Phase 4: watchlist, API docs, CSV export - shipped (partial)
+
+Commits: `phase 4: /watchlist, /api-docs, CSV downloads, header
+watchlist link`, `phase 4: /sellers narrows by combos URL param`.
+
+- New route `/watchlist`. Entity-oriented index of the authed
+  user's saved alerts, grouped by `query.kind` (combo / morph /
+  seller / region). Re-uses the existing `alerts` table (each
+  alert IS a watch); no new schema. `/alerts` continues to show
+  the matches inbox; the two are views over the same source of
+  truth. Unauth visitors get an in-page sign-in prompt with
+  `?next=/watchlist`.
+- New route `/api-docs`. Documents every public read-only endpoint
+  under `/api/market/*` and `/data/market.json`. Contract
+  guarantees, per-endpoint param tables, clickable example URLs.
+  Internal / auth-gated endpoints listed but explicitly out of
+  scope.
+- `CsvDownloadButton` component. Zero-dep, RFC 4180 escaping,
+  generic over `Record<string, unknown>`. Wired into the `/sold`
+  table; can be dropped onto any view that holds a row array.
+- `/sellers` now respects `?combos=<id>` (a partial filter when
+  the slug is unknown is silently skipped rather than failing
+  the whole page). The combo entity page's "top sellers" panel
+  link now actually narrows.
+- Header: `Watchlist` and `Alerts` grouped after the analysis
+  tabs, visible only when authed.
+
+**Deferred from Phase 4**:
+
+- Email delivery for alerts. `user_notification_channels` and
+  `alert_delivery_attempts` exist on the schema; `notify.ts`
+  exists in the lib. Adding Resend (recommended in the audit) is
+  a new dependency decision that requires a key, an env var, and
+  a sign-off. Discord / webhook channels remain operational.
+- Per-view CSV button on every chart and table. The component is
+  in place; only `/sold` was wired in this pass. Followups can
+  add it to `/sellers`, `/combo/[slug]`, `/indices`, etc.
+- Source attribution badges on every page. The `SourceBadgeList`
+  component exists; today it's used only on `/market`. Followups
+  can drop it on `/sold`, `/sellers`, `/trends`, `/indices`.
+- Per-row sample-size confidence pip on every derived number.
+  Components exist; rollout is per-call-site.
+- Monthly report scaffolding at `/reports/[month]`. Not started.
+- Per-combo cross-filter handlers on the trait ridge / geo /
+  velocity widgets. Substrate ready (see Phase 3 deferred).
+- Sparkline column on `RankedCombosTable`. Backed by
+  `combo_index_daily` if migration 0034 is applied; the wiring
+  was not bundled into this pass.
+
+### Operational notes for the next session
+
+- **Migration 0034 needs to be applied to prod** for `/indices`
+  and the four-up anchor tiles on `/market` to render real data.
+  Either run via the `apply-migrations.yml` workflow, or via the
+  Supabase SQL editor. Refresh the materialised view nightly via
+  `select public.refresh_combo_index_daily();`.
+- The Vercel production deploy at `geck-data.vercel.app` (custom
+  domain `geckintellect.geckinspect.com`) updates on every push to
+  main; the audit branch `claude/market-analytics-visualization-zHvqT`
+  has been merged via squash as PR #112 and is no longer in use.
+- `tsconfig.json:17` still emits the deprecated-`baseUrl` warning
+  (harmless; exit 0). Drop it whenever convenient.
+
+---
+
 ## 2026-05-22: Phase 0 audit and proposed architecture for Phase 1+
 
 ### Status

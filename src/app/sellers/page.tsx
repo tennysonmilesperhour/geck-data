@@ -18,6 +18,8 @@ import SellerInitials from "@/components/sellers/SellerInitials";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import DataFreshness from "@/components/ui/DataFreshness";
 import { getSellerDailyActivity } from "@/lib/sellers/activity";
+import { parseFilters } from "@/lib/filters/link";
+import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,12 @@ type SellerRow = Seller & {
   seller_rating_score: number | null;
 };
 
-export default async function SellersPage() {
+export default async function SellersPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const filters = parseFilters(searchParams);
   const supabase = createClient();
   const { data, error } = await supabase
     .from("market_sellers")
@@ -45,7 +52,39 @@ export default async function SellersPage() {
     );
   }
 
-  const rows = (data ?? []) as SellerRow[];
+  let rows = (data ?? []) as SellerRow[];
+
+  // When the user arrived here from a combo entity page (or any link
+  // that passed &combos=...), narrow to sellers who currently list at
+  // least one matching listing. Best-effort: we query a counts-per-
+  // seller view scoped to combo trait tokens. If any combo slug is
+  // unknown, it is silently skipped rather than failing the whole
+  // page; a partial filter is still useful.
+  const focusedCombos = filters.combos
+    .map((slug) => HIGH_VALUE_COMBOS.find((c) => c.id === slug))
+    .filter((c): c is (typeof HIGH_VALUE_COMBOS)[number] => Boolean(c));
+
+  let filterSummary: string | null = null;
+  if (focusedCombos.length > 0) {
+    const sellerIds = new Set<string>();
+    for (const combo of focusedCombos) {
+      let q = supabase
+        .from("market_listings")
+        .select("seller_id")
+        .eq("current_status", "live")
+        .not("seller_id", "is", null)
+        .limit(5000);
+      for (const t of combo.traits) {
+        q = q.ilike("cached_traits", `%${t}%`);
+      }
+      const { data: matches } = await q;
+      for (const m of (matches ?? []) as Array<{ seller_id: string | null }>) {
+        if (m.seller_id) sellerIds.add(m.seller_id);
+      }
+    }
+    rows = rows.filter((r) => sellerIds.has(r.seller_id));
+    filterSummary = `Filtered to sellers carrying ${focusedCombos.map((c) => c.display).join(" or ")}`;
+  }
   const totalInv = rows.reduce((a, r) => a + (r.total_listings ?? 0), 0);
   const avgPriceAll =
     rows.reduce((a, r) => a + (r.avg_price ?? 0) * (r.total_listings ?? 0), 0) /
@@ -138,7 +177,11 @@ export default async function SellersPage() {
       <SectionHeader
         eyebrow="Directory"
         title="Every breeder, ranked"
-        description={`${fmtInt(rows.length)} sellers tracked across the catalog. The top six are spotlighted below; the rest are sortable in the table. Click any name for their full history.`}
+        description={
+          filterSummary
+            ? `${filterSummary}. ${fmtInt(rows.length)} sellers match.`
+            : `${fmtInt(rows.length)} sellers tracked across the catalog. The top six are spotlighted below; the rest are sortable in the table. Click any name for their full history.`
+        }
         right={<DataFreshness updatedAt={Date.now()} window="30 days" />}
       />
 
