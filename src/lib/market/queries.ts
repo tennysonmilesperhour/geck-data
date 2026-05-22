@@ -126,12 +126,74 @@ export async function fetchMarketIndex(
 }
 
 // ----------------------------------------------------------------------------
-// Market Sub-Indices — no SQL view exists for these yet.
+// Market Sub-Indices — v_market_sub_index(window_days), 0034
 // ----------------------------------------------------------------------------
+type SubIndexRow = {
+  anchor: string;
+  week_start: string;
+  value: number | string | null;
+  median_price: number | string | null;
+  n: number | string;
+};
+
 export async function fetchMarketSubIndices(
-  _filters: Filters,
+  filters: Filters,
 ): Promise<QueryResult<MarketSubIndex[] | null>> {
-  return empty(null, "v_market_sub_index not implemented");
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("v_market_sub_index", {
+      window_days: windowDays(filters),
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as SubIndexRow[];
+    if (rows.length === 0) {
+      return empty(null, "v_market_sub_index returned no rows");
+    }
+    const byAnchor = new Map<string, MarketSubIndex>();
+    const seriesAcc = new Map<string, Array<{ t: string; v: number }>>();
+    const nAcc = new Map<string, number>();
+    for (const r of rows) {
+      if (r.value == null) continue;
+      const v = Math.round(Number(r.value));
+      const seriesRow = { t: r.week_start.slice(0, 7), v };
+      const arr = seriesAcc.get(r.anchor) ?? [];
+      arr.push(seriesRow);
+      seriesAcc.set(r.anchor, arr);
+      nAcc.set(r.anchor, (nAcc.get(r.anchor) ?? 0) + Number(r.n ?? 0));
+    }
+    const ALLOWED: ReadonlyArray<MarketSubIndex["morph"]> = [
+      "Lilly White",
+      "Harlequin",
+      "Axanthic",
+      "Cappuccino",
+    ];
+    for (const [anchor, series] of seriesAcc) {
+      if (series.length < 2) continue;
+      if (!ALLOWED.includes(anchor as MarketSubIndex["morph"])) continue;
+      const value = series[series.length - 1]!.v;
+      const start = series[0]!.v;
+      const deltaPct = start === 0 ? 0 : ((value - start) / start) * 100;
+      byAnchor.set(anchor, {
+        morph: anchor as MarketSubIndex["morph"],
+        value,
+        deltaPct,
+        series,
+        attribution: {
+          sources: confidenceSources(filters),
+          confidence: { score: Math.min(99, 20 + Math.min(40, nAcc.get(anchor) ?? 0)) },
+        },
+      });
+    }
+    const out = Array.from(byAnchor.values());
+    if (out.length === 0) return empty(null, "no anchors with enough weeks");
+    out.sort(
+      (a, b) =>
+        ALLOWED.indexOf(a.morph) - ALLOWED.indexOf(b.morph),
+    );
+    return ok(out, `v_market_sub_index(${windowDays(filters)}d)`);
+  } catch (e) {
+    return empty(null, `fetchMarketSubIndices error: ${errMsg(e)}`);
+  }
 }
 
 // ----------------------------------------------------------------------------

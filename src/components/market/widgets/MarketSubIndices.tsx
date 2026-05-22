@@ -2,16 +2,16 @@
 // 4-up small multiples sitting below the headline Market Index. Each
 // tile shows one anchor-morph sub-index (Lilly White / Harlequin /
 // Axanthic / Cappuccino) at a glance: current value, delta over the
-// window, a compact area chart, and a click-through that filters the
-// dashboard to that combo.
-//
-// This is the "small multiples" idiom from Tufte / Bloomberg sector
-// boards: same shape across multiple series so the viewer's eye can
-// compare slopes without rescaling between cards.
+// window, a compact area chart, and a click-through to the per-trait
+// entity page. The optional onSelectCombo callback (left in for
+// callers that still want in-tab drill-in) wraps the tile body via
+// stopPropagation so cmd-click and same-tab nav both work.
+import Link from "next/link";
 import { AreaChart } from "@/components/market/charts/InlineCharts";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
+import { slugifyTrait } from "@/lib/filters/schema";
 import type { MarketSubIndex } from "@/lib/market/widget-types";
 
 export default function MarketSubIndices({
@@ -50,14 +50,20 @@ export default function MarketSubIndices({
           const arrow = positive ? "▲" : "▼";
           const lineColor = positive ? "#7bbf83" : "#d76d62";
           return (
-            <button
+            <Link
               key={sub.morph}
-              type="button"
-              onClick={
-                onSelectCombo ? () => onSelectCombo(sub.morph) : undefined
-              }
+              href={`/trait/${slugifyTrait(sub.morph)}`}
+              onClick={(e) => {
+                if (onSelectCombo) {
+                  // Honor the in-tab drill-in only when the user is
+                  // not asking for new-tab / external navigation.
+                  if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
+                    onSelectCombo(sub.morph);
+                  }
+                }
+              }}
               className="forest-surface-soft group rounded-lg p-3 text-left transition hover:border-ready/40"
-              title={`Open ${sub.morph} in the Combos tab`}
+              title={`Open ${sub.morph} - per-trait page`}
             >
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-forest-300">
@@ -81,7 +87,7 @@ export default function MarketSubIndices({
                   height={70}
                 />
               </div>
-            </button>
+            </Link>
           );
         })}
       </div>
