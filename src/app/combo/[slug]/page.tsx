@@ -22,6 +22,7 @@ import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import WatchButton from "@/components/alerts/WatchButton";
+import { anchorOf, paletteFor } from "@/lib/market/anchors";
 
 export const dynamic = "force-dynamic";
 
@@ -357,8 +358,31 @@ export default async function ComboPage({
     },
   ];
 
+  const anchorPalette = paletteFor(
+    anchorOf(combo.display) ?? anchorOf(combo.traits.join(" ")),
+  );
+
   return (
     <div className="page-rise space-y-8">
+      {anchorPalette ? (
+        <div
+          className="rounded-xl border border-ink-700/60 px-4 py-3"
+          style={{
+            backgroundImage: `linear-gradient(120deg, ${anchorPalette.soft} 0%, transparent 70%)`,
+            borderLeft: `4px solid ${anchorPalette.hex}`,
+          }}
+        >
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span
+              className="font-mono text-[10px] uppercase tracking-[0.16em]"
+              style={{ color: anchorPalette.text }}
+            >
+              Anchor family
+            </span>
+            <span className="text-sm text-ink-100">{anchorPalette.key}</span>
+          </div>
+        </div>
+      ) : null}
       <SectionHeader
         eyebrow="Combo / Entity"
         title={combo.display}
@@ -418,7 +442,13 @@ export default async function ComboPage({
           </p>
         ) : (
           <div className="flex items-center justify-between gap-4">
-            <MiniSparkline values={priceSpark} width={420} height={64} fill />
+            <MiniSparkline
+              values={priceSpark}
+              width={420}
+              height={64}
+              fill
+              color={anchorPalette?.hex}
+            />
             <div className="text-right font-mono text-xs text-ink-400">
               <div>Earliest: {fmtUsd(priceSpark[0] ?? 0)}</div>
               <div>Latest: {fmtUsd(priceSpark[priceSpark.length - 1] ?? 0)}</div>

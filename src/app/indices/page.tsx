@@ -16,6 +16,7 @@ import KpiCard from "@/components/ui/KpiCard";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { serverHref } from "@/lib/filters/link";
+import { paletteFor, anchorOf, type AnchorKey } from "@/lib/market/anchors";
 
 export const dynamic = "force-dynamic";
 
@@ -117,14 +118,26 @@ export default async function IndicesPage({
     {
       key: "combo",
       header: "Combo",
-      render: (r) => (
-        <Link
-          href={serverHref(`/combo/${r.combo_id}`, searchParams)}
-          className="text-ink-100 hover:text-claude-glow"
-        >
-          {r.display}
-        </Link>
-      ),
+      render: (r) => {
+        const anchor = anchorOf(r.display);
+        const palette = paletteFor(anchor);
+        return (
+          <span className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="inline-block h-3 w-3 rounded-sm"
+              style={{ background: palette?.hex ?? "#447256", opacity: 0.85 }}
+              title={anchor ?? "unclassified"}
+            />
+            <Link
+              href={serverHref(`/combo/${r.combo_id}`, searchParams)}
+              className="text-ink-100 hover:text-claude-glow"
+            >
+              {r.display}
+            </Link>
+          </span>
+        );
+      },
     },
     {
       key: "value",
@@ -158,12 +171,18 @@ export default async function IndicesPage({
       key: "spark",
       header: "90d trend",
       align: "right",
-      render: (r) =>
-        r.spark.length > 1 ? (
-          <MiniSparkline values={r.spark} width={120} height={26} />
-        ) : (
-          <span className="text-ink-600">—</span>
-        ),
+      render: (r) => {
+        if (r.spark.length <= 1) return <span className="text-ink-600">—</span>;
+        const palette = paletteFor(anchorOf(r.display));
+        return (
+          <MiniSparkline
+            values={r.spark}
+            width={120}
+            height={26}
+            color={palette?.hex}
+          />
+        );
+      },
     },
     {
       key: "n",
@@ -197,35 +216,58 @@ export default async function IndicesPage({
             v_market_sub_index source data.
           </div>
         ) : (
-          anchors.map((a) => (
-            <Link
-              key={a.name}
-              href={serverHref(`/trait/${a.name.toLowerCase().replace(/\s+/g, "-")}`, searchParams)}
-              className="rounded-lg border border-ink-700 bg-ink-800 p-4 shadow-panel transition hover:border-claude/40"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-400">
-                  {a.name}
-                </span>
-                <span
-                  className={`font-mono text-[11px] tabular-nums ${
-                    a.delta >= 0 ? "text-ready" : "text-danger"
-                  }`}
-                >
-                  {a.delta >= 0 ? "▲" : "▼"} {Math.abs(a.delta).toFixed(1)}%
-                </span>
-              </div>
-              <div className="mt-1 font-display text-[24px] font-medium tabular-nums text-ink-50">
-                {Math.round(a.current).toLocaleString()}
-              </div>
-              <div className="mt-2 -mx-1">
-                <MiniSparkline values={a.series} width={220} height={56} fill />
-              </div>
-              <div className="mt-1 text-[10px] text-ink-500">
-                rebased to 1000 at window start · 180d
-              </div>
-            </Link>
-          ))
+          anchors.map((a) => {
+            const palette = paletteFor(a.name as AnchorKey);
+            const accent = palette?.hex ?? "#0e9a73";
+            const labelTint = palette?.text ?? "#aebfb5";
+            const bgTint = palette?.soft ?? "transparent";
+            return (
+              <Link
+                key={a.name}
+                href={serverHref(`/trait/${a.name.toLowerCase().replace(/\s+/g, "-")}`, searchParams)}
+                className="relative overflow-hidden rounded-lg border border-ink-700 bg-ink-800 p-4 shadow-panel transition hover:border-ink-600"
+                style={{
+                  backgroundImage: `linear-gradient(135deg, ${bgTint} 0%, transparent 65%)`,
+                }}
+              >
+                <div
+                  aria-hidden
+                  className="absolute inset-y-0 left-0 w-1"
+                  style={{ background: accent, opacity: 0.9 }}
+                />
+                <div className="relative flex items-baseline justify-between gap-2">
+                  <span
+                    className="font-mono text-[10px] uppercase tracking-[0.14em]"
+                    style={{ color: labelTint }}
+                  >
+                    {a.name}
+                  </span>
+                  <span
+                    className={`font-mono text-[11px] tabular-nums ${
+                      a.delta >= 0 ? "text-ready" : "text-danger"
+                    }`}
+                  >
+                    {a.delta >= 0 ? "▲" : "▼"} {Math.abs(a.delta).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="relative mt-1 font-display text-[24px] font-medium tabular-nums text-ink-50">
+                  {Math.round(a.current).toLocaleString()}
+                </div>
+                <div className="relative mt-2 -mx-1">
+                  <MiniSparkline
+                    values={a.series}
+                    width={220}
+                    height={56}
+                    fill
+                    color={accent}
+                  />
+                </div>
+                <div className="relative mt-1 text-[10px] text-ink-500">
+                  rebased to 1000 at window start · 180d
+                </div>
+              </Link>
+            );
+          })
         )}
       </section>
 

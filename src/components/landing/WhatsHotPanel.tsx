@@ -12,6 +12,7 @@ import MorphTerm from "@/components/morphs/MorphTerm";
 import PopulationBadge from "@/components/morphs/PopulationBadge";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { comboFromName } from "@/lib/market/combos";
+import { anchorOf, paletteFor } from "@/lib/market/anchors";
 import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
@@ -67,6 +68,10 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
             const widthPct = Math.max(4, (total / maxVolume) * 100);
             const isSelected = selectedCombos.has(combo.combo_name);
             const isHovered = hoveredCombo === combo.combo_name;
+            const anchor = anchorOf(combo.combo_name);
+            const palette = paletteFor(anchor);
+            const barColor = palette?.hex ?? "#0e9a73";
+            const barSoft = palette?.soft ?? "rgba(16,185,129,0.08)";
             return (
               <li key={combo.combo_name}>
                 <button
@@ -76,27 +81,29 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                   onMouseLeave={() => setHoveredCombo(null)}
                   className={`group relative block w-full rounded-md border px-3 py-2.5 text-left transition ${
                     isSelected
-                      ? "border-emerald-500/60 bg-emerald-500/[0.08]"
+                      ? "bg-ink-800/60"
                       : isHovered
-                        ? "border-emerald-500/30 bg-ink-800/60"
-                        : "border-ink-700/60 bg-ink-900/40 hover:border-emerald-500/30 hover:bg-ink-800/60"
+                        ? "bg-ink-800/60"
+                        : "bg-ink-900/40 hover:bg-ink-800/60"
                   }`}
+                  style={{
+                    borderColor: isSelected ? barColor : isHovered ? `${barColor}88` : "rgba(35,68,54,0.6)",
+                  }}
                 >
-                  {/* Gradient bar lives in its own overflow-hidden wrapper
-                      so the rounded clipping keeps the gradient tidy
-                      WITHOUT also clipping the MorphTerm hover tooltip
-                      that needs to extend below the button bounds. */}
                   <span
                     aria-hidden
                     className="pointer-events-none absolute inset-0 overflow-hidden rounded-md"
                   >
                     <span
-                      className={`absolute inset-y-0 left-0 transition-all ${
-                        isSelected
-                          ? "bg-gradient-to-r from-emerald-500/15 to-emerald-500/0"
-                          : "bg-gradient-to-r from-emerald-500/[0.06] to-emerald-500/0"
-                      }`}
-                      style={{ width: `${widthPct}%` }}
+                      className="absolute inset-y-0 left-0 transition-all"
+                      style={{
+                        width: `${widthPct}%`,
+                        backgroundImage: `linear-gradient(90deg, ${barSoft} 0%, transparent 100%)`,
+                      }}
+                    />
+                    <span
+                      className="absolute inset-y-0 left-0 w-[3px]"
+                      style={{ background: barColor, opacity: isSelected ? 1 : 0.7 }}
                     />
                   </span>
                   <div className="relative flex items-center justify-between gap-3">
@@ -128,6 +135,7 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                             width={80}
                             height={20}
                             fill
+                            color={palette?.hex}
                           />
                         </span>
                       ) : null}

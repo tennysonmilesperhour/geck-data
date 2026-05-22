@@ -14,6 +14,7 @@ import LivePreviewTag, {
 import MorphTerm from "@/components/morphs/MorphTerm";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { comboFromName } from "@/lib/market/combos";
+import { anchorOf, paletteFor } from "@/lib/market/anchors";
 import type { ComboRow, ComboRankSort } from "@/lib/market/widget-types";
 
 export default function RankedCombosTable({
@@ -111,19 +112,33 @@ export default function RankedCombosTable({
                   <td className="px-3 py-3 align-top">
                     {(() => {
                       const canonical = comboFromName(r.combo);
-                      return canonical ? (
-                        <Link
-                          href={`/combo/${canonical.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="font-medium text-forest-50 hover:text-claude-glow"
-                        >
-                          <MorphTerm name={r.combo} />
-                        </Link>
-                      ) : (
-                        <MorphTerm name={r.combo} className="font-medium text-forest-50" />
+                      const palette = paletteFor(anchorOf(r.combo));
+                      return (
+                        <span className="flex items-center gap-2">
+                          <span
+                            aria-hidden
+                            className="inline-block h-3 w-3 shrink-0 rounded-sm"
+                            style={{
+                              background: palette?.hex ?? "#447256",
+                              opacity: 0.9,
+                            }}
+                            title={palette?.key ?? "unclassified"}
+                          />
+                          {canonical ? (
+                            <Link
+                              href={`/combo/${canonical.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="font-medium text-forest-50 hover:text-claude-glow"
+                            >
+                              <MorphTerm name={r.combo} />
+                            </Link>
+                          ) : (
+                            <MorphTerm name={r.combo} className="font-medium text-forest-50" />
+                          )}
+                        </span>
                       );
                     })()}
-                    <div className="font-mono text-[10px] text-forest-500">
+                    <div className="ml-5 font-mono text-[10px] text-forest-500">
                       {r.traits[0]} · {r.traits[1]}
                     </div>
                   </td>
@@ -154,7 +169,12 @@ export default function RankedCombosTable({
                   </td>
                   <td className="px-3 py-3 text-right align-top">
                     {r.spark && r.spark.length > 1 ? (
-                      <MiniSparkline values={r.spark} width={88} height={22} />
+                      <MiniSparkline
+                        values={r.spark}
+                        width={88}
+                        height={22}
+                        color={paletteFor(anchorOf(r.combo))?.hex}
+                      />
                     ) : (
                       <span className="text-forest-600">—</span>
                     )}

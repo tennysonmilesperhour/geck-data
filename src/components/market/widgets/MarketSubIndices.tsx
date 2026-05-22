@@ -2,16 +2,15 @@
 // 4-up small multiples sitting below the headline Market Index. Each
 // tile shows one anchor-morph sub-index (Lilly White / Harlequin /
 // Axanthic / Cappuccino) at a glance: current value, delta over the
-// window, a compact area chart, and a click-through to the per-trait
-// entity page. The optional onSelectCombo callback (left in for
-// callers that still want in-tab drill-in) wraps the tile body via
-// stopPropagation so cmd-click and same-tab nav both work.
+// window, a compact area chart in the anchor's signature colour, and
+// a click-through to the per-trait entity page.
 import Link from "next/link";
 import { AreaChart } from "@/components/market/charts/InlineCharts";
 import LivePreviewTag, {
   type LivePreviewStatus,
 } from "@/components/market/LivePreviewTag";
 import { slugifyTrait } from "@/lib/filters/schema";
+import { paletteFor, type AnchorKey } from "@/lib/market/anchors";
 import type { MarketSubIndex } from "@/lib/market/widget-types";
 
 export default function MarketSubIndices({
@@ -48,25 +47,37 @@ export default function MarketSubIndices({
           const positive = sub.deltaPct >= 0;
           const deltaColor = positive ? "text-ready" : "text-danger";
           const arrow = positive ? "▲" : "▼";
-          const lineColor = positive ? "#7bbf83" : "#d76d62";
+          const palette = paletteFor(sub.morph as AnchorKey);
+          const lineColor = palette?.hex ?? (positive ? "#7bbf83" : "#d76d62");
+          const bgTint = palette?.soft ?? "transparent";
+          const labelTint = palette?.text ?? "#cdd7d0";
           return (
             <Link
               key={sub.morph}
               href={`/trait/${slugifyTrait(sub.morph)}`}
               onClick={(e) => {
                 if (onSelectCombo) {
-                  // Honor the in-tab drill-in only when the user is
-                  // not asking for new-tab / external navigation.
                   if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
                     onSelectCombo(sub.morph);
                   }
                 }
               }}
-              className="forest-surface-soft group rounded-lg p-3 text-left transition hover:border-ready/40"
+              className="forest-surface-soft group relative overflow-hidden rounded-lg p-3 text-left transition hover:border-ready/40"
+              style={{
+                backgroundImage: `linear-gradient(135deg, ${bgTint} 0%, transparent 70%)`,
+              }}
               title={`Open ${sub.morph} - per-trait page`}
             >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-forest-300">
+              <div
+                aria-hidden
+                className="absolute inset-y-0 left-0 w-1"
+                style={{ background: lineColor, opacity: 0.85 }}
+              />
+              <div className="relative flex items-baseline justify-between gap-2">
+                <span
+                  className="font-mono text-[10px] uppercase tracking-[0.12em]"
+                  style={{ color: labelTint }}
+                >
                   {sub.morph}
                 </span>
                 <span
@@ -76,7 +87,7 @@ export default function MarketSubIndices({
                   <span>{Math.abs(sub.deltaPct).toFixed(1)}%</span>
                 </span>
               </div>
-              <div className="mt-1 font-display text-[22px] font-medium tabular-nums text-forest-50">
+              <div className="relative mt-1 font-display text-[22px] font-medium tabular-nums text-forest-50">
                 {sub.value.toLocaleString()}
               </div>
               <div className="-mx-1 mt-1">
