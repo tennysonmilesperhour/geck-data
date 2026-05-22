@@ -57,7 +57,7 @@ export async function GET(_req: NextRequest) {
   const { data: listings, error } = await admin
     .from("market_listings")
     .select(
-      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, seller_id, seller_name, seller_location, current_status, first_seen_at, last_seen_at",
+      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, birth_year, birth_month, birth_day, seller_id, seller_name, seller_location, current_status, first_seen_at, last_seen_at",
     )
     .in("species", ["crested", "unknown"])
     .order("last_seen_at", { ascending: false, nullsFirst: false })
@@ -96,7 +96,9 @@ export async function GET(_req: NextRequest) {
     norm_traits: string | null;
     maturity: string | null;
     weight: number | string | null;
-    hatch_date: string | null;
+    birth_year: number | null;
+    birth_month: number | null;
+    birth_day: number | null;
     seller_id: string | null;
     seller_name: string | null;
     seller_location: string | null;
@@ -113,10 +115,16 @@ export async function GET(_req: NextRequest) {
     if (!combo) continue;
     const ev = statusByListing.get(r.id);
     const status = (ev?.status ?? r.current_status ?? "listed") === "sold" ? "sold" : "listed";
+    // market_listings stores birth as y/m/d ints, not a hatch_date column;
+    // stitch a YYYY-MM-DD when the year is set so classifyAge can fall
+    // back to it.
+    const hatchDate = r.birth_year
+      ? `${String(r.birth_year).padStart(4, "0")}-${String(r.birth_month ?? 1).padStart(2, "0")}-${String(r.birth_day ?? 1).padStart(2, "0")}`
+      : null;
     const ageClass = classifyAge({
       maturity: r.maturity,
       weight: r.weight,
-      hatch_date: r.hatch_date,
+      hatch_date: hatchDate,
     });
     const lineage = classifyLineage({
       total_listings: null,

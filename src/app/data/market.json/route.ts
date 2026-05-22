@@ -62,6 +62,24 @@ function ageClassForSnapshot(internal: AgeClass, sex: string | null | undefined)
   }
 }
 
+// market_listings stores birth as separate y/m/d ints, not a hatch_date
+// column. Stitch a YYYY-MM-DD string when at least the year is set so
+// classifyAge() can still fall back to it; otherwise let it return
+// "unknown".
+function hatchDateFromParts(
+  y: number | null,
+  m: number | null,
+  d: number | null,
+): string | null {
+  if (!y) return null;
+  const month = m ?? 1;
+  const day = d ?? 1;
+  const yyyy = String(y).padStart(4, "0");
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function lineageTierForSnapshot(internal: LineageTier): string {
   switch (internal) {
     case "foundational":    return "og_line";
@@ -81,7 +99,9 @@ type ListingRow = {
   norm_traits: unknown;
   maturity: string | null;
   weight: number | string | null;
-  hatch_date: string | null;
+  birth_year: number | null;
+  birth_month: number | null;
+  birth_day: number | null;
   sex: string | null;
   seller_id: string | null;
   seller_name: string | null;
@@ -127,7 +147,7 @@ export async function GET(_req: NextRequest) {
   const { data: listings, error: lErr } = (await admin
     .from("market_listings")
     .select(
-      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, hatch_date, sex, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
+      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, birth_year, birth_month, birth_day, sex, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
     )
     .in("species", ["crested", "unknown"])
     .order("last_seen_at", { ascending: false, nullsFirst: false })
@@ -225,7 +245,7 @@ export async function GET(_req: NextRequest) {
     const internalAge = classifyAge({
       maturity: r.maturity,
       weight: r.weight,
-      hatch_date: r.hatch_date,
+      hatch_date: hatchDateFromParts(r.birth_year, r.birth_month, r.birth_day),
     });
     transactions.push({
       id: r.id,
