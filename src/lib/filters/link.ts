@@ -25,10 +25,16 @@ type AnyParams =
 function toURLSearchParams(src: AnyParams): URLSearchParams {
   if (!src) return new URLSearchParams();
   if (src instanceof URLSearchParams) return new URLSearchParams(src.toString());
-  // ReadonlyURLSearchParams behaves like URLSearchParams for our purposes.
-  if (typeof (src as URLSearchParams).toString === "function") {
+  // ReadonlyURLSearchParams duck-types as URLSearchParams for toString.
+  const maybeStringable = src as { toString?: () => string };
+  if (typeof maybeStringable.toString === "function") {
     try {
-      return new URLSearchParams((src as URLSearchParams).toString());
+      const str = maybeStringable.toString();
+      // The default Object.toString returns "[object Object]"; reject
+      // that and fall through to manual coercion.
+      if (typeof str === "string" && !str.startsWith("[object ")) {
+        return new URLSearchParams(str);
+      }
     } catch {
       /* fall through */
     }
