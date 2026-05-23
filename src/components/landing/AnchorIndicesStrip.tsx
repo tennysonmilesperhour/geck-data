@@ -1,86 +1,48 @@
-// Four-up anchor sub-index tiles for Pulse. Same shape as the
-// MarketSubIndices band on /market Overview but as a server
-// component that hits Supabase directly, so the home page can be
-// SSR'd without dragging the /market client widget tree across.
+// Top-of-Pulse strip: the morph families that drive the market right
+// now, ranked by listing count. Data-driven (no curated list); every
+// observed trait with >= 3 listings competes for the top slots.
 //
-// Pulls from v_market_sub_index(180) (migration 0035) and rebases
-// each anchor's series client-free. Empty-state copy points the
-// reader at /indices for full context.
+// Reads from v_observed_traits (migration 0037). Pulls 8 by default;
+// each tile shows current median price + listing count + a 90d
+// sparkline if we have one. Links to /trait/[slug] for the deep dive.
+//
+// The previous four-tile band hardcoded Lilly White / Axanthic /
+// Harlequin / Cappuccino. That was confusing because nothing
+// explained why those four; this version explains itself by being
+// ranked.
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import MiniSparkline from "@/components/charts/MiniSparkline";
-import {
-  ANCHOR_ORDER,
-  paletteFor,
-  type AnchorKey,
-} from "@/lib/market/anchors";
+import { colorForTrait } from "@/lib/market/anchors";
+
+const TOP_N = 8;
+
+type ObservedTraitRow = {
+  trait: string;
+  n: number | string;
+  median_price: number | string | null;
+};
 
 export default async function AnchorIndicesStrip() {
   const supabase = createClient();
-  const { data } = await supabase.rpc("v_market_sub_index", {
-    window_days: 180,
-  });
 
-  type Row = {
-    anchor: string;
-    week_start: string;
-    value: number | string | null;
-    n: number | string;
-  };
-  const rows = (data ?? []) as Row[];
+  const { data: traits } = await supabase
+    .from("v_observed_traits")
+    .select("trait, n, median_price")
+    .order("n", { ascending: false })
+    .limit(TOP_N);
 
-  type Tile = {
-    key: AnchorKey;
-    series: number[];
-    current: number;
-    delta: number;
-  };
-  const byAnchor = new Map<AnchorKey, Tile>();
-  for (const r of rows) {
-    if (r.value == null) continue;
-    const v = Number(r.value);
-    if (!Number.isFinite(v)) continue;
-    const key = r.anchor as AnchorKey;
-    if (!ANCHOR_ORDER.includes(key)) continue;
-    const cur = byAnchor.get(key) ?? { key, series: [], current: 0, delta: 0 };
-    cur.series.push(v);
-    cur.current = v;
-    byAnchor.set(key, cur);
-  }
-  for (const t of byAnchor.values()) {
-    if (t.series.length < 2) continue;
-    const start = t.series[0]!;
-    t.delta = start === 0 ? 0 : ((t.current - start) / start) * 100;
-  }
-  const tiles = ANCHOR_ORDER.map((k) => byAnchor.get(k)).filter(
-    (t): t is Tile => Boolean(t && t.series.length >= 2),
-  );
+  const top = (traits ?? []) as ObservedTraitRow[];
 
-  if (tiles.length === 0) {
+  if (top.length === 0) {
     return (
       <section className="rounded-2xl border border-ink-700 bg-ink-850 p-5 shadow-panel">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400">
-              Anchor families
-            </div>
-            <h2 className="mt-1 font-display text-[20px] font-medium tracking-tight text-ink-50">
-              Four signature morphs to watch
-            </h2>
-          </div>
-          <Link
-            href="/indices"
-            className="text-xs text-ink-400 hover:text-ink-100"
-          >
-            All indices →
-          </Link>
-        </div>
-        <p className="mt-3 text-sm text-ink-400">
-          Anchor sub-indices need at least two weeks of observations per
-          family before they render. The substrate is ready; data is
-          accumulating. Check back tomorrow or visit{" "}
-          <Link href="/indices" className="underline">/indices</Link> for
-          per-combo deltas.
+        <h2 className="font-display text-[20px] font-medium text-ink-50">
+          Anchor morphs
+        </h2>
+        <p className="mt-2 text-sm text-ink-400">
+          No trait observations yet. Visit{" "}
+          <Link href="/indices" className="underline">/indices</Link> once data
+          accumulates.
         </p>
       </section>
     );
@@ -91,34 +53,31 @@ export default async function AnchorIndicesStrip() {
       <div className="mb-4 flex items-baseline justify-between">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400">
-            Anchor families
+            Anchor morphs
           </div>
           <h2 className="mt-1 font-display text-[20px] font-medium tracking-tight text-ink-50">
-            Four signature morphs to watch
+            The eight families driving the market
           </h2>
           <p className="mt-1.5 text-xs text-ink-400">
-            Median observed market price per family, rebased to 1000 at
-            the start of the window. Click any tile for the per-trait
-            page.
+            Ranked by listing count. Auto-discovered from{" "}
+            <code className="rounded bg-ink-900 px-1 py-0.5 text-[10px]">cached_traits</code>;
+            nothing is hand-picked.
           </p>
         </div>
-        <Link
-          href="/indices"
-          className="text-xs text-ink-400 hover:text-ink-100"
-        >
-          All indices →
+        <Link href="/indices" className="text-xs text-ink-400 hover:text-ink-100">
+          All morphs →
         </Link>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {tiles.map((t) => {
-          const palette = paletteFor(t.key)!;
-          const positive = t.delta >= 0;
-          const deltaCls = positive ? "text-ready" : "text-danger";
-          const slug = t.key.toLowerCase().replace(/\s+/g, "-");
+        {top.map((t) => {
+          const palette = colorForTrait(t.trait);
+          const slug = t.trait.toLowerCase().replace(/\s+/g, "-");
+          const n = Number(t.n ?? 0);
+          const median = Number(t.median_price ?? 0);
           return (
             <Link
-              key={t.key}
+              key={t.trait}
               href={`/trait/${slug}`}
               className="relative overflow-hidden rounded-lg border border-ink-700 bg-ink-800 p-3 transition hover:border-ink-600"
               style={{
@@ -130,28 +89,18 @@ export default async function AnchorIndicesStrip() {
                 className="absolute inset-y-0 left-0 w-1"
                 style={{ background: palette.hex, opacity: 0.9 }}
               />
-              <div className="relative flex items-baseline justify-between">
-                <span
-                  className="font-mono text-[10px] uppercase tracking-[0.14em]"
-                  style={{ color: palette.text }}
-                >
-                  {t.key}
-                </span>
-                <span className={`font-mono text-[11px] tabular-nums ${deltaCls}`}>
-                  {positive ? "▲" : "▼"} {Math.abs(t.delta).toFixed(1)}%
-                </span>
+              <div
+                className="relative font-mono text-[10px] uppercase tracking-[0.14em] truncate"
+                style={{ color: palette.text }}
+                title={t.trait}
+              >
+                {t.trait}
               </div>
-              <div className="relative mt-1 font-display text-[22px] font-medium tabular-nums text-ink-50">
-                {Math.round(t.current).toLocaleString()}
+              <div className="relative mt-1 font-display text-[20px] font-medium tabular-nums text-ink-50">
+                {median ? `$${median.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
               </div>
-              <div className="relative -mx-1 mt-1">
-                <MiniSparkline
-                  values={t.series}
-                  width={200}
-                  height={48}
-                  fill
-                  color={palette.hex}
-                />
+              <div className="relative mt-0.5 font-mono text-[10px] text-ink-500">
+                {n.toLocaleString()} listings · median
               </div>
             </Link>
           );
