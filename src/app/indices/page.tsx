@@ -19,6 +19,7 @@ import { serverHref } from "@/lib/filters/link";
 import { colorForTrait } from "@/lib/market/anchors";
 import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
 import SourceFootnote from "@/components/ui/SourceFootnote";
+import { comboSlugFromId } from "@/lib/market/combo-slug";
 
 export const dynamic = "force-dynamic";
 
@@ -44,18 +45,6 @@ type ComboDailyRow = {
   day: string;
   median_price: number | string | null;
 };
-
-// Combo ids in the new keying look like "Axanthic x Lilly White".
-// /combo/[slug] still understands the legacy 12-row HIGH_VALUE_COMBOS
-// short ids (lw-cap, axa-pin etc); for everything else we encode the
-// trait pair into a URL-safe slug.
-function comboSlug(combo_id: string): string {
-  return combo_id
-    .toLowerCase()
-    .replace(/\s+x\s+/g, "__")
-    .replace(/[^a-z0-9_]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
 
 function comboTraits(combo_id: string): [string, string] | null {
   const parts = combo_id.split(/\s+x\s+/);
@@ -168,7 +157,7 @@ export default async function IndicesPage({
               title={r.dominant}
             />
             <Link
-              href={serverHref(`/combo/${comboSlug(r.combo_id)}`, searchParams)}
+              href={serverHref(`/combo/${comboSlugFromId(r.combo_id)}`, searchParams)}
               className="text-ink-100 hover:text-claude-glow"
             >
               {r.combo_id}

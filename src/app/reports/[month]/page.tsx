@@ -18,6 +18,7 @@ import MiniSparkline from "@/components/charts/MiniSparkline";
 import SourceFootnote from "@/components/ui/SourceFootnote";
 import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
 import { paletteFor, anchorOf } from "@/lib/market/anchors";
+import { comboSlugFromId } from "@/lib/market/combo-slug";
 
 export const dynamic = "force-dynamic";
 
@@ -176,7 +177,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
         <KpiCard
           label="Combos tracked"
           value={fmtInt(curMed.size)}
-          sub={`of ${fmtInt(HIGH_VALUE_COMBOS.length)} anchors`}
+          sub="combos observed this month"
           tone="info"
         />
       </section>
@@ -195,7 +196,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
                     className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
                   >
                     <Link
-                      href={`/combo/${m.combo_id}`}
+                      href={`/combo/${comboSlugFromId(m.combo_id)}`}
                       className="flex items-center gap-2 text-ink-100 hover:text-claude-glow"
                     >
                       <span
@@ -236,7 +237,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
                     className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
                   >
                     <Link
-                      href={`/combo/${m.combo_id}`}
+                      href={`/combo/${comboSlugFromId(m.combo_id)}`}
                       className="flex items-center gap-2 text-ink-100 hover:text-claude-glow"
                     >
                       <span
@@ -280,7 +281,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
           {gainers.length > 0 ? (
             <>
               {" "}The biggest gainer was{" "}
-              <Link href={`/combo/${gainers[0]!.combo_id}`} className="underline">
+              <Link href={`/combo/${comboSlugFromId(gainers[0]!.combo_id)}`} className="underline">
                 {gainers[0]!.display}
               </Link>{" "}
               (+{gainers[0]!.delta.toFixed(1)}%).
@@ -289,7 +290,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
           {losers.length > 0 ? (
             <>
               {" "}The biggest loser was{" "}
-              <Link href={`/combo/${losers[0]!.combo_id}`} className="underline">
+              <Link href={`/combo/${comboSlugFromId(losers[0]!.combo_id)}`} className="underline">
                 {losers[0]!.display}
               </Link>{" "}
               ({losers[0]!.delta.toFixed(1)}%).

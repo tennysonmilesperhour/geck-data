@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { REGIONS, type Region } from "@/lib/market/types";
-import { HIGH_VALUE_COMBOS, matchCombo } from "@/lib/market/combos";
+import { comboSlugFromId } from "@/lib/market/combo-slug";
 import { parseFilters, serverHref } from "@/lib/filters/link";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
@@ -147,20 +147,51 @@ export default async function RegionPage({
   });
   const sellers = sellersAll.filter((s) => locMatches(code, s.seller_location));
 
-  // Top combos in this region by live count.
-  const comboCount = new Map<string, { combo: typeof HIGH_VALUE_COMBOS[number]; n: number; prices: number[] }>();
+  // Top combos in this region by live count. Combos are auto-discovered
+  // (every two-trait combination on a regional listing) instead of
+  // matching only the legacy 12-row HIGH_VALUE_COMBOS recognizer.
+  function nonMorphFilter(t: string): boolean {
+    return (
+      t.length >= 2 &&
+      t.length <= 60 &&
+      !/^(male|female|unsexed|juvenile|subadult|adult|hatchling|baby|babies|trio|pair|breeder)$/i.test(t)
+    );
+  }
+  type RegionCombo = {
+    combo_id: string;
+    combo_name: string;
+    n: number;
+    prices: number[];
+  };
+  const comboCount = new Map<string, RegionCombo>();
   for (const r of live) {
-    const combo = matchCombo(r.cached_traits);
-    if (!combo) continue;
-    const cur = comboCount.get(combo.id) ?? { combo, n: 0, prices: [] };
-    cur.n += 1;
+    const traits = (r.cached_traits ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(nonMorphFilter);
+    if (traits.length < 2) continue;
     const p = priceOf(r);
-    if (p != null) cur.prices.push(p);
-    comboCount.set(combo.id, cur);
+    for (let i = 0; i < traits.length; i++) {
+      for (let j = i + 1; j < traits.length; j++) {
+        const a = traits[i]!;
+        const b = traits[j]!;
+        const sorted = a.localeCompare(b) < 0 ? [a, b] : [b, a];
+        const name = `${sorted[0]} x ${sorted[1]}`;
+        const cur = comboCount.get(name) ?? {
+          combo_id: name,
+          combo_name: name,
+          n: 0,
+          prices: [],
+        };
+        cur.n += 1;
+        if (p != null) cur.prices.push(p);
+        comboCount.set(name, cur);
+      }
+    }
   }
   const topCombos = Array.from(comboCount.values())
     .sort((a, b) => b.n - a.n)
-    .slice(0, 12);
+    .slice(0, 20);
 
   const livePrices = live.map(priceOf).filter((p): p is number => p != null);
   const medianAsk = median(livePrices) ?? 0;
@@ -177,10 +208,14 @@ export default async function RegionPage({
       header: "Combo",
       render: (row) => (
         <Link
-          href={serverHref(`/combo/${row.combo.id}`, searchParams, { region: code })}
+          href={serverHref(
+            `/combo/${comboSlugFromId(row.combo_id)}`,
+            searchParams,
+            { region: code },
+          )}
           className="text-ink-100 hover:text-claude-glow"
         >
-          {row.combo.display}
+          {row.combo_name}
         </Link>
       ),
     },
@@ -214,7 +249,7 @@ export default async function RegionPage({
         <KpiCard label="Live listings" value={fmtInt(live.length)} sub={`of ${fmtInt(liveAll.length)} global`} />
         <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "—"} sub="USD" />
         <KpiCard label="Sellers" value={fmtInt(sellers.length)} sub={`of ${fmtInt(sellersAll.length)} known`} />
-        <KpiCard label="Anchor combos here" value={fmtInt(comboCount.size)} sub={`of ${HIGH_VALUE_COMBOS.length}`} tone="info" />
+        <KpiCard label="Distinct combos" value={fmtInt(comboCount.size)} sub="trait pairs observed here" tone="info" />
       </section>
 
       <Panel
@@ -222,7 +257,12 @@ export default async function RegionPage({
         subtitle="Ranked by live listing count. Anchor combos only; non-anchor listings do not appear here but still count in the region totals above."
         padded={false}
       >
-        <DataTable columns={comboCols} rows={topCombos} rowKey={(r) => r.combo.id} emptyMessage="No anchor combos live in this region right now." />
+        <DataTable
+          columns={comboCols}
+          rows={topCombos}
+          rowKey={(r) => r.combo_id}
+          emptyMessage="No combos live in this region right now."
+        />
       </Panel>
 
       <Panel

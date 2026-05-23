@@ -29,9 +29,18 @@ export default function DataTable<T>({
       </div>
     );
   }
+  // When the caller has set explicit column widths, lock the table to
+  // fixed layout so those widths are honored. Without this, the browser
+  // auto-distributes by content width and a long title cell can shove
+  // the seller cell into a 1px sliver, which reads as a column
+  // misalignment to the eye.
+  const hasWidths = columns.some((c) => c.width);
   return (
     <div className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-800 shadow-panel">
-      <table className="min-w-full divide-y divide-ink-700 text-sm">
+      <table
+        className="min-w-full divide-y divide-ink-700 text-sm"
+        style={hasWidths ? { tableLayout: "fixed" } : undefined}
+      >
         <thead className="bg-ink-850 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-400">
           <tr>
             {columns.map((c) => (

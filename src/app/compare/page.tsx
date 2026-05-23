@@ -20,6 +20,7 @@ import TraitPremiumPanel from "@/components/morphs/TraitPremiumPanel";
 import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
 import { anchorOf, paletteFor } from "@/lib/market/anchors";
 import SourceFootnote from "@/components/ui/SourceFootnote";
+import { resolveComboFromSlug, comboSlugFromId } from "@/lib/market/combo-slug";
 
 export const dynamic = "force-dynamic";
 
@@ -61,16 +62,21 @@ export default async function ComparePage({
 }: {
   searchParams?: { sellers?: string; combos?: string };
 }) {
-  // Combos comparison: ?combos=lw-cap,axa-pin pulls the per-combo
-  // indices for both and renders them side-by-side. Independent of
-  // the seller h2h section so a link can carry both.
-  const focusedComboIds = (searchParams?.combos ?? "")
+  // Combos comparison: ?combos=lw-cap,axa-pin (legacy short ids) or
+  // ?combos=axanthic__lilly-white,tri-color__lilly-white (the
+  // auto-discovered slug form). Both shapes resolve through the
+  // central resolver so any slug that works on /combo/[slug] also
+  // works here.
+  const supabase = createClient();
+  const focusedComboSlugs = (searchParams?.combos ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const focusedCombos = focusedComboIds
-    .map((id) => HIGH_VALUE_COMBOS.find((c) => c.id === id))
-    .filter((c): c is (typeof HIGH_VALUE_COMBOS)[number] => Boolean(c));
+  const focusedCombos = (
+    await Promise.all(
+      focusedComboSlugs.map((s) => resolveComboFromSlug(supabase, s)),
+    )
+  ).filter((c): c is NonNullable<typeof c> => Boolean(c));
 
   // ?sellers=id1,id2,id3 narrows the head-to-head section to those
   // sellers. Empty / missing param falls back to "top 15 by inventory
@@ -80,8 +86,6 @@ export default async function ComparePage({
     .map((s) => s.trim())
     .filter(Boolean);
   const focusMode = focusedSellerIds.length > 0;
-
-  const supabase = createClient();
 
   const [listingsRes, sellersRes] = await Promise.all([
     supabase
@@ -114,7 +118,11 @@ export default async function ComparePage({
   };
   let comboSeries: ComboSeries[] = [];
   if (focusedCombos.length >= 2) {
-    const ids = focusedCombos.map((c) => c.id);
+    // combo_index_daily.combo_id stores the "Trait A x Trait B"
+    // form (migration 0037), which matches CanonicalCombo.name for
+    // both legacy and auto-discovered combos. .id is the URL slug,
+    // not the DB key.
+    const ids = focusedCombos.map((c) => c.name);
     const [{ data: dailyRows }, { data: summaryRows }] = await Promise.all([
       supabase
         .from("combo_index_daily")
@@ -151,11 +159,11 @@ export default async function ComparePage({
       });
     }
     comboSeries = focusedCombos.map((c) => {
-      const sum = sumBy.get(c.id);
+      const sum = sumBy.get(c.name);
       return {
         combo_id: c.id,
         display: c.display,
-        spark: sparkBy.get(c.id) ?? [],
+        spark: sparkBy.get(c.name) ?? [],
         current: sum?.current ?? 0,
         delta30: sum?.d30 ?? null,
         delta7: sum?.d7 ?? null,

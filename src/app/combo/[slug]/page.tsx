@@ -15,6 +15,7 @@ import { notFound } from "next/navigation";
 import { HIGH_VALUE_COMBOS, type CanonicalCombo } from "@/lib/market/combos";
 import { parseFilters, serverHref } from "@/lib/filters/link";
 import { slugifyTrait } from "@/lib/filters/schema";
+import { resolveComboFromSlug } from "@/lib/market/combo-slug";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
@@ -108,48 +109,14 @@ function weeklyMedianSeries(rows: PriceRow[]): number[] {
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const combo = resolveCombo(params.slug);
-  if (!combo) return { title: "Combo not found" };
-  return {
-    title: `${combo.display} - Geck Inspect Market`,
-    description: `Price history, current listings, and recent sales for ${combo.display}.`,
-  };
-}
-
-// Resolve a slug to a (display name, trait set) pair. Two shapes are
-// accepted:
-//
-//   1) Legacy short id from HIGH_VALUE_COMBOS: "lw-cap", "axa-pin", etc.
-//   2) Auto-discovered trait pair: "lilly-white__axanthic". The two
-//      traits are joined by "__"; each is hyphen-cased.
-//
-// The second form is what /indices emits now that combos are
-// data-driven (migration 0037), so every observed combo gets a real
-// page instead of 404.
-function resolveCombo(slug: string): CanonicalCombo | null {
-  const legacy = HIGH_VALUE_COMBOS.find((c) => c.id === slug);
-  if (legacy) return legacy;
-  if (slug.includes("__")) {
-    const parts = slug
-      .split("__")
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (parts.length !== 2) return null;
-    const titleCase = (s: string): string =>
-      s
-        .split("-")
-        .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
-        .join(" ");
-    const [a, b] = [titleCase(parts[0]!), titleCase(parts[1]!)];
-    if (!a || !b) return null;
+  const legacy = HIGH_VALUE_COMBOS.find((c) => c.id === params.slug);
+  if (legacy) {
     return {
-      id: slug,
-      name: `${a} x ${b}`,
-      display: `${a} × ${b}`,
-      traits: [a, b],
+      title: `${legacy.display} - Geck Inspect Market`,
+      description: `Price history, current listings, and recent sales for ${legacy.display}.`,
     };
   }
-  return null;
+  return { title: "Combo - Geck Inspect Market" };
 }
 
 export default async function ComboPage({
@@ -159,11 +126,16 @@ export default async function ComboPage({
   params: { slug: string };
   searchParams?: SearchParams;
 }) {
-  const combo = resolveCombo(params.slug);
+  // resolveComboFromSlug accepts both the legacy 12-row HIGH_VALUE_COMBOS
+  // short ids ("lw-cap" etc) AND the auto-discovered form
+  // ("lilly-white__axanthic"). For the latter, each half is looked up
+  // in v_observed_traits so canonical hyphenation ("Tri-color") is
+  // preserved end-to-end.
+  const supabase = createClient();
+  const combo = await resolveComboFromSlug(supabase, params.slug);
   if (!combo) notFound();
 
   const filters = parseFilters(searchParams);
-  const supabase = createClient();
 
   // Build the combo trait filter as chained ILIKEs (postgrest ANDs them).
   let liveQuery = supabase
@@ -282,8 +254,12 @@ export default async function ComboPage({
     {
       key: "title",
       header: "Listing",
+      width: "34%",
       render: (r) => (
-        <Link href={`/listings/${r.id}`} className="text-ink-100 hover:text-claude-glow">
+        <Link
+          href={`/listings/${r.id}`}
+          className="block truncate text-ink-100 hover:text-claude-glow"
+        >
           {r.title ?? r.id}
         </Link>
       ),
@@ -291,11 +267,14 @@ export default async function ComboPage({
     {
       key: "seller",
       header: "Seller",
+      width: "22%",
       render: (r) =>
-        r.seller_id ? (
+        r.seller_name || r.seller_id ? (
           <Link
-            href={serverHref(`/sellers/${r.seller_id}`, searchParams, { combos: [combo.id] })}
-            className="text-ink-300 hover:text-claude-glow"
+            href={serverHref(`/sellers/${r.seller_id ?? ""}`, searchParams, {
+              combos: [combo.id],
+            })}
+            className="block truncate text-ink-100 hover:text-claude-glow"
           >
             {r.seller_name ?? r.seller_id}
           </Link>
@@ -304,19 +283,32 @@ export default async function ComboPage({
         ),
     },
     {
+      key: "loc",
+      header: "Location",
+      width: "16%",
+      render: (r) => (
+        <span className="block truncate text-ink-300">
+          {r.seller_location ?? "—"}
+        </span>
+      ),
+    },
+    {
       key: "maturity",
       header: "Age",
-      render: (r) => <span className="text-ink-400 capitalize">{r.maturity ?? "—"}</span>,
+      width: "8%",
+      render: (r) => <span className="text-ink-300 capitalize">{r.maturity ?? "—"}</span>,
     },
     {
       key: "sex",
       header: "Sex",
-      render: (r) => <span className="text-ink-400 capitalize">{r.sex ?? "—"}</span>,
+      width: "8%",
+      render: (r) => <span className="text-ink-300 capitalize">{r.sex ?? "—"}</span>,
     },
     {
       key: "price",
       header: "Ask",
       align: "right",
+      width: "12%",
       render: (r) => {
         const p = priceOf(r);
         if (p == null) return <span className="text-ink-500">—</span>;

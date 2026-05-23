@@ -19,7 +19,7 @@ import MiniSparkline from "@/components/charts/MiniSparkline";
 import DataFreshness from "@/components/ui/DataFreshness";
 import { getSellerDailyActivity } from "@/lib/sellers/activity";
 import { parseFilters } from "@/lib/filters/link";
-import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
+import { resolveComboFromSlug } from "@/lib/market/combo-slug";
 import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
 import SourceFootnote from "@/components/ui/SourceFootnote";
 
@@ -58,13 +58,14 @@ export default async function SellersPage({
 
   // When the user arrived here from a combo entity page (or any link
   // that passed &combos=...), narrow to sellers who currently list at
-  // least one matching listing. Best-effort: we query a counts-per-
-  // seller view scoped to combo trait tokens. If any combo slug is
-  // unknown, it is silently skipped rather than failing the whole
-  // page; a partial filter is still useful.
-  const focusedCombos = filters.combos
-    .map((slug) => HIGH_VALUE_COMBOS.find((c) => c.id === slug))
-    .filter((c): c is (typeof HIGH_VALUE_COMBOS)[number] => Boolean(c));
+  // least one matching listing. Both legacy short ids and the new
+  // auto-discovered slug form (axanthic__lilly-white) resolve through
+  // the same helper; unknown slugs degrade to no-op.
+  const focusedCombos = (
+    await Promise.all(
+      filters.combos.map((slug) => resolveComboFromSlug(supabase, slug)),
+    )
+  ).filter((c): c is NonNullable<typeof c> => Boolean(c));
 
   let filterSummary: string | null = null;
   if (focusedCombos.length > 0) {

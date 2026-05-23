@@ -12,9 +12,12 @@
 // HIGH_VALUE_COMBOS to surface the canonical anchors.
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
 import { parseFilters, serverHref } from "@/lib/filters/link";
-import { slugifyTrait, unslugTrait } from "@/lib/filters/schema";
+import { unslugTrait } from "@/lib/filters/schema";
+import {
+  resolveTraitName,
+  comboSlugFromId,
+} from "@/lib/market/combo-slug";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
@@ -80,11 +83,20 @@ export default async function TraitPage({
 }) {
   const slug = params.slug;
   if (!/^[a-z0-9-]+$/.test(slug)) notFound();
-  const traitName = unslugTrait(slug);
-  const ilikePattern = `%${traitName}%`;
 
   const filters = parseFilters(searchParams);
   const supabase = createClient();
+
+  // Resolve slug to the trait name as it actually appears in
+  // cached_traits. The naive unslug returns "Tri Color" for the slug
+  // "tri-color" but the database stores it as "Tri-color"; matching
+  // against the canonical form is the difference between rendering
+  // zero listings and rendering ~100.
+  const { trait: traitName, canonical } = await resolveTraitName(
+    supabase,
+    slug,
+  );
+  const ilikePattern = `%${traitName}%`;
 
   const [liveRes, soldRes] = await Promise.all([
     supabase
@@ -129,10 +141,20 @@ export default async function TraitPage({
   const medianAsk = median(livePrices) ?? 0;
   const medianSold = median(soldPrices) ?? 0;
 
-  // Find anchor combos that include this trait.
-  const matchingCombos = HIGH_VALUE_COMBOS.filter((c) =>
-    c.traits.some((t) => slugifyTrait(t) === slug || t.toLowerCase() === traitName.toLowerCase()),
-  );
+  // Find every observed combo that includes this trait, ranked by
+  // sample size. Pulls from v_observed_combos (auto-discovered, ~350
+  // combos) instead of the legacy 12-row HIGH_VALUE_COMBOS list.
+  const { data: comboRowsRaw } = await supabase
+    .from("v_observed_combos")
+    .select("combo_name, n, median_price")
+    .ilike("combo_name", `%${traitName}%`)
+    .order("n", { ascending: false })
+    .limit(20);
+  const matchingCombos = (comboRowsRaw ?? []) as Array<{
+    combo_name: string;
+    n: number | string;
+    median_price: number | string | null;
+  }>;
 
   // Top sellers in this trait.
   const sellerMap = new Map<string, { id: string; name: string; loc: string | null; n: number }>();
@@ -171,8 +193,12 @@ export default async function TraitPage({
     {
       key: "title",
       header: "Listing",
+      width: "38%",
       render: (r) => (
-        <Link href={`/listings/${r.id}`} className="text-ink-100 hover:text-claude-glow">
+        <Link
+          href={`/listings/${r.id}`}
+          className="block truncate text-ink-100 hover:text-claude-glow"
+        >
           {r.title ?? r.id}
         </Link>
       ),
@@ -180,13 +206,14 @@ export default async function TraitPage({
     {
       key: "seller",
       header: "Seller",
+      width: "22%",
       render: (r) =>
-        r.seller_id ? (
+        r.seller_name || r.seller_id ? (
           <Link
-            href={serverHref(`/sellers/${r.seller_id}`, searchParams, {
+            href={serverHref(`/sellers/${r.seller_id ?? ""}`, searchParams, {
               traits: [slug],
             })}
-            className="text-ink-300 hover:text-claude-glow"
+            className="block truncate text-ink-100 hover:text-claude-glow"
           >
             {r.seller_name ?? r.seller_id}
           </Link>
@@ -197,20 +224,29 @@ export default async function TraitPage({
     {
       key: "loc",
       header: "Location",
-      render: (r) => <span className="text-ink-400">{r.seller_location ?? "—"}</span>,
+      width: "18%",
+      render: (r) => (
+        <span className="block truncate text-ink-300">
+          {r.seller_location ?? "—"}
+        </span>
+      ),
     },
     {
       key: "maturity",
       header: "Age",
-      render: (r) => <span className="text-ink-400 capitalize">{r.maturity ?? "—"}</span>,
+      width: "10%",
+      render: (r) => (
+        <span className="text-ink-300 capitalize">{r.maturity ?? "—"}</span>
+      ),
     },
     {
       key: "price",
       header: "Ask",
       align: "right",
+      width: "12%",
       render: (r) => {
         const p = priceOf(r);
-        return <span className="font-mono tabular-nums">{p ? fmtUsd(p) : "—"}</span>;
+        return <span className="font-mono tabular-nums text-ink-100">{p ? fmtUsd(p) : "—"}</span>;
       },
     },
   ];
@@ -220,7 +256,11 @@ export default async function TraitPage({
       <SectionHeader
         eyebrow="Trait / Entity"
         title={traitName}
-        description="Listings and combos that include this trait. Trait matching is fuzzy on cached trait text; the combos panel anchors known canonical groupings."
+        description={
+          canonical
+            ? `Listings and combos that include "${traitName}". Trait name resolved from v_observed_traits; matching uses substring on cached_traits.`
+            : `Listings and combos that include this trait. Trait name "${traitName}" was inferred from the slug (no canonical match in v_observed_traits); matching uses substring on cached_traits.`
+        }
         right={
           <div className="flex items-center gap-2">
             <StatusPill status="info" label={slug} />
@@ -248,19 +288,28 @@ export default async function TraitPage({
 
       {matchingCombos.length > 0 && (
         <Panel
-          title="Anchor combos featuring this trait"
-          subtitle="Canonical high-value combos that include this trait. Click through to see each combo's full picture."
+          title="Combos featuring this trait"
+          subtitle={`Every observed two-trait combination that includes "${traitName}", ranked by sample size. Click any chip to land on the combo page.`}
         >
           <div className="flex flex-wrap gap-2">
-            {matchingCombos.map((c) => (
-              <Link
-                key={c.id}
-                href={serverHref(`/combo/${c.id}`, searchParams)}
-                className="rounded-full border border-forest-700 bg-forest-950/60 px-3 py-1 text-sm text-ink-100 hover:border-claude/40 hover:text-claude-glow"
-              >
-                {c.display}
-              </Link>
-            ))}
+            {matchingCombos.map((c) => {
+              const slug = comboSlugFromId(c.combo_name);
+              const n = Number(c.n ?? 0);
+              const median = Number(c.median_price ?? 0);
+              return (
+                <Link
+                  key={c.combo_name}
+                  href={serverHref(`/combo/${slug}`, searchParams)}
+                  className="rounded-full border border-forest-700 bg-forest-950/60 px-3 py-1 text-sm text-ink-100 hover:border-claude/40 hover:text-claude-glow"
+                  title={`${n} listings · median $${Math.round(median).toLocaleString()}`}
+                >
+                  {c.combo_name}
+                  <span className="ml-1.5 font-mono text-[10px] text-ink-500">
+                    {n}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </Panel>
       )}
