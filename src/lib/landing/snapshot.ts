@@ -32,6 +32,7 @@ export type OpportunityListing = {
   seller_id: string | null;
   seller_location: string | null;
   first_seen_at: string | null;
+  last_seen_at: string | null;
 };
 
 export type SellerCard = {
@@ -75,6 +76,13 @@ export type MarketSnapshot = {
 const WINDOW_DAYS = 365;
 const OPPORTUNITY_THRESHOLD = 0.25; // 25% below combo median ask
 const OPPORTUNITY_LIMIT = 12;
+// Only surface listings the extension has re-observed within this window.
+// current_status='live' is sticky: it only flips to 'sold' on an explicit
+// sold-badge / auction-close / inferred-sold event, so a listing that's
+// been quietly delisted on MorphMarket can linger as "live" for weeks. The
+// freshness gate keeps the panel honest — if we haven't seen it lately,
+// we can't credibly call it an opportunity.
+const OPPORTUNITY_FRESHNESS_DAYS = 7;
 const TOP_SELLER_LIMIT = 6;
 const COMBO_DAILY_WINDOW_DAYS = 14;
 const DAY_MS = 86_400_000;
@@ -153,14 +161,19 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
 
   let opportunities: OpportunityListing[] = [];
   if (comboMedianByName.size > 0) {
+    const freshSince = new Date(
+      Date.now() - OPPORTUNITY_FRESHNESS_DAYS * DAY_MS,
+    ).toISOString();
     const oppQ = await supabase
       .from("market_listings")
       .select(
-        "id, title, url, price_usd_equivalent, norm_traits, cached_traits, seller_id, seller_name, seller_location, first_seen_at",
+        "id, title, url, price_usd_equivalent, norm_traits, cached_traits, seller_id, seller_name, seller_location, first_seen_at, last_seen_at",
       )
       .eq("current_status", "live")
       .not("price_usd_equivalent", "is", null)
       .gte("price_usd_equivalent", 50)
+      .gte("last_seen_at", freshSince)
+      .order("last_seen_at", { ascending: false, nullsFirst: false })
       .limit(2000);
 
     for (const row of oppQ.data ?? []) {
@@ -188,6 +201,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
         seller_id: row.seller_id,
         seller_location: row.seller_location,
         first_seen_at: row.first_seen_at,
+        last_seen_at: row.last_seen_at,
       });
     }
     opportunities.sort((a, b) => b.discount_pct - a.discount_pct);

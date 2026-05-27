@@ -1,8 +1,12 @@
 "use client";
 // Opportunities — live listings priced more than 25% below their combo's
-// median ask. Reads selectedCombos from the landing filter context: when
-// the user has pinned one or more combos in What's Hot, the list narrows
-// to just those. Empty filter = show all opportunities.
+// median ask AND re-observed by the extension within the last week. Without
+// the freshness gate, current_status='live' was sticky enough that the
+// panel surfaced listings the extension hadn't actually seen in 2+ weeks,
+// which in practice meant most clicks led to sold/delisted pages. Reads
+// selectedCombos from the landing filter context: when the user has
+// pinned one or more combos in What's Hot, the list narrows to just
+// those. Empty filter = show all opportunities.
 import { useMemo } from "react";
 import { fmtUsd, fmtRelative } from "@/lib/format";
 import type { OpportunityListing } from "@/lib/landing/snapshot";
@@ -41,7 +45,8 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
             Opportunities
           </h2>
           <p className="mt-1 text-xs text-ink-400">
-            Listings priced ≥25% below their combo&apos;s median ask.
+            Listings priced ≥25% below their combo&apos;s median ask, seen in
+            the last 7 days.
           </p>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
@@ -53,7 +58,7 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
         <div className="rounded-md border border-ink-700/60 bg-ink-900/40 px-3 py-4 text-sm text-ink-400">
           {selectedCombos.size > 0
             ? "No opportunities match the active combo filter."
-            : "No listings are currently priced ≥25% below their combo median."}
+            : "No fresh listings priced ≥25% below their combo median. Genuine bargains tend to sell within days — check back as new listings appear."}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -81,7 +86,9 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
                       {opp.seller_location ? ` · ${opp.seller_location}` : ""}
                     </div>
                     <div className="mt-0.5 font-mono text-[10px] text-ink-500">
-                      {fmtRelative(opp.first_seen_at)}
+                      {opp.last_seen_at
+                        ? `seen ${fmtRelative(opp.last_seen_at)}`
+                        : fmtRelative(opp.first_seen_at)}
                     </div>
                   </div>
                   <div className="text-right">
