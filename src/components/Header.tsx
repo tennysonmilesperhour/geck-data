@@ -187,7 +187,7 @@ export default function Header() {
                 href="/upload"
                 className="hidden rounded-md border border-ink-700 bg-ink-850 px-2.5 py-1.5 text-ink-200 hover:border-ink-600 hover:text-ink-50 sm:inline-block"
               >
-                Upload
+                Upload data
               </Link>
               <span className="hidden text-ink-400 md:inline">{user.email}</span>
               <button
@@ -325,7 +325,7 @@ export default function Header() {
                     onClick={() => setMenuOpen(false)}
                     className="rounded-md border border-ink-700 bg-ink-850 px-2.5 py-2 text-center text-sm text-ink-200 hover:border-ink-600 hover:text-ink-50"
                   >
-                    Upload
+                    Upload data
                   </Link>
                   <button
                     onClick={() => {
