@@ -173,6 +173,12 @@ export default async function StatusPage() {
             label={`${overall.label} · ${fmtRelative(newestOverall)}`}
           />
           <span className="text-[11px] text-ink-500">{overall.tone}</span>
+          <Link
+            href="/upload"
+            className="mt-1 rounded-md border border-ink-700 bg-ink-850 px-3 py-1.5 text-sm text-ink-200 hover:border-claude hover:text-ink-50"
+          >
+            Upload data
+          </Link>
         </div>
       </section>
 

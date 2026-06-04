@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TelemetryClient from "@/components/TelemetryClient";
+import VersionToast from "@/components/VersionToast";
 import { MorphTermProvider } from "@/components/morphs/MorphTerm";
 
 // Typography. The pairing follows the UI Pro Max "Dashboard Data"
@@ -43,6 +44,13 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Allow pinch-zoom (accessibility) while keeping the default fit-to-width.
+  maximumScale: 5,
+};
+
 export const metadata: Metadata = {
   title: "Geck Inspect — Crested Gecko Market Intelligence",
   description: "Live pricing, trait economics, and seller analytics from MorphMarket.",
@@ -61,8 +69,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className="font-sans min-h-screen bg-ink-950 text-ink-100 antialiased">
         <TelemetryClient />
+        <VersionToast />
         <Header />
-        <main className="mx-auto max-w-7xl px-6 py-8">
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
           <MorphTermProvider>
             <ErrorBoundary>{children}</ErrorBoundary>
           </MorphTermProvider>

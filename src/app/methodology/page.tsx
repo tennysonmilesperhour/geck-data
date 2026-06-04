@@ -45,8 +45,8 @@ export default function MethodologyPage() {
           </li>
           <li>
             <strong className="text-ink-100">Sold events.</strong> Two flavours:
-            <em> confirmed</em> (the extension saw a listing flip from live
-            to sold) and <em>inferred</em> (the scraper has not seen a
+            <span className="text-ink-100"> confirmed</span> (the extension saw a listing flip from live
+            to sold) and <span className="text-ink-100">inferred</span> (the scraper has not seen a
             listing for 14+ days and the seller has not relisted; we infer
             sale). Both feed the demand-side curves; the difference is
             tagged on every chart that uses sold events.
