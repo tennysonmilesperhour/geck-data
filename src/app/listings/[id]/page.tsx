@@ -21,7 +21,6 @@ type ListingRow = {
   title: string | null;
   price: number | null;
   price_usd_equivalent: number | null;
-  currency: string | null;
   sex: string | null;
   weight: number | string | null;
   maturity: string | null;
@@ -62,7 +61,7 @@ async function fetchAll(id: string) {
     admin
       .from("market_listings")
       .select(
-        "id, title, price, price_usd_equivalent, currency, sex, weight, maturity, cached_traits, species, seller_id, seller_name, seller_location, url, current_status, first_seen_at, last_seen_at",
+        "id, title, price, price_usd_equivalent, sex, weight, maturity, cached_traits, species, seller_id, seller_name, seller_location, url, current_status, first_seen_at, last_seen_at",
       )
       .eq("id", id)
       .maybeSingle()
@@ -151,7 +150,7 @@ export default async function ListingDetailPage({
             {listing.price_usd_equivalent != null
               ? `$${Math.round(listing.price_usd_equivalent).toLocaleString()}`
               : listing.price
-                ? `${listing.currency ?? ""}${listing.price}`
+                ? `${listing.price}`
                 : "—"}
           </div>
           {listing.url && (
