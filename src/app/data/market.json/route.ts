@@ -5,14 +5,18 @@
 // The shape is documented at the top of that file; we mirror it here so the
 // front-end can treat live and preview snapshots identically.
 //
-// Strategy: derive transactions from market_listings + listing_status_events
-// + price_history. Map free-text traits to the canonical combos via the
-// shared matcher in lib/market/combos.ts. Hydrate breeders with seller
-// reputation so lineage tiers reflect reality rather than a hardcoded value.
+// Strategy: emit *every* recent priced crested listing, not just the handful
+// whose traits happen to resolve to a high-value combo. We read the canonical
+// market_listings table (it carries seller_id, seller_location, USD-normalized
+// price and the species tag) and LEFT JOIN the richer listings table in JS
+// (it carries trait_array on 6k rows and sold_at on 2k rows, versus a few
+// hundred in market_listings). Sellers are hydrated from market_sellers so
+// breeder attribution, region and tier reflect reality instead of "unknown".
 //
-// Cached at the edge for 5 minutes via Cache-Control. The full table scan is
-// bounded by SNAPSHOT_LISTING_LIMIT so we don't accidentally serve a 50MB
-// response if market_listings grows unexpectedly.
+// Cached at the edge for 5 minutes via Cache-Control. We page through the
+// tables in 1000-row batches because PostgREST caps a single response, and
+// bound the total with SNAPSHOT_LISTING_LIMIT so the payload can't balloon if
+// the table grows unexpectedly.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -23,7 +27,11 @@ import { classifyLineage, type LineageTier } from "@/lib/market/lineage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SNAPSHOT_LISTING_LIMIT = 5000;
+// Upper bound on transactions emitted. The crested window is ~9.3k rows today;
+// keep generous headroom so we publish the full dataset, while still capping a
+// runaway response if ingestion balloons.
+const SNAPSHOT_LISTING_LIMIT = 15000;
+const PAGE_SIZE = 1000;
 
 function regionFromLocation(loc: string | null | undefined): string {
   if (!loc) return "US";
@@ -92,9 +100,11 @@ function lineageTierForSnapshot(internal: LineageTier): string {
 
 type ListingRow = {
   id: string;
+  morphmarket_key: number | null;
   title: string | null;
   price: number | null;
   price_usd_equivalent: number | null;
+  original_price: number | null;
   cached_traits: unknown;
   norm_traits: unknown;
   maturity: string | null;
@@ -103,13 +113,29 @@ type ListingRow = {
   birth_month: number | null;
   birth_day: number | null;
   sex: string | null;
+  proven_breeder: boolean | null;
   seller_id: string | null;
   seller_name: string | null;
   seller_location: string | null;
   current_status: string | null;
+  is_sold: boolean | null;
   first_listed_at: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;
+};
+
+// The richer companion row, joined on listing_id = market_listings.morphmarket_key.
+type RichListingRow = {
+  listing_id: string;
+  name: string | null;
+  traits: string | null;
+  trait_array: string[] | null;
+  sold_at: string | null;
+  seller_slug: string | null;
+  seller_name: string | null;
+  maturity: string | null;
+  weight_grams: number | null;
+  birth_date: string | null;
 };
 
 type StatusEventRow = {
@@ -127,10 +153,35 @@ type SellerRow = {
   seller_rating_score: number | null;
   total_listings: number | null;
   membership: string | null;
+  price_tier: string | null;
+  first_seen_listing: string | null;
+  morph_specialization: string | null;
 };
 
+type Queryable = ReturnType<typeof createAdminClient>;
+
+// PostgREST returns at most a page worth of rows per request (the project's
+// max-rows setting), so anything that can exceed ~1000 rows must be paged. We
+// add a stable secondary sort on the caller side to keep pagination
+// deterministic across requests.
+async function fetchAllPaged<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  hardCap = Infinity,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; from < hardCap; from += PAGE_SIZE) {
+    const to = Math.min(from + PAGE_SIZE, hardCap) - 1;
+    const { data, error } = await build(from, to);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return out;
+}
+
 export async function GET(_req: NextRequest) {
-  let admin;
+  let admin: Queryable;
   try {
     admin = createAdminClient();
   } catch (e) {
@@ -140,177 +191,249 @@ export async function GET(_req: NextRequest) {
 
   const generatedAt = new Date().toISOString();
 
-  // 1. Pull recent crested listings only. Geck Inspect is crested-gecko-first;
-  //    other species (leopards, gargoyles, etc.) get ingested and archived
-  //    via migration 0010 but never surface in user-facing analytics. The
-  //    'unknown' default applies to legacy rows ingested before 0010.
-  const { data: listings, error: lErr } = (await admin
-    .from("market_listings")
-    .select(
-      "id, title, price, price_usd_equivalent, cached_traits, norm_traits, maturity, weight, birth_year, birth_month, birth_day, sex, seller_id, seller_name, seller_location, current_status, first_listed_at, first_seen_at, last_seen_at",
-    )
-    .in("species", ["crested", "unknown"])
-    .order("last_seen_at", { ascending: false, nullsFirst: false })
-    .limit(SNAPSHOT_LISTING_LIMIT)) as { data: ListingRow[] | null; error: { message: string } | null };
+  try {
+    // 1. Pull recent priced crested listings. Geck Inspect is
+    //    crested-gecko-first; other species (leopards, gargoyles, etc.) get
+    //    ingested and archived via migration 0010 but never surface in
+    //    user-facing analytics. The 'unknown' default applies to legacy rows
+    //    ingested before 0010. Only priced rows are useful for price analytics.
+    const listings = await fetchAllPaged<ListingRow>(
+      (from, to) =>
+        admin
+          .from("market_listings")
+          .select(
+            "id, morphmarket_key, title, price, price_usd_equivalent, original_price, cached_traits, norm_traits, maturity, weight, birth_year, birth_month, birth_day, sex, proven_breeder, seller_id, seller_name, seller_location, current_status, is_sold, first_listed_at, first_seen_at, last_seen_at",
+          )
+          .in("species", ["crested", "unknown"])
+          .not("price_usd_equivalent", "is", null)
+          .order("last_seen_at", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as PromiseLike<{
+          data: ListingRow[] | null;
+          error: { message: string } | null;
+        }>,
+      SNAPSHOT_LISTING_LIMIT,
+    );
 
-  if (lErr) {
-    return NextResponse.json({ error: `listings: ${lErr.message}` }, { status: 500 });
-  }
+    // 2. Pull the richer companion rows and key them by listing_id, which maps
+    //    to market_listings.morphmarket_key. This is where trait_array (6k
+    //    rows) and sold_at (2k rows) live, far beyond what market_listings
+    //    carries on its own. We page the whole table; it's the same order of
+    //    magnitude as the listings window.
+    const richRows = await fetchAllPaged<RichListingRow>(
+      (from, to) =>
+        admin
+          .from("listings")
+          .select(
+            "listing_id, name, traits, trait_array, sold_at, seller_slug, seller_name, maturity, weight_grams, birth_date",
+          )
+          .order("listing_id", { ascending: true })
+          .range(from, to) as unknown as PromiseLike<{
+          data: RichListingRow[] | null;
+          error: { message: string } | null;
+        }>,
+      SNAPSHOT_LISTING_LIMIT,
+    );
+    const richByKey = new Map<string, RichListingRow>();
+    for (const rr of richRows) richByKey.set(rr.listing_id, rr);
+    const richFor = (r: ListingRow): RichListingRow | undefined =>
+      r.morphmarket_key != null ? richByKey.get(String(r.morphmarket_key)) : undefined;
 
-  // 2. Pull status events for the listings we returned, so we can assign
-  //    each transaction the correct sold/listed status and compute time on
-  //    market.
-  const ids = (listings ?? []).map((r) => r.id);
-  const statusByListing = new Map<string, StatusEventRow>();
-  if (ids.length) {
-    const { data: events } = (await admin
-      .from("listing_status_events")
-      .select("listing_id, status, observed_at, days_since_first_seen")
-      .in("listing_id", ids)
-      .order("observed_at", { ascending: false })) as {
-      data: StatusEventRow[] | null;
-      error: { message: string } | null;
-    };
-    for (const ev of events ?? []) {
+    // 3. Status events are a small table (status transitions only). Pull them
+    //    all and keep the most recent per listing as a supplementary status /
+    //    time-on-market signal; listings.sold_at remains the primary sold cue.
+    const statusByListing = new Map<string, StatusEventRow>();
+    const statusEvents = await fetchAllPaged<StatusEventRow>(
+      (from, to) =>
+        admin
+          .from("listing_status_events")
+          .select("listing_id, status, observed_at, days_since_first_seen")
+          .order("observed_at", { ascending: false })
+          .range(from, to) as unknown as PromiseLike<{
+          data: StatusEventRow[] | null;
+          error: { message: string } | null;
+        }>,
+    );
+    for (const ev of statusEvents) {
       if (!statusByListing.has(ev.listing_id)) statusByListing.set(ev.listing_id, ev);
     }
-  }
 
-  // 3. Hydrate seller reputation for lineage tier classification. One query
-  //    over all seller ids in the snapshot; the cardinality is at most a few
-  //    hundred for a 5000-listing window.
-  const sellerIds = Array.from(
-    new Set((listings ?? []).map((r) => r.seller_id).filter((id): id is string => !!id)),
-  );
-  const sellerById = new Map<string, SellerRow>();
-  const soldCountById = new Map<string, number>();
-  if (sellerIds.length) {
-    const { data: sellers } = (await admin
-      .from("market_sellers")
-      .select("seller_id, seller_name, seller_location, feedback_count, seller_rating_score, total_listings, membership")
-      .in("seller_id", sellerIds)) as { data: SellerRow[] | null; error: { message: string } | null };
-    for (const s of sellers ?? []) sellerById.set(s.seller_id, s);
+    // 4. Hydrate all sellers. market_sellers (~900) feeds both per-transaction
+    //    breeder attribution and the top-level breeders[] array the consumer's
+    //    Breeders view depends on.
+    const sellerRows = await fetchAllPaged<SellerRow>(
+      (from, to) =>
+        admin
+          .from("market_sellers")
+          .select(
+            "seller_id, seller_name, seller_location, feedback_count, seller_rating_score, total_listings, membership, price_tier, first_seen_listing, morph_specialization",
+          )
+          .order("seller_id", { ascending: true })
+          .range(from, to) as unknown as PromiseLike<{
+          data: SellerRow[] | null;
+          error: { message: string } | null;
+        }>,
+    );
+    const sellerById = new Map<string, SellerRow>();
+    for (const s of sellerRows) sellerById.set(s.seller_id, s);
 
-    // Sold-in-window per seller: pull sold listing_status_events that match
-    // our listing set, group by seller_id via the parent listing map.
-    const listingToSeller = new Map<string, string>();
-    for (const r of listings ?? []) {
-      if (r.seller_id) listingToSeller.set(r.id, r.seller_id);
+    // Per-seller sold-in-window count, used by the lineage classifier.
+    const soldCountById = new Map<string, number>();
+
+    // Resolve a stable breeder id for a listing: prefer market_listings.seller_id,
+    // fall back to the richer listings.seller_slug. Either form also keys
+    // market_sellers, so attribution and lookups stay consistent.
+    const breederIdFor = (r: ListingRow): string | null =>
+      r.seller_id ?? richFor(r)?.seller_slug ?? null;
+
+    const tierFor = (sid: string | null): LineageTier => {
+      if (!sid) return "unknown";
+      const s = sellerById.get(sid);
+      if (!s) return "unknown";
+      return classifyLineage({
+        feedback_count: s.feedback_count,
+        seller_rating_score: s.seller_rating_score,
+        total_listings: s.total_listings,
+        sold_in_window: soldCountById.get(sid) ?? 0,
+        membership: s.membership,
+      });
+    };
+
+    // Region for a listing: prefer the listing's own seller_location, then the
+    // hydrated market_sellers record, then the regionFromLocation default.
+    const regionForListing = (r: ListingRow, bid: string | null): string => {
+      const loc = r.seller_location ?? (bid ? sellerById.get(bid)?.seller_location : null) ?? null;
+      return regionFromLocation(loc);
+    };
+
+    // First pass: pre-compute sold counts per seller so the lineage classifier
+    // sees recent activity. A row is sold if any of its signals say so.
+    const isSold = (r: ListingRow): boolean => {
+      const rr = richFor(r);
+      const ev = statusByListing.get(r.id);
+      return !!rr?.sold_at || r.is_sold === true || r.current_status === "sold" || ev?.status === "sold";
+    };
+    for (const r of listings) {
+      if (!isSold(r)) continue;
+      const bid = breederIdFor(r);
+      if (bid) soldCountById.set(bid, (soldCountById.get(bid) ?? 0) + 1);
     }
-    for (const ev of statusByListing.values()) {
-      if (ev.status !== "sold") continue;
-      const sid = listingToSeller.get(ev.listing_id);
-      if (sid) soldCountById.set(sid, (soldCountById.get(sid) ?? 0) + 1);
+
+    // 5. Build transactions. Unlike the previous generator we DO NOT drop rows
+    //    that fail to resolve a high-value combo; those still carry price,
+    //    region, breeder, status and age signal that the Overview, Regional
+    //    and Breeders views aggregate over. combo_id/combo_name are simply
+    //    null when no canonical combo matches.
+    const transactions = [];
+    for (const r of listings) {
+      const rr = richFor(r);
+      const bid = breederIdFor(r);
+      const seller = bid ? sellerById.get(bid) : undefined;
+
+      const traitArr = Array.isArray(rr?.trait_array) ? rr!.trait_array : null;
+      const combo =
+        matchCombo(traitArr) ??
+        matchCombo(rr?.traits) ??
+        matchCombo(r.norm_traits) ??
+        matchCombo(r.cached_traits) ??
+        matchCombo(r.title) ??
+        matchCombo(rr?.name);
+      const traits = combo ? combo.traits : (traitArr ?? []);
+      const primary_morph = combo ? combo.traits[0] : (traits[0] ?? null);
+
+      const ev = statusByListing.get(r.id);
+      const sold = isSold(r);
+      const status = sold ? "sold" : "listed";
+
+      const soldDate = rr?.sold_at ?? (ev?.status === "sold" ? ev.observed_at : null);
+      const date = sold
+        ? soldDate ?? r.first_listed_at ?? r.first_seen_at ?? r.last_seen_at ?? generatedAt
+        : r.first_listed_at ?? r.first_seen_at ?? r.last_seen_at ?? generatedAt;
+
+      // Time on market for sold rows: prefer measured sold_at - first_seen_at,
+      // fall back to the status event's precomputed delta.
+      let time_on_market_days: number | null = ev?.days_since_first_seen ?? null;
+      if (sold && soldDate && r.first_seen_at) {
+        const ms = Date.parse(soldDate) - Date.parse(r.first_seen_at);
+        if (Number.isFinite(ms) && ms >= 0) time_on_market_days = Math.round(ms / 86_400_000);
+      }
+
+      const internalAge = classifyAge({
+        maturity: r.maturity ?? rr?.maturity,
+        weight: r.weight ?? rr?.weight_grams,
+        hatch_date:
+          hatchDateFromParts(r.birth_year, r.birth_month, r.birth_day) ?? rr?.birth_date,
+        is_breeding: r.proven_breeder,
+      });
+
+      const askPrice = r.price_usd_equivalent ?? r.price ?? r.original_price ?? null;
+
+      transactions.push({
+        id: r.id,
+        combo_id: combo?.id ?? null,
+        combo_name: combo?.name ?? null,
+        traits,
+        primary_morph,
+        region: regionForListing(r, bid),
+        age_class: ageClassForSnapshot(internalAge, r.sex),
+        lineage_tier: lineageTierForSnapshot(tierFor(bid)),
+        breeder_id: bid ?? "unknown",
+        breeder_name: r.seller_name ?? seller?.seller_name ?? rr?.seller_name ?? "Unknown",
+        status,
+        ask_price: askPrice,
+        sold_price: sold ? askPrice : null,
+        time_on_market_days,
+        date,
+        source_id: "external.morphmarket",
+      });
     }
+
+    // 6. Breeders. Emit every hydrated seller so the consumer's Breeders view
+    //    (which filters out breeder_id === 'unknown') can resolve names, tiers,
+    //    regions and specialties for the attributed transactions above.
+    const breeders = sellerRows.map((s) => ({
+      id: s.seller_id,
+      name: s.seller_name ?? s.seller_id,
+      tier: s.price_tier ?? lineageTierForSnapshot(tierFor(s.seller_id)),
+      region: regionFromLocation(s.seller_location),
+      active_since: s.first_seen_listing ?? null,
+      specialties: s.morph_specialization ?? null,
+    }));
+
+    // 7. Show mentions become market_events.
+    const { data: shows } = await admin
+      .from("show_mentions")
+      .select("id, show_name, show_date, source_url, observed_at")
+      .order("observed_at", { ascending: false })
+      .limit(50);
+    const market_events = (shows ?? []).map((s) => ({
+      id: String(s.id),
+      name: s.show_name,
+      region: "US",
+      date: s.show_date ?? s.observed_at,
+      impact: "low",
+      kind: "expo",
+      source_id: "external.show_mentions",
+    }));
+
+    const body = {
+      version: 1,
+      generated_at: generatedAt,
+      transactions,
+      breeders,
+      supply_pipeline: [],
+      demand_signals: {},
+      market_events,
+    };
+
+    return NextResponse.json(body, {
+      headers: {
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  const tierFor = (sid: string | null): LineageTier => {
-    if (!sid) return "unknown";
-    const s = sellerById.get(sid);
-    if (!s) return "unknown";
-    return classifyLineage({
-      feedback_count: s.feedback_count,
-      seller_rating_score: s.seller_rating_score,
-      total_listings: s.total_listings,
-      sold_in_window: soldCountById.get(sid) ?? 0,
-      membership: s.membership,
-    });
-  };
-
-  // Resolve a region for the listing: prefer the listing's own seller_location
-  // (often null in the scrape), then fall back to the hydrated market_sellers
-  // record, then to the regionFromLocation default ("US").
-  const regionForListing = (r: ListingRow): string => {
-    const loc = r.seller_location ?? sellerById.get(r.seller_id ?? "")?.seller_location ?? null;
-    return regionFromLocation(loc);
-  };
-
-  // 4. Build transactions. Drop listings without a recognizable combo so the
-  //    snapshot stays useful for the analytics combos page; non-combo
-  //    listings still surface in the raw market_listings table for any
-  //    consumer that wants them. cached_traits and norm_traits are null on
-  //    the majority of rows; fall through to the listing title so the
-  //    combo matcher has something to chew on.
-  const transactions = [];
-  for (const r of listings ?? []) {
-    const combo =
-      matchCombo(r.cached_traits) ??
-      matchCombo(r.norm_traits) ??
-      matchCombo(r.title);
-    if (!combo) continue;
-    const ev = statusByListing.get(r.id);
-    const status = (ev?.status ?? r.current_status ?? "listed") === "sold" ? "sold" : "listed";
-    const date =
-      ev?.observed_at ?? r.last_seen_at ?? r.first_seen_at ?? r.first_listed_at ?? generatedAt;
-    const internalAge = classifyAge({
-      maturity: r.maturity,
-      weight: r.weight,
-      hatch_date: hatchDateFromParts(r.birth_year, r.birth_month, r.birth_day),
-    });
-    transactions.push({
-      id: r.id,
-      combo_id: combo.id,
-      combo_name: combo.name,
-      traits: combo.traits,
-      primary_morph: combo.traits[0],
-      region: regionForListing(r),
-      age_class: ageClassForSnapshot(internalAge, r.sex),
-      lineage_tier: lineageTierForSnapshot(tierFor(r.seller_id)),
-      breeder_id: r.seller_id ?? "unknown",
-      breeder_name: r.seller_name ?? "Unknown",
-      status,
-      ask_price: r.price ?? r.price_usd_equivalent ?? null,
-      sold_price: status === "sold" ? r.price ?? r.price_usd_equivalent ?? null : null,
-      time_on_market_days: ev?.days_since_first_seen ?? null,
-      date,
-      source_id: "external.morphmarket",
-    });
-  }
-
-  // 5. Breeders. Distinct sellers from the windowed listings, with real tier
-  //    mapped to the consumer's taxonomy.
-  const breederMap = new Map<string, { id: string; name: string; tier: string; region: string }>();
-  for (const r of listings ?? []) {
-    if (!r.seller_id) continue;
-    if (breederMap.has(r.seller_id)) continue;
-    breederMap.set(r.seller_id, {
-      id: r.seller_id,
-      name: r.seller_name ?? r.seller_id,
-      tier: lineageTierForSnapshot(tierFor(r.seller_id)),
-      region: regionForListing(r),
-    });
-  }
-
-  // 6. Show mentions become market_events.
-  const { data: shows } = await admin
-    .from("show_mentions")
-    .select("id, show_name, show_date, source_url, observed_at")
-    .order("observed_at", { ascending: false })
-    .limit(50);
-  const market_events = (shows ?? []).map((s) => ({
-    id: String(s.id),
-    name: s.show_name,
-    region: "US",
-    date: s.show_date ?? s.observed_at,
-    impact: "low",
-    kind: "expo",
-    source_id: "external.show_mentions",
-  }));
-
-  const body = {
-    version: 1,
-    generated_at: generatedAt,
-    transactions,
-    breeders: [...breederMap.values()],
-    supply_pipeline: [],
-    demand_signals: {},
-    market_events,
-  };
-
-  return NextResponse.json(body, {
-    headers: {
-      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
-      "Access-Control-Allow-Origin": "*",
-    },
-  });
 }
