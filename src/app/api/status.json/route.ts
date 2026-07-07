@@ -8,23 +8,27 @@
 //
 //   {
 //     "status": "ok" | "degraded" | "down",
-//     "ingest": {
-//       "last_event_at": "...",
-//       "minutes_since_last_event": 3,
-//       "ok_rate_24h": 0.98,
-//       "p95_duration_ms": 240
-//     },
+//     "ingest": { ... extension event stream freshness ... },
+//     "scrapers": [ ... per-scrape_type freshness from scrape_runs ... ],
 //     "data_age": {
 //       "market_listings_max_last_seen": "...",
 //       "minutes_stale": 8
 //     }
 //   }
 //
-// "down" if no successful ingest in 6 hours; "degraded" if ok_rate < 0.9
-// or stale_minutes > 60.
+// Overall status semantics (revised after the June 2026 outage, when a
+// completely dead scraper pipeline reported "ok" because this endpoint
+// only watched the extension stream):
+//   down:     no data inflow at all - the newest market_listings row is
+//             older than 48 hours (or missing).
+//   degraded: any single stream is unhealthy - extension silent > 6h,
+//             ingest ok_rate < 0.9, any scraper past its freshness
+//             threshold, or data older than 60 minutes.
+//   ok:       everything above passes.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchScraperHealth, type ScraperHealth } from "@/lib/status/scrapers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,20 +53,22 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ status: "down", error: e instanceof Error ? e.message : "admin" }, { status: 500 });
   }
 
-  const [{ data: health }, { data: latestListing }] = await Promise.all([
-    admin
-      .from("v_ingest_health_24h")
-      .select("*")
-      .maybeSingle()
-      .then((r) => ({ data: r.data as HealthRow | null })),
-    admin
-      .from("market_listings")
-      .select("last_seen_at")
-      .order("last_seen_at", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle()
-      .then((r) => ({ data: r.data as { last_seen_at: string | null } | null })),
-  ]);
+  const [{ data: health }, { data: latestListing }, scrapers] =
+    await Promise.all([
+      admin
+        .from("v_ingest_health_24h")
+        .select("*")
+        .maybeSingle()
+        .then((r) => ({ data: r.data as HealthRow | null })),
+      admin
+        .from("market_listings")
+        .select("last_seen_at")
+        .order("last_seen_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()
+        .then((r) => ({ data: r.data as { last_seen_at: string | null } | null })),
+      fetchScraperHealth(admin).catch((): ScraperHealth[] => []),
+    ]);
 
   const now = Date.now();
   const minutesSinceLast = health?.last_ingest_at
@@ -76,9 +82,17 @@ export async function GET(_req: NextRequest) {
       ? (health.ok_requests ?? 0) / health.total_requests
       : null;
 
+  const extensionSilent = minutesSinceLast == null || minutesSinceLast > 360;
+  const anyScraperDown = scrapers.some((s) => s.state === "down");
+
   let status: "ok" | "degraded" | "down" = "ok";
-  if (minutesSinceLast == null || minutesSinceLast > 360) status = "down";
-  else if ((okRate != null && okRate < 0.9) || (minutesStale != null && minutesStale > 60)) {
+  if (minutesStale == null || minutesStale > 48 * 60) status = "down";
+  else if (
+    extensionSilent ||
+    anyScraperDown ||
+    (okRate != null && okRate < 0.9) ||
+    minutesStale > 60
+  ) {
     status = "degraded";
   }
 
@@ -96,6 +110,17 @@ export async function GET(_req: NextRequest) {
         events_ok_24h: health?.events_ok ?? 0,
         events_failed_24h: health?.events_failed ?? 0,
       },
+      scrapers: scrapers.map((s) => ({
+        scrape_type: s.scrapeType,
+        cadence: s.cadence,
+        state: s.state,
+        last_run_at: s.lastRunAt,
+        last_run_status: s.lastRunStatus,
+        last_healthy_at: s.lastHealthyAt,
+        hours_since_healthy: s.hoursSinceHealthy,
+        threshold_hours: s.thresholdHours,
+        last_error: s.lastError,
+      })),
       data_age: {
         market_listings_max_last_seen: latestListing?.last_seen_at ?? null,
         minutes_stale: minutesStale,
