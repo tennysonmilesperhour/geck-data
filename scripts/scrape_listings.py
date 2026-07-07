@@ -49,6 +49,13 @@ DEFAULT_BASE_URL = (
 # we assume we walked past the end of the catalog and break.
 EMPTY_PAGE_TOLERANCE = 3
 
+# If this many page fetches in a row fail outright (proxy quota
+# exhausted, provider outage, network down), the run aborts as 'failed'
+# with the real error instead of burning the rest of the catalog's worth
+# of doomed retries and getting killed by the workflow timeout with the
+# scrape_runs row stuck on 'running'.
+CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
+
 # Tunable batch size for UPSERTs. Supabase HTTP POST stays comfortable
 # under 100 rows per call.
 UPSERT_BATCH_SIZE = 50
@@ -444,6 +451,7 @@ def main() -> int:
     succeeded = 0
     failed = 0
     consecutive_empty = 0
+    consecutive_fetch_failures = 0
 
     try:
         for page in range(1, max_pages + 1):
@@ -461,7 +469,14 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001
                 log(f"ERROR fetching page {page}: {exc}")
                 failed += 1
+                consecutive_fetch_failures += 1
+                if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                    raise RuntimeError(
+                        f"aborting run: {consecutive_fetch_failures} page "
+                        f"fetches failed in a row; last error: {exc}"
+                    ) from exc
                 continue
+            consecutive_fetch_failures = 0
 
             if resp.status_code != 200:
                 log(

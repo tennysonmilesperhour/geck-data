@@ -26,6 +26,12 @@ from lib.decodo_client import DecodoClient
 from lib.supabase_client import get_supabase
 
 WORKER_COUNT = 2
+
+# If this many fetches in a row come back as hard failures (proxy quota
+# exhausted, provider outage), abort the whole run as 'failed' instead of
+# burning credits on the rest of the queue. Parse skips and write
+# failures do not count; only fetch-layer exceptions do.
+CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
 PER_WORKER_DELAY_SECONDS = 2.0
 
 # Same status codes the details scraper deactivates on. If a store URL
@@ -269,6 +275,7 @@ def main() -> int:
             )
             return 0
 
+        consecutive_fetch_failures = 0
         with ThreadPoolExecutor(max_workers=WORKER_COUNT) as pool:
             futures = {pool.submit(fetch_seller, decodo, slug): slug for slug in slugs}
             for future in as_completed(futures):
@@ -279,7 +286,17 @@ def main() -> int:
                 except Exception as exc:  # noqa: BLE001
                     log(f"ERROR seller {slug}: {exc}")
                     failed += 1
+                    consecutive_fetch_failures += 1
+                    if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                        # Cancel everything still queued so the with-block
+                        # does not sit around executing doomed fetches.
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise RuntimeError(
+                            f"aborting run: {consecutive_fetch_failures} fetches "
+                            f"failed in a row; last error: {exc}"
+                        ) from exc
                     continue
+                consecutive_fetch_failures = 0
 
                 if result.action == "upsert" and result.row:
                     try:
