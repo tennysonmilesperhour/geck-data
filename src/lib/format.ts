@@ -56,3 +56,23 @@ export function fmtRelative(s: string | null | undefined): string {
   if (months < 24) return `${months}mo ago`;
   return `${Math.round(months / 12)}y ago`;
 }
+
+// Newest ISO timestamp out of a set of nullable candidates. Used by page
+// headers to stamp DataFreshness with the age of the DATA rather than
+// the render time (the old Date.now() stamps read "updated just now"
+// even when the pipeline had been dead for a month).
+export function newestIso(
+  ...candidates: Array<string | null | undefined>
+): string | null {
+  let best: string | null = null;
+  let bestT = -Infinity;
+  for (const c of candidates) {
+    if (!c) continue;
+    const t = Date.parse(c);
+    if (Number.isFinite(t) && t > bestT) {
+      bestT = t;
+      best = c;
+    }
+  }
+  return best;
+}

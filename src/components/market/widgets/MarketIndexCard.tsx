@@ -109,7 +109,10 @@ export default function MarketIndexCard({
       </div>
 
       <footer className="mt-3 flex items-center justify-between text-[11px] text-forest-500">
-        <DataFreshness updatedAt={Date.now()} tone="forest" />
+        <DataFreshness
+          updatedAt={data.series[data.series.length - 1]?.t ?? null}
+          tone="forest"
+        />
         <SourceBadgeList
           ids={data.attribution.sources}
           max={4}

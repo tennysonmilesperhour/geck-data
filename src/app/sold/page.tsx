@@ -115,7 +115,12 @@ export default async function SoldPage({
             ? `Showing ${fmtInt(rows.length)} of ${fmtInt(allRows.length)} recent sold listings narrowed by ${filterSummary}. The histogram, cohort multiples, and table all reflect this slice.`
             : "Listings that have flipped from live to sold — either explicitly captured by the extension or inferred from absence. Narrow the slice with the filter below."
         }
-        right={<DataFreshness updatedAt={Date.now()} window="all time" />}
+        right={
+          <DataFreshness
+            updatedAt={allRows[0]?.sold_at ?? null}
+            window="all time"
+          />
+        }
       />
 
       <SoldFilters />

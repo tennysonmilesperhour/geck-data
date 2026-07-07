@@ -151,7 +151,12 @@ export default async function PriceDropsPage() {
         eyebrow="Signals"
         title="Price drops"
         description="Explicit price reductions the extension captured on revisit."
-        right={<DataFreshness updatedAt={Date.now()} window="30 days" />}
+        right={
+          <DataFreshness
+            updatedAt={rows[0]?.observed_at ?? null}
+            window="30 days"
+          />
+        }
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
