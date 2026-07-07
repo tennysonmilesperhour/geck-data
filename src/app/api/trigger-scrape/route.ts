@@ -1,6 +1,6 @@
 // POST /api/trigger-scrape
 //
-// Body: { "workflow": "scrape-listings-daily.yml" }
+// Body: { "workflow": "scrape-listings-hourly.yml" }
 //
 // Verifies the caller is the configured admin (ADMIN_USER_ID) then
 // dispatches a workflow_dispatch event to GitHub Actions. The actual
@@ -14,9 +14,13 @@
 import { createClient } from "@/lib/supabase/server";
 
 const ALLOWED_WORKFLOWS = new Set([
-  "scrape-listings-daily.yml",
+  "scrape-listings-hourly.yml",
+  "scrape-listings-weekly-resync.yml",
   "scrape-details-weekly.yml",
   "scrape-images-weekly.yml",
+  "scrape-sellers-weekly.yml",
+  "refresh-indices-nightly.yml",
+  "refresh-adjustments-weekly.yml",
 ]);
 
 export async function POST(req: Request) {

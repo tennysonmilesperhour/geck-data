@@ -86,3 +86,10 @@ jobs:
             psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
           done
           echo "------ done ------"
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Migration apply failed; prod schema may now be mid-file partial. Check the run log before re-pushing."

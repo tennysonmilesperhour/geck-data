@@ -1,0 +1,44 @@
+name: Nightly Index Refresh
+
+# combo_index_daily is a MATERIALIZED view (migration 0035/0036/0037):
+# it only reflects new price_history rows after an explicit refresh.
+# Before this workflow existed the refresh was a manual SQL-editor step
+# that nobody ran, so /indices and every combo sparkline sat frozen at
+# whatever the last hand refresh saw. This runs the SECURITY DEFINER
+# helper once a night.
+on:
+  schedule:
+    - cron: '30 8 * * *'   # 08:30 UTC nightly, before the 09:00 scrape slot
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Refresh combo_index_daily
+        env:
+          PGURL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${PGURL:-}" ]; then
+            echo "SUPABASE_DB_URL secret is not set; cannot refresh." >&2
+            exit 1
+          fi
+          psql "$PGURL" -v ON_ERROR_STOP=1 \
+            -c "select public.refresh_combo_index_daily();"
+          echo "refreshed combo_index_daily"
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Nightly combo_index_daily refresh failed; /indices and combo sparklines will go stale."

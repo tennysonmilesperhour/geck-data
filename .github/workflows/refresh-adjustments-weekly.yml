@@ -1,0 +1,45 @@
+name: Weekly Adjustment Factors Refresh
+
+# Re-derives the price_adjustment_factors multipliers (age, sex, proven,
+# weight bucket) from the last 180 days of observations. The endpoint
+# keeps its seeded fallback values for any bucket below its minimum
+# sample size, so running this on thin data is safe; it only overwrites
+# factors it has enough evidence for. This was specced as a follow-up
+# cron in docs/geck-inspect-integration.md and never wired until now.
+on:
+  schedule:
+    - cron: '0 13 * * 1'   # Mondays 13:00 UTC, after the weekly scrapes
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: POST /api/training/refresh-adjustments
+        env:
+          INGEST_API_KEY: ${{ secrets.INGEST_API_KEY }}
+        run: |
+          if [ -z "${INGEST_API_KEY:-}" ]; then
+            echo "INGEST_API_KEY secret is not set; cannot call the endpoint." >&2
+            exit 1
+          fi
+          http_code=$(curl -sS -m 90 -o /tmp/resp.json -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $INGEST_API_KEY" \
+            "https://geck-data.vercel.app/api/training/refresh-adjustments?window_days=180")
+          cat /tmp/resp.json
+          if [ "$http_code" != "200" ]; then
+            echo "refresh-adjustments returned HTTP $http_code" >&2
+            exit 1
+          fi
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Weekly price-adjustment factor refresh failed; What's-it-worth multipliers stay on their last values."
