@@ -19,22 +19,33 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Install psql
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client
-
+      # Calls the SECURITY DEFINER helper through PostgREST's rpc
+      # endpoint using the same SUPABASE_URL / SUPABASE_SERVICE_KEY
+      # secrets the scrape workflows already use. (An earlier revision
+      # used psql with a SUPABASE_DB_URL secret, but that secret has
+      # never been configured in this repo - the apply-migrations
+      # workflow fails for the same reason.)
       - name: Refresh combo_index_daily
         env:
-          PGURL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          if [ -z "${PGURL:-}" ]; then
-            echo "SUPABASE_DB_URL secret is not set; cannot refresh." >&2
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
+            echo "SUPABASE_URL / SUPABASE_SERVICE_KEY secrets are not set." >&2
             exit 1
           fi
-          psql "$PGURL" -v ON_ERROR_STOP=1 \
-            -c "select public.refresh_combo_index_daily();"
-          echo "refreshed combo_index_daily"
+          http_code=$(curl -sS -m 300 -o /tmp/resp.txt -w '%{http_code}' \
+            -X POST \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "$SUPABASE_URL/rest/v1/rpc/refresh_combo_index_daily")
+          cat /tmp/resp.txt
+          case "$http_code" in
+            200|201|204) echo "refreshed combo_index_daily" ;;
+            *) echo "refresh_combo_index_daily returned HTTP $http_code" >&2; exit 1 ;;
+          esac
 
       - name: Notify Discord on failure
         if: ${{ failure() || cancelled() }}
