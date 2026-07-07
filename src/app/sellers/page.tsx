@@ -56,6 +56,19 @@ export default async function SellersPage({
 
   let rows = (data ?? []) as SellerRow[];
 
+  // market_sellers carries no timestamp column, so the honest freshness
+  // stamp for the directory is "when did we last see any listing" - the
+  // directory's ranks and averages derive from listing activity.
+  const { data: newestListing } = await supabase
+    .from("market_listings")
+    .select("last_seen_at")
+    .order("last_seen_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  const dataAsOf =
+    (newestListing as { last_seen_at: string | null } | null)?.last_seen_at ??
+    null;
+
   // When the user arrived here from a combo entity page (or any link
   // that passed &combos=...), narrow to sellers who currently list at
   // least one matching listing. Both legacy short ids and the new
@@ -185,7 +198,7 @@ export default async function SellersPage({
             ? `${filterSummary}. ${fmtInt(rows.length)} sellers match.`
             : `${fmtInt(rows.length)} sellers tracked across the catalog. The top six are spotlighted below; the rest are sortable in the table. Click any name for their full history.`
         }
-        right={<DataFreshness updatedAt={Date.now()} window="30 days" />}
+        right={<DataFreshness updatedAt={dataAsOf} window="30 days" />}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

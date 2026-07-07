@@ -47,7 +47,13 @@ class DecodoClient:
         self,
         auth: Optional[str] = None,
         min_request_interval: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
+        budget: Optional[Any] = None,
     ) -> None:
+        # budget is a DecodoBudget (scripts/lib/budget.py) or None. When
+        # set, every API attempt is counted against the monthly quota and
+        # fetch() raises BudgetExceededError once the safety threshold is
+        # crossed. Duck-typed so this module has no import dependency.
+        self.budget = budget
         self.auth = auth or os.environ.get("DECODO_AUTH", "")
         if not self.auth:
             sys.exit(
@@ -117,6 +123,12 @@ class DecodoClient:
         last_exc: Optional[Exception] = None
         while attempt < max_retries:
             attempt += 1
+            # Every attempt is one billed Decodo request, including
+            # retries, so count before sending. check() raises
+            # BudgetExceededError when the monthly threshold is hit.
+            if self.budget is not None:
+                self.budget.check()
+                self.budget.record()
             self._respect_rate_limit()
             try:
                 resp = self.session.post(

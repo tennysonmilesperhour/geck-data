@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import StaleDataBanner from "@/components/StaleDataBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TelemetryClient from "@/components/TelemetryClient";
 import VersionToast from "@/components/VersionToast";
@@ -70,6 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans min-h-screen bg-ink-950 text-ink-100 antialiased">
         <TelemetryClient />
         <VersionToast />
+        <StaleDataBanner />
         <Header />
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
           <MorphTermProvider>

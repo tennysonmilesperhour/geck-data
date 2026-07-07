@@ -1,11 +1,17 @@
-// Public ingest status page. Shows, per ingest stream, how many rows exist
-// (lifetime + last 7 days) and how long ago the newest event landed. Reads
-// via the anon key — the same public-read RLS policies the home page uses —
-// so no Bearer token is needed. Use this to answer "is the extension
-// actually writing to Supabase right now?" from the browser.
+// Public system status page. Two sections:
+//   1. Scheduled scrapers - per-scrape_type freshness from scrape_runs
+//      (added after the June 2026 outage where every scraper failed for
+//      four weeks and nothing on this page showed it).
+//   2. Ingest streams - per-table row counts + newest-event age for the
+//      extension event stream.
+// Stream counts read via the anon key (public-read RLS); the scraper
+// panel reads scrape_runs server-side via the admin client because that
+// table has no public-read policy.
 import Link from "next/link";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchScraperHealth, type ScraperHealth } from "@/lib/status/scrapers";
 import { fmtInt, fmtRelative } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +102,14 @@ export default async function StatusPage() {
   const supabase = createClient();
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
 
+  let scrapers: ScraperHealth[] = [];
+  let scrapersError: string | null = null;
+  try {
+    scrapers = await fetchScraperHealth(createAdminClient());
+  } catch (e) {
+    scrapersError = e instanceof Error ? e.message : "unavailable";
+  }
+
   const results: StreamResult[] = await Promise.all(
     STREAMS.map(async (stream): Promise<StreamResult> => {
       const [totalRes, weekRes, newestRes] = await Promise.all([
@@ -149,15 +163,15 @@ export default async function StatusPage() {
             </span>
           </div>
           <h1 className="text-3xl font-semibold tracking-tight text-ink-50">
-            Is the extension writing to Supabase?
+            Is market data flowing?
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-ink-400">
-            One row per ingest stream. Counts and timestamps read live from
-            Supabase on every request. If every stream says{" "}
-            <span className="font-mono text-ink-300">Stale</span> or{" "}
-            <span className="font-mono text-ink-300">No activity</span>, the
-            plugin isn&rsquo;t reaching <code>/api/ingest</code> — or events
-            are being rejected. Admins: drill into{" "}
+            Two feeds keep this site fresh: the scheduled scrapers (GitHub
+            Actions) and the browser extension&rsquo;s event stream. Both are
+            tracked below, live from Supabase on every request. If every
+            stream says <span className="font-mono text-ink-300">Stale</span>{" "}
+            or <span className="font-mono text-ink-300">No activity</span>,
+            nothing is reaching the database. Admins: drill into{" "}
             <Link
               href="/admin/analytics"
               className="underline decoration-dotted hover:text-ink-100"
@@ -182,6 +196,81 @@ export default async function StatusPage() {
         </div>
       </section>
 
+      <SectionHeader
+        eyebrow="Scheduled scrapers"
+        title="Are the GitHub Actions delivering rows?"
+        description="One row per scrape type. A scraper is down when it has gone past its freshness threshold without a run that actually delivered data (failed and zero-row runs do not count)."
+      />
+      {scrapersError ? (
+        <Panel>
+          <p className="text-sm text-ink-400">
+            Scraper health unavailable right now. Check{" "}
+            <span className="font-mono">/data-admin/runs</span> for raw run
+            history.
+          </p>
+        </Panel>
+      ) : (
+        <Panel padded={false}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-ink-700/70 text-left">
+                <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                  Scraper
+                </th>
+                <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                  Last run
+                </th>
+                <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                  Last healthy run
+                </th>
+                <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-700/60">
+              {scrapers.map((s) => (
+                <tr key={s.scrapeType}>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-ink-100">{s.label}</div>
+                    <div className="text-xs text-ink-500">
+                      <span className="font-mono">{s.scrapeType}</span>
+                      <span className="text-ink-600"> · </span>
+                      {s.cadence} cadence
+                    </div>
+                    {s.state === "down" && s.lastError ? (
+                      <div className="mt-0.5 max-w-md truncate text-xs text-danger">
+                        {s.lastError}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-[12px] text-ink-300">
+                    {fmtRelative(s.lastRunAt)}
+                    {s.lastRunStatus ? (
+                      <span className="text-ink-500"> · {s.lastRunStatus}</span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-[12px] text-ink-300">
+                    {fmtRelative(s.lastHealthyAt)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill
+                      status={s.state === "ok" ? "ready" : "idle"}
+                      label={s.state === "ok" ? "Healthy" : "Down"}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
+
+      <SectionHeader
+        eyebrow="Ingest streams"
+        title="Is the extension writing to Supabase?"
+        description="Counts and timestamps read live from Supabase on every request."
+      />
       <Panel padded={false}>
         <table className="w-full text-sm">
           <thead>

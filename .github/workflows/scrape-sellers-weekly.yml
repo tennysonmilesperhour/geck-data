@@ -57,3 +57,10 @@ jobs:
           TRIGGERED_BY: github_action
         working-directory: scripts
         run: python scrape_sellers.py
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Weekly sellers scrape did not complete."

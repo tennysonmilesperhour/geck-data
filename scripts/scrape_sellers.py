@@ -22,10 +22,17 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple, Optional
 
+from lib.budget import BudgetExceededError, DecodoBudget
 from lib.decodo_client import DecodoClient
 from lib.supabase_client import get_supabase
 
 WORKER_COUNT = 2
+
+# If this many fetches in a row come back as hard failures (proxy quota
+# exhausted, provider outage), abort the whole run as 'failed' instead of
+# burning credits on the rest of the queue. Parse skips and write
+# failures do not count; only fetch-layer exceptions do.
+CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
 PER_WORKER_DELAY_SECONDS = 2.0
 
 # Same status codes the details scraper deactivates on. If a store URL
@@ -245,7 +252,8 @@ def main() -> int:
     max_sellers = int(max_sellers_env) if max_sellers_env else None
 
     supabase = get_supabase()
-    decodo = DecodoClient()
+    budget = DecodoBudget(supabase)
+    decodo = DecodoClient(budget=budget)
 
     run_id = start_scrape_run(supabase)
     attempted = 0
@@ -269,6 +277,7 @@ def main() -> int:
             )
             return 0
 
+        consecutive_fetch_failures = 0
         with ThreadPoolExecutor(max_workers=WORKER_COUNT) as pool:
             futures = {pool.submit(fetch_seller, decodo, slug): slug for slug in slugs}
             for future in as_completed(futures):
@@ -276,10 +285,24 @@ def main() -> int:
                 attempted += 1
                 try:
                     result = future.result()
+                except BudgetExceededError:
+                    # Monthly quota threshold hit; stop the whole run now.
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     log(f"ERROR seller {slug}: {exc}")
                     failed += 1
+                    consecutive_fetch_failures += 1
+                    if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                        # Cancel everything still queued so the with-block
+                        # does not sit around executing doomed fetches.
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise RuntimeError(
+                            f"aborting run: {consecutive_fetch_failures} fetches "
+                            f"failed in a row; last error: {exc}"
+                        ) from exc
                     continue
+                consecutive_fetch_failures = 0
 
                 if result.action == "upsert" and result.row:
                     try:
@@ -325,6 +348,8 @@ def main() -> int:
             error_message=str(exc),
         )
         return 1
+    finally:
+        budget.flush()
 
 
 if __name__ == "__main__":

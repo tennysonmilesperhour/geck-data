@@ -28,7 +28,7 @@ import TimeSeriesLine, {
 } from "@/components/charts/TimeSeriesLine";
 import { chartTheme } from "@/components/charts/theme";
 import { createClient } from "@/lib/supabase/server";
-import { fmtInt, fmtPct, fmtUsd } from "@/lib/format";
+import { fmtInt, fmtPct, fmtUsd, newestIso } from "@/lib/format";
 import TraitMomentumPanels, {
   TraitMomentumSkeleton,
 } from "@/components/trends/TraitMomentumPanels";
@@ -228,6 +228,14 @@ export default async function TrendsPage({
     .filter((r) => r.t !== "");
   const soldRows = ((soldRowsRaw.data ?? []) as SoldRow[]).filter(
     (r): r is SoldRow & { observed_at: string } => r.observed_at != null,
+  );
+
+  // Honest freshness stamp: the newest observation across the price
+  // ticks, sold events, and listing arrivals this page charts.
+  const dataAsOf = newestIso(
+    ...((priceHistoryRaw.data ?? []) as PriceRow[]).map((r) => r.observed_at),
+    ...soldRows.map((r) => r.observed_at),
+    ...addedRows.map((r) => r.t),
   );
 
   const addedCount = addedRows.length;
@@ -466,7 +474,7 @@ export default async function TrendsPage({
                 </span>
               </span>
             </span>
-            <DataFreshness updatedAt={Date.now()} window={`${windowDays} days`} />
+            <DataFreshness updatedAt={dataAsOf} window={`${windowDays} days`} />
           </div>
         }
       />

@@ -55,3 +55,10 @@ jobs:
           TRIGGERED_BY: github_action_weekly_resync
         working-directory: scripts
         run: python scrape_listings.py
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Weekly full listings re-sync did not complete; active/inactive statuses will drift until it succeeds."

@@ -1,0 +1,43 @@
+name: Notify Discord on failure
+description: >
+  Posts a short failure summary to the ops Discord webhook. Added after
+  the June 2026 outage where the Decodo quota ran out and every scrape
+  workflow failed silently for four weeks; GitHub's own notifications
+  never reached anyone. Attach this as the LAST step of a job with
+  `if: failure() || cancelled()` so it also fires when the job dies to
+  its timeout-minutes ceiling.
+
+  Requires the DISCORD_OPS_WEBHOOK repo secret (a Discord channel
+  webhook URL). When the secret is missing the step logs a note and
+  exits 0 so forks and previews never fail on it.
+
+inputs:
+  webhook-url:
+    description: Discord webhook URL (pass secrets.DISCORD_OPS_WEBHOOK)
+    required: true
+  context:
+    description: One-line description of what failed, shown in the message
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Post to Discord
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook-url }}
+        CONTEXT: ${{ inputs.context }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        WORKFLOW: ${{ github.workflow }}
+      run: |
+        if [ -z "$WEBHOOK_URL" ]; then
+          echo "DISCORD_OPS_WEBHOOK is not set; skipping notification."
+          echo "Add the secret in repo Settings > Secrets to enable ops alerts."
+          exit 0
+        fi
+        # jq-free JSON build; the message body is plain ASCII we control.
+        payload=$(printf '{"content": ":rotating_light: **%s failed or timed out.** %s\\nRun: %s"}' \
+          "$WORKFLOW" "$CONTEXT" "$RUN_URL")
+        curl -sS -m 10 -X POST -H 'Content-Type: application/json' \
+          -d "$payload" "$WEBHOOK_URL" \
+          || echo "WARN: Discord notification failed to send."

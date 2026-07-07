@@ -28,6 +28,7 @@ import traceback
 from typing import Any, Optional
 from urllib.parse import urlencode
 
+from lib.budget import BudgetExceededError, DecodoBudget
 from lib.decodo_client import DecodoClient
 from lib.supabase_client import get_supabase
 from transform_and_load import (
@@ -48,6 +49,13 @@ DEFAULT_BASE_URL = (
 # How aggressively to stop. If three pages in a row return zero listings
 # we assume we walked past the end of the catalog and break.
 EMPTY_PAGE_TOLERANCE = 3
+
+# If this many page fetches in a row fail outright (proxy quota
+# exhausted, provider outage, network down), the run aborts as 'failed'
+# with the real error instead of burning the rest of the catalog's worth
+# of doomed retries and getting killed by the workflow timeout with the
+# scrape_runs row stuck on 'running'.
+CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
 
 # Tunable batch size for UPSERTs. Supabase HTTP POST stays comfortable
 # under 100 rows per call.
@@ -432,7 +440,8 @@ def main() -> int:
     is_smoke_run = max_pages_env is not None or delta_mode
 
     supabase = get_supabase()
-    decodo = DecodoClient()
+    budget = DecodoBudget(supabase)
+    decodo = DecodoClient(budget=budget)
 
     known_ids: set[str] = set()
     if delta_mode:
@@ -444,6 +453,7 @@ def main() -> int:
     succeeded = 0
     failed = 0
     consecutive_empty = 0
+    consecutive_fetch_failures = 0
 
     try:
         for page in range(1, max_pages + 1):
@@ -458,10 +468,21 @@ def main() -> int:
                     browser_actions=LISTING_GRID_ACTIONS,
                     timeout_seconds=180,
                 )
+            except BudgetExceededError:
+                # Monthly quota threshold hit; the FATAL handler below
+                # closes the run as failed with the budget message.
+                raise
             except Exception as exc:  # noqa: BLE001
                 log(f"ERROR fetching page {page}: {exc}")
                 failed += 1
+                consecutive_fetch_failures += 1
+                if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                    raise RuntimeError(
+                        f"aborting run: {consecutive_fetch_failures} page "
+                        f"fetches failed in a row; last error: {exc}"
+                    ) from exc
                 continue
+            consecutive_fetch_failures = 0
 
             if resp.status_code != 200:
                 log(
@@ -547,6 +568,8 @@ def main() -> int:
             error_message=str(exc),
         )
         return 1
+    finally:
+        budget.flush()
 
 
 if __name__ == "__main__":
