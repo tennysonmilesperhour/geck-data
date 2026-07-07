@@ -28,6 +28,7 @@ import traceback
 from typing import Any, Optional
 from urllib.parse import urlencode
 
+from lib.budget import BudgetExceededError, DecodoBudget
 from lib.decodo_client import DecodoClient
 from lib.supabase_client import get_supabase
 from transform_and_load import (
@@ -439,7 +440,8 @@ def main() -> int:
     is_smoke_run = max_pages_env is not None or delta_mode
 
     supabase = get_supabase()
-    decodo = DecodoClient()
+    budget = DecodoBudget(supabase)
+    decodo = DecodoClient(budget=budget)
 
     known_ids: set[str] = set()
     if delta_mode:
@@ -466,6 +468,10 @@ def main() -> int:
                     browser_actions=LISTING_GRID_ACTIONS,
                     timeout_seconds=180,
                 )
+            except BudgetExceededError:
+                # Monthly quota threshold hit; the FATAL handler below
+                # closes the run as failed with the budget message.
+                raise
             except Exception as exc:  # noqa: BLE001
                 log(f"ERROR fetching page {page}: {exc}")
                 failed += 1
@@ -562,6 +568,8 @@ def main() -> int:
             error_message=str(exc),
         )
         return 1
+    finally:
+        budget.flush()
 
 
 if __name__ == "__main__":

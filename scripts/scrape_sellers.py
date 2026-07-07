@@ -22,6 +22,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple, Optional
 
+from lib.budget import BudgetExceededError, DecodoBudget
 from lib.decodo_client import DecodoClient
 from lib.supabase_client import get_supabase
 
@@ -251,7 +252,8 @@ def main() -> int:
     max_sellers = int(max_sellers_env) if max_sellers_env else None
 
     supabase = get_supabase()
-    decodo = DecodoClient()
+    budget = DecodoBudget(supabase)
+    decodo = DecodoClient(budget=budget)
 
     run_id = start_scrape_run(supabase)
     attempted = 0
@@ -283,6 +285,10 @@ def main() -> int:
                 attempted += 1
                 try:
                     result = future.result()
+                except BudgetExceededError:
+                    # Monthly quota threshold hit; stop the whole run now.
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     log(f"ERROR seller {slug}: {exc}")
                     failed += 1
@@ -342,6 +348,8 @@ def main() -> int:
             error_message=str(exc),
         )
         return 1
+    finally:
+        budget.flush()
 
 
 if __name__ == "__main__":
