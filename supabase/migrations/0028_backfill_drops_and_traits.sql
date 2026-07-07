@@ -16,7 +16,17 @@
 --
 -- Both passes are idempotent: re-running won't double-write drops (unique
 -- constraint added below) and the trait sanitization is a fixed-point
--- transform — running it twice produces the same output.
+-- transform: running it twice produces the same output.
+--
+-- AMENDED 2026-07-07, before the first prod apply. The original dedup
+-- key (listing_id, observed_at, source) was insufficient: a dry run
+-- showed 2,548 of 2,555 lag-derived candidates were near-duplicates of
+-- drops the extension had already recorded at a slightly different
+-- timestamp, so the insert would have doubled the price_drops table.
+-- The insert now also skips candidates that already have a price_drops
+-- row for the same listing within one hour. Applied to prod that day
+-- with this guard (7 genuinely missed drops inserted, 56 trait rows
+-- sanitized; originals snapshotted in _backup_0028_trait_rows).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -61,6 +71,12 @@ from (
 where prev_price is not null
   and price       is not null
   and price < prev_price
+  and not exists (
+    select 1 from public.price_drops pd
+    where pd.listing_id = windowed.listing_id
+      and pd.observed_at between windowed.observed_at - interval '1 hour'
+                             and windowed.observed_at + interval '1 hour'
+  )
 on conflict (listing_id, observed_at, source) do nothing;
 
 -- ----------------------------------------------------------------------------

@@ -7,6 +7,100 @@ deferred.
 
 ---
 
+## 2026-07-07: Phase R (Resuscitate) from ROADMAP.md
+
+Context: the July 2026 audit (see ROADMAP.md Part 1) found the scrape
+pipeline dead since June 9 (Decodo 429 on every request, hourly jobs
+burning their 15-minute timeout with scrape_runs rows stuck on
+'running'), the extension stream silent since May 14, and nothing
+alerting on either. This pass makes the pipeline fail fast, fail loud,
+and tell users the truth about data age. All work on branch
+`claude/gecko-tool-roadmap-8bb655`.
+
+### Shipped
+
+- **Scraper fail-fast**: 5 consecutive hard fetch failures abort the
+  run as `failed` with the real error (scrape_listings walks, and the
+  worker pools in scrape_details/scrape_sellers, which also cancel
+  queued futures).
+- **Decodo budget guard** (`scripts/lib/budget.py`): every API attempt
+  counts against a `decodo_requests_YYYYMM` key in runtime_config;
+  new requests hard-stop at 90% of the 19k monthly quota. Overrides:
+  DECODO_MONTHLY_QUOTA, DECODO_BUDGET_STOP_FRACTION. Count is
+  best-effort (concurrent runs can undercount slightly); Decodo's
+  dashboard stays the billing source of truth.
+- **Discord ops alerts**: composite action
+  `.github/actions/notify-failure` posts to DISCORD_OPS_WEBHOOK on
+  failure/timeout; wired into every scrape workflow plus
+  apply-migrations. NEEDS THE SECRET: add DISCORD_OPS_WEBHOOK in repo
+  settings or the step logs a note and does nothing.
+- **Scheduled refreshes**: refresh-indices-nightly.yml calls
+  `refresh_combo_index_daily()` (the materialised view had NO refresh
+  schedule at all); refresh-adjustments-weekly.yml POSTs
+  /api/training/refresh-adjustments (NEEDS the INGEST_API_KEY secret in
+  GitHub Actions).
+- **Deleted scrape-listings-daily.yml**: byte-for-byte redundant with
+  the hourly delta walk. trigger-scrape allowlist updated to the
+  workflows that exist.
+- **Status watches the scrapers**: /api/status.json + /status now
+  report per-scrape_type freshness from scrape_runs via
+  `src/lib/status/scrapers.ts` (healthy run = delivered rows or had
+  nothing to do). Overall status semantics changed: down = no data
+  inflow 48h; degraded = any single stream unhealthy. The June failure
+  mode can no longer report ok.
+- **StaleDataBanner** on every page once data is older than 48h, and
+  the five `DataFreshness updatedAt={Date.now()}` call sites now stamp
+  the age of the data itself (/sold, /price-drops, /sellers, /trends,
+  MarketIndexCard).
+- **tsconfig**: dropped deprecated `baseUrl` (newer tsc makes it a
+  hard error; paths already relative).
+
+### Prod schema reconciliation (applied via Supabase MCP this session)
+
+- `0038_capture_scraper_rpcs`: the three scraper RPCs
+  (mark_unseen_listings_inactive, listings_needing_detail_scrape,
+  listings_needing_image_download) existed only in prod since PR #48;
+  definitions read back via pg_get_functiondef and captured as a repo
+  migration, applied as a no-op.
+- `0030_notification_channels_and_demand` and `0031_batch_jobs` were in
+  the repo but never applied to prod (user_notification_channels,
+  listing_views, listing_favorites, v_demand_index, batch_jobs now
+  exist). Alert delivery has a schema to write to for the first time.
+- Repo `0032_data_quality_and_alerts.sql` had only partially reached
+  prod (as `0032_data_quality_columns`): alert_delivery_attempts,
+  alert_matches.acknowledged_at/snoozed_until, model_invocations
+  confidence columns, morph_human_labels, v_trait_recognition_metrics
+  and prune_ingest_audit were missing. Re-applied in full as
+  `0032_data_quality_and_alerts_full` (file is idempotent).
+- `0028_backfill_drops_and_traits` applied WITH AN AMENDMENT: dry run
+  showed 2,548 of 2,555 lag-derived drop candidates were near-dupes of
+  extension-recorded drops (same listing within an hour, different
+  timestamp), so the insert gained a 1-hour-window NOT EXISTS guard.
+  Result: 7 genuinely missed drops inserted, 56 trait rows sanitized.
+  Originals snapshotted in `_backup_0028_trait_rows`; drop that table
+  once /trends and /market look right.
+
+### Still blocked on Tennyson
+
+1. **Decodo account**: renew/upgrade the plan (or approve a provider
+   swap). Every request has 429'd since June 9; nothing scrapes until
+   this is fixed. Then run the weekly-resync workflow manually once to
+   re-baseline active/inactive statuses.
+2. **DISCORD_OPS_WEBHOOK secret** in GitHub repo settings (a Discord
+   channel webhook URL) to turn on failure alerts.
+3. **INGEST_API_KEY secret** in GitHub Actions (same value as the
+   Vercel env var) so refresh-adjustments-weekly can authenticate.
+4. **Extension**: diagnose why Eye in the Sky stopped POSTing on
+   May 14 (key, host, or layout change; check the eyeinthesky repo).
+
+### Deferred to Phase T
+
+The trait delimiter bug (scraper writes pipe-delimited cached_traits,
+0037 views split on commas) is NOT fixed in this pass; note that
+0028's sanitize keeps the pipe convention, so the Phase T
+normalisation should convert delimiters and re-run the 0037 views in
+one move.
+
 ## 2026-05-22: Phases 1-4 implementation pass
 
 Tennyson approved Phase 0 and asked to ship the rest of the plan
