@@ -121,6 +121,7 @@ class DecodoClient:
 
         attempt = 0
         last_exc: Optional[Exception] = None
+        last_status: Optional[int] = None
         while attempt < max_retries:
             attempt += 1
             # Every attempt is one billed Decodo request, including
@@ -149,6 +150,7 @@ class DecodoClient:
 
             # 429 = rate limited. 5xx = transient Decodo failure. Both retry.
             if resp.status_code == 429 or 500 <= resp.status_code < 600:
+                last_status = resp.status_code
                 backoff = self._backoff(attempt)
                 print(
                     f"[decodo] {resp.status_code} on attempt "
@@ -191,8 +193,27 @@ class DecodoClient:
                 attempts=attempt,
             )
 
+        # Build a diagnosable failure summary. A pure 429/5xx wall never sets
+        # last_exc (no network/parse exception is raised on those paths), so
+        # the message used to read "... : None", hiding the real cause. Surface
+        # the last HTTP status so scrape_runs.error_message and the logs say
+        # *why* — a persistent 429 across every attempt means the Decodo plan
+        # is rate-limited or the monthly quota is exhausted (check the Decodo
+        # dashboard subscription/usage), not a MorphMarket layout change.
+        if last_exc is not None:
+            detail = str(last_exc)
+        elif last_status == 429:
+            detail = (
+                "every attempt returned HTTP 429 (Decodo rate-limited or "
+                "monthly quota exhausted — check the Decodo dashboard "
+                "subscription/usage)"
+            )
+        elif last_status is not None:
+            detail = f"every attempt returned HTTP {last_status}"
+        else:
+            detail = "no successful response and no exception captured"
         raise RuntimeError(
-            f"Decodo failed after {max_retries} attempts for {url}: {last_exc}"
+            f"Decodo failed after {max_retries} attempts for {url}: {detail}"
         )
 
     @staticmethod
