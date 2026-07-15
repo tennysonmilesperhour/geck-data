@@ -19,8 +19,15 @@ name: Hourly Listings Delta
 # immediately because the first run already bumped last_seen_at on
 # page-1 listings.
 on:
-  schedule:
-    - cron: '0 * * * *'   # top of every hour, UTC
+  # PAUSED 2026-07-15: every hourly run was failing in a Decodo HTTP 429
+  # storm (Decodo's API rejects every request on page 1, attempt 1 — quota
+  # still reading exhausted or the DECODO_AUTH secret no longer matches the
+  # resubscribed account). Schedule disabled until the Decodo auth/quota is
+  # diagnosed and fixed. Re-enable by uncommenting the two lines below.
+  # workflow_dispatch stays on so we can still trigger manual diagnosis runs.
+  #
+  # schedule:
+  #   - cron: '0 * * * *'   # top of every hour, UTC
   workflow_dispatch:
 
 # Stay grouped with the weekly resync workflow so we never have two
