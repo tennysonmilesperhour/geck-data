@@ -618,6 +618,10 @@ These are blocking Phase 1. Each has a recommended answer.
 - Reused the existing GitHub `SUPABASE_SERVICE_KEY` for the weekly adjustment
   refresh instead of copying the separate ingest credential out of Vercel. The
   endpoint accepts either server-only key with a constant-time comparison.
+- The first authenticated production run exposed a stale schema assumption in
+  that endpoint: `market_listings` has `proven_breeder`, not `parentage`. The
+  refresh now reads the real boolean column and keeps maturity text as a
+  compatibility signal.
 - Upgraded the repository's official GitHub actions to their Node 24-based v7
   majors, removing the runner's Node 20 deprecation path.
 - Kept the psql migration runner because this repository has legacy filenames

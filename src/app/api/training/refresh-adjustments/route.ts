@@ -41,7 +41,7 @@ type SoldRow = {
   maturity: string | null;
   sex: string | null;
   weight: number | string | null;
-  parentage: string | null;
+  proven_breeder: boolean | null;
 };
 
 function median(xs: number[]): number {
@@ -76,12 +76,7 @@ function parseGrams(v: number | string | null): number | null {
 }
 
 function inferProven(row: SoldRow): boolean {
-  // No dedicated boolean on market_listings — proven status leaks through the
-  // free-text columns. parentage carries breeder notes; maturity carries the
-  // string "Proven Breeder" for confirmed adults.
-  if (row.parentage && /proven/i.test(row.parentage)) return true;
-  if (row.maturity && /proven/i.test(row.maturity)) return true;
-  return false;
+  return row.proven_breeder === true || /proven/i.test(row.maturity ?? "");
 }
 
 export async function POST(req: NextRequest) {
@@ -122,7 +117,7 @@ export async function POST(req: NextRequest) {
   const { data: sales, error } = await admin
     .from("listing_status_events")
     .select(
-      "listing_id, observed_at, market_listings(id, price_usd_equivalent, price, maturity, sex, weight, parentage, species)",
+      "listing_id, observed_at, market_listings(id, price_usd_equivalent, price, maturity, sex, weight, proven_breeder, species)",
     )
     .eq("status", "sold")
     .gte("observed_at", since)
