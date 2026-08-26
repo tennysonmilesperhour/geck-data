@@ -607,3 +607,23 @@ These are blocking Phase 1. Each has a recommended answer.
     MorphMarket-only? Recommend MorphMarket-only for the composite,
     with a separate `/api/indices/cross_platform` slice exposed
     later if useful.
+
+## 2026-08-26: Post-edge hardening operations cleanup
+
+- Paused the weekly details, listings-resync, and sellers schedules after
+  confirming their latest runs still receive only Decodo HTTP 429 responses.
+  Manual dispatch remains available for diagnosis after the account is fixed.
+- Kept the independent weekly image download and nightly index refresh enabled;
+  their latest production runs succeeded.
+- Reused the existing GitHub `SUPABASE_SERVICE_KEY` for the weekly adjustment
+  refresh instead of copying the separate ingest credential out of Vercel. The
+  endpoint accepts either server-only key with a constant-time comparison.
+- Upgraded the repository's official GitHub actions to their Node 24-based v7
+  majors, removing the runner's Node 20 deprecation path.
+- Kept the psql migration runner because this repository has legacy filenames
+  and duplicate versions that cannot safely move to `supabase db push` without
+  a planned history reconciliation. Each file now runs in one transaction and
+  manual file inputs are path-validated.
+- Deferred two owner-supplied secrets: `SUPABASE_DB_URL` for automated DDL and
+  `DISCORD_OPS_WEBHOOK` for failure notifications. Production migrations still
+  need to be applied and verified through the Supabase MCP when those are absent.

@@ -22,6 +22,7 @@
 // Sample-size gate: any bucket with n < 20 keeps its seed value.
 
 import { NextRequest, NextResponse } from "next/server";
+import { matchesApiToken } from "@/lib/auth/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { weightBucket, type AgeClass } from "@/lib/market/price-adjust";
 
@@ -84,12 +85,19 @@ function inferProven(row: SoldRow): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const expected = process.env.INGEST_API_KEY;
   const presented =
     req.headers.get("authorization")?.replace(/^Bearer /, "") ??
     req.headers.get("x-api-key") ??
     "";
-  if (!expected || presented !== expected) {
+  // Interactive tools keep using INGEST_API_KEY. The scheduled GitHub job
+  // already has the production service key for its Supabase workflows, so it
+  // can authenticate here without duplicating the ingest secret in GitHub.
+  const authorized = matchesApiToken(presented, [
+    process.env.INGEST_API_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  ]);
+  if (!authorized) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

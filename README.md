@@ -74,8 +74,8 @@ Open Terminal and run:
 node --version
 ```
 
-If it prints something like `v20.something`, you're good. Otherwise install it
-from https://nodejs.org (pick the **LTS** version — currently 20.x).
+If it prints `v22` or newer, you're good. Otherwise install a current LTS
+release from https://nodejs.org. CI and production currently build on Node 24.
 
 ### 4. Install dependencies
 
@@ -151,6 +151,12 @@ Open http://localhost:3000 in your browser.
 ### Subsequent deploys
 
 `git push` to `main` → Vercel auto-deploys. That's it.
+
+Database migrations under `supabase/migrations/` are applied separately from
+the Vercel build. The GitHub `apply-migrations` workflow requires the
+`SUPABASE_DB_URL` repository secret. Until that secret is configured, apply a
+new migration through the connected Supabase tooling in the same session that
+pushes it, then verify the affected function, view, or table in production.
 
 ---
 

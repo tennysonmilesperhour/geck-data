@@ -211,10 +211,12 @@ not needed.
 
 ## Auth and middleware
 
-- `src/middleware.ts` runs on every request. Refreshes Supabase
-  session cookies. Gates `/upload`, `/api/upload`, `/admin` to
-  logged-in users. Passes through if Supabase env vars are missing
-  (so deploys do not 500 on cold start in a misconfigured preview).
+- `src/middleware.ts` runs only on the session-protected routes matched in its
+  exported config: `/upload`, `/api/upload`, `/admin`, `/data-admin`,
+  `/watchlist`, and `/alerts`. It refreshes Supabase session cookies and gates
+  those routes to logged-in users. Public catalog and static asset requests do
+  not invoke middleware. It passes through if Supabase env vars are missing so
+  a misconfigured preview does not fail during cold start.
 - `Header.tsx` reads `profiles.role` on the client and adds an
   "Analytics" link for admins. The admin layout
   (`src/app/admin/layout.tsx`) re-checks server-side as belt and

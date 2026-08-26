@@ -18,8 +18,10 @@ name: Weekly Sellers Scrape
 # details job feeds the slugs view, so running this after it gives the
 # fresh slug data a chance to land first.
 on:
-  schedule:
-    - cron: '0 12 * * 1'   # Mondays 12:00 UTC
+  # PAUSED 2026-08-26: Decodo has returned HTTP 429 for every request since
+  # June. Keep manual dispatch for diagnosis after the account is repaired.
+  # schedule:
+  #   - cron: '0 12 * * 1'   # Mondays 12:00 UTC
   workflow_dispatch:
 
 # Sellers scrape is independent of the listings concurrency group,
@@ -38,10 +40,10 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip

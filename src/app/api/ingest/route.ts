@@ -16,7 +16,7 @@
 //
 // All writes use the service role key.
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
+import { matchesApiToken } from "@/lib/auth/tokens";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseMorphmarketDb, upsertBatched } from "@/lib/ingest/parseSqlite";
 import { handleEvent, parseEnvelopes } from "@/lib/ingest/events";
@@ -61,10 +61,7 @@ function authorized(req: NextRequest): boolean {
   const presented = fromBearer || fromApiKey;
   if (!presented) return false;
 
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  return matchesApiToken(presented, [expected]);
 }
 
 // CORS — content scripts running on https://www.morphmarket.com are the

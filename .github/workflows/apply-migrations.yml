@@ -1,15 +1,14 @@
 name: apply-migrations
 
-# Applies any new files under supabase/migrations/ to the production
-# Supabase project when they land on main. Replaces the manual "apply via
-# the Supabase MCP at the same time you push" step in CLAUDE.md.
+# Applies new files under supabase/migrations/ to the production Supabase
+# project when they land on main.
 #
-# Strategy:
-#   1. Find migration files changed in the pushed commits.
-#   2. For each one, pipe it to `supabase db query` against the project URL
-#      using the service-role connection string.
-#   3. Idempotent: every migration in this repo uses IF NOT EXISTS /
-#      CREATE OR REPLACE, so re-running is safe.
+# This repo predates the Supabase CLI's timestamped migration convention and
+# contains duplicate legacy versions, so `supabase db push` cannot safely own
+# its history without a separate reconciliation project. Until that work is
+# done, changed files are applied in filename order through psql. Each file is
+# wrapped in its own transaction so a failure cannot leave that file half
+# applied. Do not manually re-apply a file unless its SQL is known to be safe.
 #
 # Required secrets:
 #   SUPABASE_DB_URL   — postgres:// connection string with DDL permissions.
@@ -24,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       file:
-        description: "Single migration file to re-apply (path relative to repo root)"
+        description: "Single migration file to apply (supabase/migrations/*.sql)"
         required: false
 
 jobs:
@@ -32,10 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out repo (with previous commit for diff)
-        uses: actions/checkout@v4
+      - name: Check out repo
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          # Pushes can contain more than one commit. Full history guarantees
+          # github.event.before is available for the migration diff.
+          fetch-depth: 0
 
       - name: Install psql
         run: |
@@ -44,22 +45,36 @@ jobs:
 
       - name: Determine migrations to apply
         id: pick
+        env:
+          REQUESTED_FILE: ${{ inputs.file }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.file }}" ]; then
-            echo "files=${{ github.event.inputs.file }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Diff the pushed commits' changes under supabase/migrations.
-          # The push event provides before/after SHAs in github.event.
-          BEFORE="${{ github.event.before }}"
-          AFTER="${{ github.event.after }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            # First push to the branch — apply every migration. Safe because
-            # every file uses IF NOT EXISTS / CREATE OR REPLACE.
-            files=$(ls supabase/migrations/*.sql | sort)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${REQUESTED_FILE:-}" ]; then
+            case "$REQUESTED_FILE" in
+              supabase/migrations/*.sql) ;;
+              *) echo "::error::file must match supabase/migrations/*.sql"; exit 1 ;;
+            esac
+            if [ ! -f "$REQUESTED_FILE" ]; then
+              echo "::error::migration file does not exist: $REQUESTED_FILE"
+              exit 1
+            fi
+            files="$REQUESTED_FILE"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::error::manual runs require a migration file"
+            exit 1
+          elif [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "::error::cannot determine the previous revision safely"
+            exit 1
           else
-            files=$(git diff --name-only --diff-filter=AM "$BEFORE" "$AFTER" -- 'supabase/migrations/*.sql' | sort)
+            changed_existing=$(git diff --name-only --diff-filter=MD "$BEFORE_SHA" "$AFTER_SHA" -- 'supabase/migrations/*.sql' | sort)
+            if [ -n "$changed_existing" ]; then
+              echo "::error::existing migrations are immutable; add a corrective migration instead"
+              echo "$changed_existing"
+              exit 1
+            fi
+            files=$(git diff --name-only --diff-filter=A "$BEFORE_SHA" "$AFTER_SHA" -- 'supabase/migrations/*.sql' | sort)
           fi
           echo "Files to apply:"
           echo "$files"
@@ -72,6 +87,7 @@ jobs:
       - name: Apply migrations
         if: steps.pick.outputs.files != ''
         env:
+          FILES: ${{ steps.pick.outputs.files }}
           PGURL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
@@ -79,12 +95,19 @@ jobs:
             echo "::error::SUPABASE_DB_URL secret is not set; cannot apply migrations."
             exit 1
           fi
-          IFS=$'\n'
-          for f in ${{ steps.pick.outputs.files }}; do
+          while IFS= read -r f; do
             [ -z "$f" ] && continue
+            case "$f" in
+              supabase/migrations/*.sql) ;;
+              *) echo "::error::refusing unexpected path: $f"; exit 1 ;;
+            esac
+            if [ ! -f "$f" ]; then
+              echo "::error::migration file does not exist: $f"
+              exit 1
+            fi
             echo "------ applying $f ------"
-            psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
-          done
+            psql "$PGURL" -X -v ON_ERROR_STOP=1 --single-transaction --file "$f"
+          done <<< "$FILES"
           echo "------ done ------"
 
       - name: Notify Discord on failure
@@ -92,4 +115,4 @@ jobs:
         uses: ./.github/actions/notify-failure
         with:
           webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
-          context: "Migration apply failed; prod schema may now be mid-file partial. Check the run log before re-pushing."
+          context: "Migration apply failed. The current file was rolled back; check whether earlier files in this run completed before retrying."

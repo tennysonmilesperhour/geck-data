@@ -1,8 +1,10 @@
 name: Weekly Details Scrape
 
 on:
-  schedule:
-    - cron: '0 10 * * 1'   # Mondays 10 AM UTC
+  # PAUSED 2026-08-26: Decodo has returned HTTP 429 for every request since
+  # June. Keep manual dispatch for diagnosis after the account is repaired.
+  # schedule:
+  #   - cron: '0 10 * * 1'   # Mondays 10 AM UTC
   workflow_dispatch:
 
 jobs:
@@ -11,10 +13,10 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip

@@ -46,6 +46,10 @@ for DDL, or `execute_sql` for idempotent `CREATE OR REPLACE` and data
 backfills) at the same time you push the migration file to main, so the
 schema state in prod always matches what `main` expects. Flag any DDL
 that drops or rewrites existing data; ask the user before running it.
+The `apply-migrations` GitHub workflow is a second safety path for new files,
+but it cannot run until the repository has a `SUPABASE_DB_URL` secret. The
+legacy filenames include duplicate versions, so do not replace it with
+`supabase db push` until migration history has been reconciled deliberately.
 
 ## Companion repos
 

@@ -15,8 +15,10 @@ name: Weekly Listings Full Re-sync
 # cron at 09:00 UTC: this job typically takes 60-120 min, so 03:00
 # leaves a 4+ hour safety buffer before the next daily delta starts.
 on:
-  schedule:
-    - cron: '0 3 * * 0'   # Sundays 03:00 UTC
+  # PAUSED 2026-08-26: Decodo has returned HTTP 429 for every request since
+  # June. Keep manual dispatch for diagnosis after the account is repaired.
+  # schedule:
+  #   - cron: '0 3 * * 0'   # Sundays 03:00 UTC
   workflow_dispatch:
 
 # Keep this resync serialised with the daily delta. The cron times don't
@@ -36,10 +38,10 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip
