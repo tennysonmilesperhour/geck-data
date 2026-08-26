@@ -64,7 +64,7 @@ export default function MethodologyPage() {
 
       <section id="median-ask" className="scroll-mt-16"><Panel title="Median ask">
         <p className="text-sm text-ink-300">
-          The 50th percentile of currently-live listing prices. Each row's
+          The 50th percentile of currently-live listing prices. Each row’s
           price is the USD equivalent when available, falling back to the
           raw listed price otherwise. Excludes prices below $1 and above
           $100,000.
@@ -94,8 +94,8 @@ export default function MethodologyPage() {
 
       <section id="days-to-sell" className="scroll-mt-16"><Panel title="Days to sell">
         <p className="text-sm text-ink-300">
-          From the listing's first observation (either MorphMarket's first
-          listed date, when we have it, or our scrape's first seen at) to
+          From the listing’s first observation (either MorphMarket’s first
+          listed date, when we have it, or our scrape’s first seen at) to
           its sold event. Listings still live show up as null in the
           histogram and are excluded.
         </p>
@@ -202,7 +202,7 @@ export default function MethodologyPage() {
           <Link href="/whats-it-worth" className="underline">
             /whats-it-worth
           </Link>{" "}
-          takes the combo's base percentile band (p10/p25/p50/p75/p90 of
+          takes the combo’s base percentile band (p10/p25/p50/p75/p90 of
           sold listings in the last 180 days) and multiplies through by a
           set of adjustment factors that account for age, sex, weight, and
           proven-breeder status. Factors live in{" "}
@@ -215,8 +215,8 @@ export default function MethodologyPage() {
       <Panel tone="soft" title="Limits we want to call out">
         <ul className="list-disc space-y-2 pl-5 text-sm text-ink-400">
           <li>
-            Region inference is location-string regex based. A "Seattle, WA"
-            seller maps to US; a "London" seller to UK. False negatives are
+            Region inference is location-string regex based. A “Seattle, WA”
+            seller maps to US; a “London” seller to UK. False negatives are
             common; refine if you spot one.
           </li>
           <li>
@@ -227,7 +227,7 @@ export default function MethodologyPage() {
           <li>
             Trait normalisation is a moving target. The taxonomy table
             (<code className="rounded bg-ink-850 px-1 py-0.5 text-xs">morph_taxonomy_synonyms</code>)
-            holds the alias mappings; if you see "Lilly White" not matching
+            holds the alias mappings; if you see “Lilly White” not matching
             a listing that has it, send the listing URL.
           </li>
         </ul>

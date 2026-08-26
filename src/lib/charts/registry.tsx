@@ -31,7 +31,7 @@ import PriceHeatmap, {
   type PriceHeatmapInput,
 } from "@/components/charts/PriceHeatmap";
 import CumulativeSales, {
-  type SoldEvent,
+  type SoldActivityWeek,
 } from "@/components/charts/CumulativeSales";
 import DaysToSellHistogram from "@/components/charts/DaysToSellHistogram";
 import type { ChartDef, PlannedChart } from "./types";
@@ -183,10 +183,12 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     title: "Cumulative sales",
     subtitle: "Running total of sold listings over the trailing 26 weeks.",
     description:
-      "Single-series cumulative area of sold-status listing_status_events bucketed weekly. Hover any week dot for that week's incremental + running total.",
+      "Single-series cumulative area of server-aggregated sold events. Hover any week dot for that week's incremental + running total.",
     category: "activity",
-    pages: ["home", "sold"],
-    render: (ctx) => <CumulativeSales data={ctx.soldEvents as SoldEvent[]} />,
+    pages: ["sold"],
+    render: (ctx) => (
+      <CumulativeSales data={ctx.soldActivity as SoldActivityWeek[]} />
+    ),
   },
   "days-to-sell": {
     id: "days-to-sell",

@@ -167,7 +167,7 @@ export default function TraitFrequencyAndPrice({
       .attr("font-size", 11)
       .attr("fill", chartTheme.label)
       .text("median $ (log)");
-  }, [traitStats]);
+  }, [onTraitClick, router, traitStats]);
 
   return <svg ref={svgRef} className="w-full" style={{ minHeight: 360 }} />;
 }

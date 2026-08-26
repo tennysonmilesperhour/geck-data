@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef } from "react";
 import * as d3 from "d3";
 import { chartTheme } from "./theme";
 
-export type SoldEvent = {
-  observed_at: string;
+export type SoldActivityWeek = {
+  week_start: string;
+  sold_count: number;
 };
 
 type Point = { week: Date; cumulative: number; weekly: number };
@@ -13,24 +14,27 @@ export default function CumulativeSales({
   data,
   weeks = 26,
 }: {
-  data: SoldEvent[];
+  data: SoldActivityWeek[];
   weeks?: number;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const points = useMemo<Point[]>(() => {
-    const end = d3.timeWeek.floor(new Date());
-    const start = d3.timeWeek.offset(end, -weeks);
+    const end = d3.timeMonday.floor(new Date());
+    const start = d3.timeMonday.offset(end, -(weeks - 1));
     const counts = new Map<number, number>();
     for (const d of data) {
-      if (!d.observed_at) continue;
-      const t = new Date(d.observed_at);
+      if (!d.week_start) continue;
+      const t = new Date(`${d.week_start}T00:00:00`);
       if (Number.isNaN(t.getTime())) continue;
       if (t < start || t > end) continue;
-      const wk = d3.timeWeek.floor(t).getTime();
-      counts.set(wk, (counts.get(wk) ?? 0) + 1);
+      const wk = d3.timeMonday.floor(t).getTime();
+      counts.set(wk, (counts.get(wk) ?? 0) + d.sold_count);
     }
-    const weeksArr = d3.timeWeek.range(start, d3.timeWeek.offset(end, 1));
+    const weeksArr = d3.timeMonday.range(
+      start,
+      d3.timeMonday.offset(end, 1),
+    );
     let acc = 0;
     return weeksArr.map((w) => {
       const weekly = counts.get(w.getTime()) ?? 0;

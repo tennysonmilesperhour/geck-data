@@ -6,7 +6,7 @@
 // Column UX: header rows show an arrow when the active sort key
 // matches; clicking flips direction. Unsortable columns render plain.
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
@@ -171,11 +171,13 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
         const term = morphTermFromTitle(r.title);
         if (!term) return null;
         return (
-          <WatchButton
-            label="Watch"
-            alertName={`Morph: ${term.slice(0, 60)}`}
-            query={{ kind: "morph", term }}
-          />
+          <Suspense fallback={null}>
+            <WatchButton
+              label="Watch"
+              alertName={`Morph: ${term.slice(0, 60)}`}
+              query={{ kind: "morph", term }}
+            />
+          </Suspense>
         );
       },
     },

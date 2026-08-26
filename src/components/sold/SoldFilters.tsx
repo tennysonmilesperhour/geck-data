@@ -10,8 +10,8 @@
 // of noisy chips.
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
 import { lookupMorph } from "@/lib/morphs/glossary";
+import type { SoldFilters as SoldFilterState } from "@/lib/sold/filters";
 
 const MATURITIES = ["Juvenile", "Subadult", "Adult"] as const;
 const SEXES = ["male", "female"] as const;
@@ -71,12 +71,17 @@ function Chip({
   );
 }
 
-export default function SoldFilters() {
-  const pathname = usePathname();
-  const sp = useSearchParams();
-  const morph = sp.get("morph");
-  const maturity = sp.get("maturity");
-  const sex = sp.get("sex");
+export default function SoldFilters({
+  current,
+}: {
+  current: SoldFilterState;
+}) {
+  const pathname = "/sold";
+  const sp = new URLSearchParams();
+  const { morph, maturity, sex } = current;
+  if (morph) sp.set("morph", morph);
+  if (maturity) sp.set("maturity", maturity);
+  if (sex) sp.set("sex", sex);
 
   const activeCount = [morph, maturity, sex].filter(Boolean).length;
 

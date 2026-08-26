@@ -7,28 +7,26 @@
 // so failures surface cleanly instead of a cryptic fetch trace.
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getPublicSupabaseEnv } from "./env";
 
 export function createClient() {
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
+  const config = getPublicSupabaseEnv();
 
-  if (!url || !key) {
+  if (!config) {
     throw new Error(
-      "Supabase public env vars not set. Expected NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_ANON_KEY).",
+      "Supabase public env vars not set. Expected a Supabase URL and publishable (or anon) key.",
     );
   }
   try {
-    new URL(url);
+    new URL(config.url);
   } catch {
     throw new Error(
-      `NEXT_PUBLIC_SUPABASE_URL is not a valid URL. Got: ${JSON.stringify(url)}`,
+      `NEXT_PUBLIC_SUPABASE_URL is not a valid URL. Got: ${JSON.stringify(config.url)}`,
     );
   }
 
   const cookieStore = cookies();
-  return createServerClient(url, key, {
+  return createServerClient(config.url, config.key, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

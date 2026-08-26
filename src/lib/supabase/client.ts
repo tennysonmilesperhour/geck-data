@@ -35,9 +35,20 @@ function isSessionOnly(): boolean {
 
 export function createClient() {
   const sessionOnly = isSessionOnly();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      "Supabase browser env vars not set. Expected NEXT_PUBLIC_SUPABASE_URL and a publishable (or anon) key.",
+    );
+  }
+
   return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    key,
     sessionOnly
       ? {
           // Route the auth session through sessionStorage so it dies with
