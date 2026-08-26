@@ -625,7 +625,7 @@ export default async function TrendsPage({
           <TimeSeriesLine
             series={medianPriceSeries}
             height={240}
-            yFormat={(n) => `$${n.toLocaleString()}`}
+            valueFormat="currency"
           />
         )}
       </Panel>

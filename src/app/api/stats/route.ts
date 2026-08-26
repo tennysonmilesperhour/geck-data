@@ -31,10 +31,8 @@ type Admin = ReturnType<typeof createAdminClient>;
 async function countOrNull(
   admin: Admin,
   table: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   filter?: (q: any) => any,
 ): Promise<number | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const base: any = admin.from(table).select("*", { count: "exact", head: true });
   const q = filter ? filter(base) : base;
   const { count, error } = await q;

@@ -12,21 +12,14 @@
 // error so a Supabase hiccup can never take down every page.
 
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { getLatestMarketSeenAt } from "@/lib/market/freshness";
 
 const STALE_AFTER_HOURS = 48;
 
 export default async function StaleDataBanner() {
   let newest: string | null = null;
   try {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("market_listings")
-      .select("last_seen_at")
-      .order("last_seen_at", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
-    newest = (data as { last_seen_at: string | null } | null)?.last_seen_at ?? null;
+    newest = await getLatestMarketSeenAt();
   } catch {
     return null;
   }

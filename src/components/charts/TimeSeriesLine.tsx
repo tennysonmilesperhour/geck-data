@@ -28,17 +28,24 @@ const EVENT_TONE_COLOR: Record<NonNullable<ChartEvent["tone"]>, string> = {
   positive: "#7bbf83",  // sage
 };
 
+export type ValueFormat = "number" | "currency";
+
+export function formatChartValue(value: number, format: ValueFormat): string {
+  const formatted = d3.format(",.0f")(value);
+  return format === "currency" ? `$${formatted}` : formatted;
+}
+
 export default function TimeSeriesLine({
   series,
   events,
   height = 260,
-  yFormat = (n) => d3.format(",.0f")(n),
+  valueFormat = "number",
   yLabel,
 }: {
   series: Series[];
   events?: ChartEvent[];
   height?: number;
-  yFormat?: (n: number) => string;
+  valueFormat?: ValueFormat;
   yLabel?: string;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -79,7 +86,12 @@ export default function TimeSeriesLine({
       .attr("transform", `translate(0,${h})`)
       .call(d3.axisBottom(x).ticks(6));
     g.append("g")
-      .call(d3.axisLeft(y).ticks(6).tickFormat((v) => yFormat(v as number)));
+      .call(
+        d3
+          .axisLeft(y)
+          .ticks(6)
+          .tickFormat((v) => formatChartValue(v as number, valueFormat)),
+      );
 
     if (yLabel) {
       g.append("text")
@@ -172,7 +184,7 @@ export default function TimeSeriesLine({
         .attr("fill", chartTheme.label)
         .text(s.name);
     });
-  }, [series, events, height, yFormat, yLabel]);
+  }, [series, events, height, valueFormat, yLabel]);
 
   return <svg ref={svgRef} className="w-full" style={{ height }} />;
 }

@@ -30,22 +30,16 @@ export type ChartCategory =
 // compatibility via the `pages` list and will receive this shape.
 export type PageContexts = {
   home: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     listings: any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sellers: any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     soldEvents: any[];
   };
   sellers: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sellers: any[];
   };
   sold: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     soldRows: any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    soldEvents: any[];
+    soldActivity: any[];
   };
 };
 
@@ -58,7 +52,6 @@ export type ChartDef<P extends PageId = PageId> = {
   description: string;
   category: ChartCategory;
   pages: P[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   render: (ctx: any) => ReactElement;
 };
 

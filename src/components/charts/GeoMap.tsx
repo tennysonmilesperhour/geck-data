@@ -80,9 +80,7 @@ export default function GeoMap({ data }: { data: GeoSeller[] }) {
         import("us-atlas/states-10m.json"),
       ]);
       if (cancelled) return;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const topo = ((mod as any).default ?? mod) as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const features = tc.feature(topo, topo.objects.states) as any;
       setFc(features as FeatureCollectionLike);
     })().catch(() => {});
@@ -100,9 +98,7 @@ export default function GeoMap({ data }: { data: GeoSeller[] }) {
     const H = 480;
     svg.attr("viewBox", `0 0 ${W} ${H}`);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const projection = d3.geoAlbersUsa().fitSize([W, H], fc as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const path = d3.geoPath(projection as any);
 
     const maxSellers =
@@ -117,7 +113,6 @@ export default function GeoMap({ data }: { data: GeoSeller[] }) {
       .selectAll("path")
       .data(fc.features)
       .join("path")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .attr("d", (f) => path(f as any) ?? "")
       .attr("fill", (f) => {
         const name = (f.properties?.name as string) ?? "";
