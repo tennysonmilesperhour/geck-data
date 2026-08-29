@@ -26,15 +26,18 @@ monthly reports. Underneath:
   past 48 hours.** The other 9,274 have not been re-observed since
   mid-June. They are still counted as live, still in medians, still in
   combo rollups, still in "what's hot."
-- **Price history has an 11-week hole.** Ticks run 2026-04-22 through
-  the week of 2026-06-08, then nothing until the week of 2026-08-24
-  (the API ingest). `/trends` fills empty weeks with zeros, so the
-  outage reads as a market that stopped listing and stopped selling.
-- **Sold history is effectively empty for demand math.**
-  `listing_status_events` has 92 sold rows. `market_listings` has 81
-  with `current_status='sold'`. Homepage copy says "81 sold all-time."
-  Supply/demand ratios and days-to-sell charts are not a market
-  signal. They are a missing sold feed.
+- **Price history has a 78-day hole (2026-06-10 to 2026-08-26)** plus
+  a 15-day hole (2026-04-23 to 2026-05-07). 95 calendar days have
+  zero ticks. Ticks run 2026-04-22 through 2026-06-09, then nothing
+  until 2026-08-24 (API ingest). `/trends` fills empty weeks with
+  zeros, so the outage reads as a market that stopped listing and
+  stopped selling.
+- **Sold history stops on 2026-06-07.** `listings.sold_at` has 2,849
+  rows (the real comps pool), all dated 2026-05-17 to 2026-06-07.
+  509 of those still have `is_active=true`. The homepage instead
+  prints `current_status='sold'` (81). `listing_status_events` has
+  92 sold rows. Demand charts are not a missing table. They are a
+  freeze, plus a second sold definition that almost nobody is in.
 - **The stale-data banner will not fire.** It keys off
   `max(market_listings.last_seen_at)`. That timestamp is today because
   of the 565 new API rows, so the 9k June zombies keep the rest of the
@@ -44,11 +47,14 @@ monthly reports. Underneath:
   The filter is a comment, not a column.
 
 Useful pieces that do exist: `/whats-it-worth` as a valuation
-skeleton, `/methodology` and `/status` as trust surfaces, MorphMarket
-`first_listed_at` on many rows (oldest 2023-02-25), 1,154 listings
-with real `cached_traits` (512 of those from this week's ingest),
-and the new API path that can keep the next 7 days honest if weekly
-ingest keeps running.
+skeleton, `/methodology` and `/status` as trust surfaces, 2,849
+May-June sold comps (frozen), 1,154 listings with real
+`cached_traits` (512 from this week's ingest), and the new API path
+that can keep the next 7 days honest if weekly ingest keeps running.
+`first_listed_at` exists (oldest 2023-02-25) but is filled on only
+**1,670 / 10,239 rows**. The other 8,569 have no MorphMarket listing
+date, so any timeline that "falls back" to `first_seen_at` is mostly
+a scrape calendar.
 
 **Bottom line:** a buyer or breeder using this today to time a
 purchase, judge a deal, or read a 90-day trend is looking at a
@@ -67,6 +73,8 @@ presentation layer that outran the feed.
 | Date coverage of scrape ticks | 2026-05-09 to 2026-06-09, then dead | same, plus 2026-08-22 to 2026-08-29 API window |
 | `price_history` ticks | 44,938, frozen since 06-09 | 45,632; 694 new ticks in week of 08-24 |
 | Sold events (`listing_status_events`) | 92 | 92 |
+| `listings.sold_at` | 2,849 (through 06-07) | 2,849, still frozen 06-07 |
+| `first_listed_at` populated | not called out | 1,670 / 10,239 (16%) |
 | Currency | 9,152 USD / 202 CAD | listings: 9,591 USD / 205 CAD / 104 EUR / 19 GBP |
 | `cached_traits` populated | thin (norm_traits was 642) | 1,154 (512 from this week) |
 | Decodo listings scrape | 429, hourly paused | still dead; hourly + weekly-resync workflows removed 2026-08-29 |
@@ -178,12 +186,14 @@ What that does **today**:
    week. Early 45 days still contain June volume. Added/sold/price
    deltas will look like a collapse followed by a bounce. They are
    an ingest calendar.
-4. **Sold series cannot carry demand.** 92 sold events all-time,
-   none added by the API ingest (API path does not write sold
-   transitions; Decodo `mark_unseen_listings_inactive` was
-   correctly *not* called on the windowed walk). Weekly sold is
-   near zero. Supply/demand ratio is then "added / max(sold, 1)"
-   which explodes whenever a scrape lands.
+4. **Sold series cannot carry demand after June 7.** The warehouse
+   has 2,849 `sold_at` timestamps, all inside 2026-05-17 to
+   2026-06-07. `/trends` charts `listing_status_events` (92 rows),
+   not that pool. The API ingest does not write sold transitions;
+   `mark_unseen_listings_inactive` was correctly *not* called on
+   the windowed walk. Weekly sold on the chart is near zero after
+   the gap. Supply/demand is then "added / max(sold, 1)" and
+   explodes whenever a scrape lands.
 5. **Weekly median price** uses `price_history.observed_at`.
    Per-week ticks:
 
@@ -454,8 +464,18 @@ price_history                   45,632 ticks
   median ticks / listing        5
   gap                           2026-06-09 -> 2026-08-24 (~11 weeks)
 
+listings                        9,920 (7,507 is_active / 2,413 inactive)
+  sold_at                       2,849 (2026-05-17 -> 2026-06-07; 509 still active)
+  availability sold             0
+  scientific_name Correlophus   6,715 (rest null)
 listings_history                51,122
 listing_status_events sold      92
+market_listings first_listed_at 1,670 filled / 8,569 null
+  source scraper / other        9,920 / 319 (manual rows have 0 price ticks)
+market_galleries                556 (all captured 2026-08-29 with run 695)
+listing_images                  1,856
+price_history zero-tick days    95
+  gaps >7d                      2026-04-23->05-07 (15d); 2026-06-10->08-26 (78d)
 
 listings currency               USD 9,591 | CAD 205 | EUR 104 | GBP 19
 
