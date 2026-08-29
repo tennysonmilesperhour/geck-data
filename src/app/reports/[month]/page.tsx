@@ -52,20 +52,33 @@ export default async function MonthlyReport({ params }: { params: Params }) {
   const { start, end, label } = parsed;
   const supabase = createClient();
 
-  const [addedRes, soldRes, comboCurRes, comboPriorRes] = await Promise.all([
+  // Counts come back as counts. These were .select("id").limit(20000) and then
+  // rows.length, but PostgREST caps a response well below that, so a busy
+  // month silently reported the cap instead of its total.
+  //
+  // Arrivals are bucketed on MorphMarket's own listing date where we have one,
+  // falling back to when we first saw the row. PostgREST cannot filter on a
+  // coalesce, so that is two disjoint counts summed: rows with a listing date
+  // inside the month, plus rows with no listing date first seen inside it.
+  const [addedDatedRes, addedFallbackRes, soldRes, comboCurRes, comboPriorRes] =
+    await Promise.all([
     supabase
       .from("market_listings")
-      .select("id")
+      .select("id", { count: "exact", head: true })
+      .gte("first_listed_at", start.toISOString())
+      .lt("first_listed_at", end.toISOString()),
+    supabase
+      .from("market_listings")
+      .select("id", { count: "exact", head: true })
+      .is("first_listed_at", null)
       .gte("first_seen_at", start.toISOString())
-      .lt("first_seen_at", end.toISOString())
-      .limit(20000),
+      .lt("first_seen_at", end.toISOString()),
     supabase
       .from("listing_status_events")
-      .select("listing_id")
+      .select("listing_id", { count: "exact", head: true })
       .eq("status", "sold")
       .gte("observed_at", start.toISOString())
-      .lt("observed_at", end.toISOString())
-      .limit(20000),
+      .lt("observed_at", end.toISOString()),
     supabase
       .from("combo_index_daily")
       .select("combo_id, day, median_price, n")
@@ -85,8 +98,17 @@ export default async function MonthlyReport({ params }: { params: Params }) {
       .limit(5000),
   ]);
 
-  const addedCount = (addedRes.data ?? []).length;
-  const soldCount = (soldRes.data ?? []).length;
+  const addedCount = (addedDatedRes.count ?? 0) + (addedFallbackRes.count ?? 0);
+  const soldCount = soldRes.count ?? 0;
+
+  // Days inside this month on which anything was actually observed. Without
+  // this a month with no collection renders as a month where nothing
+  // happened, which is a different and much more misleading claim.
+  const observedDays = new Set(
+    ((comboCurRes.data ?? []) as Array<{ day: string }>).map((r) => r.day),
+  ).size;
+  const daysInMonth = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+  const covered = observedDays >= 5;
 
   type Daily = { combo_id: string; day: string; median_price: number | string | null; n: number | string };
   const curRows = (comboCurRes.data ?? []) as Daily[];
@@ -157,7 +179,11 @@ export default async function MonthlyReport({ params }: { params: Params }) {
       <SectionHeader
         eyebrow="Monthly report"
         title={label}
-        description="Auto-generated summary of the month's market activity. Numbers reflect what was in the catalogue when the page loaded; refresh to recompute."
+        description={
+          covered
+            ? `Computed on load from the data as it stands today, not from a frozen snapshot. The market was observed on ${observedDays} of the ${daysInMonth} days in this month.`
+            : `The market was observed on ${observedDays} of the ${daysInMonth} days in this month, which is not enough to summarise it.`
+        }
         right={
           <Link href="/reports" className="text-xs text-ink-400 underline hover:text-ink-100">
             All reports →
@@ -165,8 +191,29 @@ export default async function MonthlyReport({ params }: { params: Params }) {
         }
       />
 
+      {!covered && (
+        <Panel tone="soft" title="No scrape coverage for this month">
+          <p className="text-sm text-ink-300">
+            Nothing below describes what the crested gecko market did in{" "}
+            {label}. We observed it on {observedDays} of {daysInMonth} days, so
+            there is no month here to report on. Collection stopped entirely
+            between 2026-06-10 and 2026-08-26, and has run weekly since.
+          </p>
+          <p className="mt-2 text-sm text-ink-300">
+            Listings can still appear as arrivals in a month we never watched,
+            because the ingest records MorphMarket&apos;s original listing date.
+            That is a fact about an animal that is still listed now, not a
+            measurement of this month.
+          </p>
+        </Panel>
+      )}
+
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label="Listings added" value={fmtInt(addedCount)} sub="this month" />
+        <KpiCard
+          label="Listings added"
+          value={fmtInt(addedCount)}
+          sub="by listing date where known"
+        />
         <KpiCard label="Sold events" value={fmtInt(soldCount)} sub="this month" tone="positive" />
         <KpiCard
           label="Supply / demand"
@@ -182,8 +229,9 @@ export default async function MonthlyReport({ params }: { params: Params }) {
         />
       </section>
 
+      {!covered ? null : (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Panel title="Top gainers" subtitle="Largest median-price increase vs prior month" padded={false}>
+        <Panel title="Top gainers" subtitle="Largest median-price increase vs prior month, both months observed" padded={false}>
           <ul className="divide-y divide-ink-700/40">
             {gainers.length === 0 ? (
               <li className="p-4 text-sm text-ink-400">No gainers identified in this month yet.</li>
@@ -265,20 +313,37 @@ export default async function MonthlyReport({ params }: { params: Params }) {
           </ul>
         </Panel>
       </div>
+      )}
 
       <Panel tone="soft" title="In plain English">
         <p className="text-sm text-ink-300">
-          The market added <strong className="text-ink-100">{fmtInt(addedCount)}</strong>{" "}
-          listings in {label} and recorded{" "}
-          <strong className="text-ink-100">{fmtInt(soldCount)}</strong> sold events.
-          {supplyDemand != null ? (
+          {covered ? (
             <>
-              {" "}Supply outran demand at a{" "}
+              We recorded{" "}
+              <strong className="text-ink-100">{fmtInt(addedCount)}</strong>{" "}
+              listings arriving in {label} and{" "}
+              <strong className="text-ink-100">{fmtInt(soldCount)}</strong>{" "}
+              captured sold events, observing the market on {observedDays} of{" "}
+              {daysInMonth} days.
+            </>
+          ) : (
+            <>
+              We observed the market on {observedDays} of {daysInMonth} days in{" "}
+              {label}, so there is nothing here to describe. The{" "}
+              <strong className="text-ink-100">{fmtInt(addedCount)}</strong>{" "}
+              listings dated to this month are animals whose MorphMarket
+              listing date falls inside it, recorded later.
+            </>
+          )}
+          {covered && supplyDemand != null ? (
+            <>
+              {" "}More arrived than we saw sell, at a{" "}
               <strong className="text-ink-100">{supplyDemand.toFixed(1)}:1</strong>{" "}
-              ratio.{" "}
+              ratio. Sold events are only those we captured, so this is a floor
+              on demand, not a measure of it.{" "}
             </>
           ) : null}
-          {gainers.length > 0 ? (
+          {covered && gainers.length > 0 ? (
             <>
               {" "}The biggest gainer was{" "}
               <Link href={`/combo/${comboSlugFromId(gainers[0]!.combo_id)}`} className="underline">
@@ -287,7 +352,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
               (+{gainers[0]!.delta.toFixed(1)}%).
             </>
           ) : null}
-          {losers.length > 0 ? (
+          {covered && losers.length > 0 ? (
             <>
               {" "}The biggest loser was{" "}
               <Link href={`/combo/${comboSlugFromId(losers[0]!.combo_id)}`} className="underline">

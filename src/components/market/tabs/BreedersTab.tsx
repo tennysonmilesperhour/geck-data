@@ -54,7 +54,11 @@ export default function BreedersTab({
         />
         <KpiCard
           label="Avg days to sell"
-          value={`${data.kpis.avgDaysToSell}d`}
+          value={
+            data.kpis.avgDaysToSell == null
+              ? "no data"
+              : `${data.kpis.avgDaysToSell}d`
+          }
         />
       </section>
 

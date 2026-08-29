@@ -198,7 +198,7 @@ export default function SoldDashboard({
             daysSample == null
               ? "the days-to-sell column could not be read"
               : daysSample.length < MIN_MEASURABLE_DAYS || medianDays == null
-                ? `only ${fmtInt(daysSample.length)} of ${fmtInt(daysDenominator)} rows were first seen before the day they sold`
+                ? `only ${fmtInt(daysSample.length)} of ${fmtInt(daysDenominator)} rows were first seen more than an hour before the sale was stamped`
                 : `median over ${fmtInt(daysSample.length)} measurable rows${filtered ? " in this slice" : " across the pool"}`
           }
         />
@@ -292,39 +292,39 @@ function PoolCard({
           : "border-ink-700 bg-ink-800 hover:border-ink-600"
       }`}
     >
-      <div className="flex items-baseline justify-between gap-3">
+      <span className="flex items-baseline justify-between gap-3">
         <span className="font-display text-[16px] font-medium text-ink-50">
           {meta.title}
         </span>
         <span className="font-mono text-[15px] tabular-nums text-ink-100">
           {fmtInt(pool.total)}
         </span>
-      </div>
-      <p className="mt-1 text-xs text-ink-300">{meta.definition}</p>
-      <dl className="mt-3 space-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-500">
-        <div className="flex justify-between gap-3">
-          <dt>Covers</dt>
-          <dd className="text-ink-300">
+      </span>
+      <span className="mt-1 block text-xs text-ink-300">{meta.definition}</span>
+      <span className="mt-3 block space-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-500">
+        <span className="flex justify-between gap-3">
+          <span>Covers</span>
+          <span className="text-ink-300">
             {pool.oldestSoldAt && pool.newestSoldAt
               ? `${fmtDate(pool.oldestSoldAt)} to ${fmtDate(pool.newestSoldAt)}`
               : "no dated rows"}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt>Time on market measurable</dt>
-          <dd className="text-ink-300">
+          </span>
+        </span>
+        <span className="flex justify-between gap-3">
+          <span>Time on market measurable</span>
+          <span className="text-ink-300">
             {measurable == null
               ? "unavailable"
               : `${fmtInt(measurable)} of ${fmtInt(pool.total)} rows`}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt>Group lots</dt>
-          <dd className="text-ink-300">
+          </span>
+        </span>
+        <span className="flex justify-between gap-3">
+          <span>Group lots</span>
+          <span className="text-ink-300">
             {pool.groupLots == null ? "unavailable" : fmtInt(pool.groupLots)}
-          </dd>
-        </div>
-      </dl>
+          </span>
+        </span>
+      </span>
     </button>
   );
 }
