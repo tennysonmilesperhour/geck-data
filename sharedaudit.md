@@ -436,6 +436,64 @@ on the site.
 
 ---
 
+## Code honesty issues still on `main` (UI pass)
+
+The warehouse problems above are enough to mislead. These are
+*additional* presentation bugs that would still be wrong even if the
+feed were continuous. Verified against current `main`, 2026-08-29.
+
+`listings_history` (51,122 rows) is **not read by any page**. Timelines
+are `price_history`, `listing_status_events`, `combo_index_daily`, and
+arrival dates. Observation log and UI history are different objects.
+
+| Surface | What it actually plots |
+|---|---|
+| `/trends` | Real weekly added/sold/price, zero-filled 90/180d. Maturity bars = live snapshot. |
+| `/indices` | Real daily medians, last 90d (`combo_index_daily`). Tiles mix snapshot + 7/30/90d deltas. |
+| `/market` | Weekly index RPCs. Combo sparks 60d daily. **Top-movers spark is two points.** Combo-detail chart returns `series: []`. |
+| `/` Pulse | 14-day appearance sparks on `first_seen_at`. KPIs are a snapshot. |
+| `/sold` | Activity chart is real 26-week counts. Table is **last 500** rows while the KPI says "all time." |
+| `/listings/[id]` | Real `price_history` ticks; spark x-axis is index, not time. Comment says 180d, query is limit 500. |
+| `/combo/[slug]` | Weekly spark from **current live** members' ticks, sold prices mixed in. |
+| `/trait/[slug]` | Weekly sold counts. The "180d" KPI is **not** date-filtered. |
+| `/whats-it-worth` | Snapshot 180d sold band. No timeline. `?combo=` still the 12 hardcoded ids. |
+| `/reports` | 12-month menu from `new Date()`. Month pages recompute, they do not load a stored snapshot. |
+
+Fabricated or biased numbers still in code:
+
+1. **Movers math** compares `v_combo_rollups(w)` to `v_combo_rollups(2w)`.
+   The short window sits inside the long one, so deltas shrink toward
+   zero. Same pattern on peak indicators.
+2. **`stddev = median * 0.15`** is invented dispersion, not observed.
+3. **Breeder score fallback** `30 + (idx % 60)` is a function of sort
+   order, not reputation.
+4. Combo-detail **median ask / spread / days-to-sell hardcoded `0`**,
+   and the detail chart is intentionally unwired.
+5. Header **`Ready` is hardcoded**. The 48h `StaleDataBanner` can
+   disagree with it. After today's ingest, both look fine while 91%
+   of "live" rows are June-stale.
+6. **Ask labeled as sold** in at least one sold/comp path; sold
+   "all-time" count is `rows.length` of the 500 cap.
+7. **Two combo dictionaries:** 12 `HIGH_VALUE_COMBOS` vs
+   auto-discovered `"A x B"`. `/indices` uses discovery;
+   `/whats-it-worth?combo=` and several labels still use the 12.
+8. **Pipe vs comma traits.** `parseTraitList` splits on `|`;
+   `trait-premium.ts` does not. Substring `ILIKE` / `includes()`
+   elsewhere. Combined with 8,569 rows missing `first_listed_at`
+   and 9,085 missing `cached_traits`, combo identity is unstable.
+9. **`/methodology` last reviewed 2026-05-22.** It still describes
+   a 12-combo market view and pHash arbitrage that the live pages
+   do not run.
+10. `/market` temperature links to `/trends?timeframe=12mo`. Trends
+    only reads `?window=90|180`. Dead param.
+
+Closest honest longitudinal UI: `/trends`, if the 78-day hole is
+labeled. Closest daily series: `combo_index_daily` on `/indices`,
+if that materialized view is actually refreshed (not re-checked
+in SQL this pass).
+
+---
+
 ## Numbers appendix (queried 2026-08-29)
 
 ```
@@ -462,7 +520,7 @@ price_history                   45,632 ticks
   2-5 ticks                     7,256
   6+ ticks                      1,593
   median ticks / listing        5
-  gap                           2026-06-09 -> 2026-08-24 (~11 weeks)
+  gap                           2026-06-10 -> 2026-08-26 (78 days)
 
 listings                        9,920 (7,507 is_active / 2,413 inactive)
   sold_at                       2,849 (2026-05-17 -> 2026-06-07; 509 still active)
@@ -494,7 +552,9 @@ headless fetch; their data contracts were read from source.
 - Production SQL via the Supabase connector (read-only).
 - Current `main` sources: landing snapshot, HeroBand,
   StaleDataBanner, freshness helper, `/trends`, `/reports`,
-  `/reports/[month]`.
+  `/reports/[month]`, plus a pass over `/market`, `/indices`,
+  `/sold`, `/whats-it-worth`, `/listings/[id]`, `/combo`, `/trait`,
+  Header, methodology.
 - Compared to `STATE_OF_GECK_INTELLECT.md` (2026-07-16).
 - Did not treat CountUp's pre-hydrate `$0` as a database fact.
 - Did not call `mark_unseen_listings_inactive`.
