@@ -1,0 +1,49 @@
+name: Weekly API listings (last 7 days)
+
+# Crested geckos first-listed in the past week, via MorphMarket's JSON
+# API. No Decodo. Morph tags come from cached_traits (never the title).
+# Original JPEG URLs are stored so scrape-images-weekly.yml can copy
+# them into the listing-images bucket.
+#
+# Monday 14:55 UTC is 8:55am America/Denver during MDT.
+on:
+  schedule:
+    - cron: '55 14 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-listings
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_listings_api.py (last 7 days)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action_weekly_api
+          WINDOW_HOURS: '168'
+        working-directory: scripts
+        run: python scrape_listings_api.py
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Weekly API listings ingest (last 7 days) did not complete."
