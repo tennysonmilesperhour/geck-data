@@ -155,10 +155,22 @@ export type MultiSeries = {
   points: IndexPoint[];
 };
 
+// Nullable where the warehouse does not measure the field. These used to be
+// non-nullable, and queries.ts carried a ComboDetailLive alias that widened
+// them one Omit at a time; the alias existed only because this type had not
+// caught up. A metric nobody measured is null here, never a default, because
+// a zero-filled price renders as "$0" and a reader cannot tell that from an
+// observation.
 export type ComboDetail = {
   combo: Combo;
-  medianSold: number;
-  range: [number, number];
+  /** Each source's average price, weighted by that source's share of the
+   *  observations. A mean of means. This was called `medianSold` until the
+   *  2026-08-29 audit, which is a different statistic and a different word. */
+  meanBlendedPrice: number | null;
+  /** Observed low and high. Null because nothing computes them: the blend RPC
+   *  returns no extremes, and the old value was a hardcoded [0, 0] that the
+   *  panel rendered as a real $0 to $0 range. */
+  range: [number, number] | null;
   observations: number;
   series: MultiSeries[];
   blend: Array<{
@@ -169,9 +181,12 @@ export type ComboDetail = {
     label: string;
   }>;
   keyMetrics: {
-    medianAsk: number;
-    askSoldSpreadPct: number;
-    daysToSell: number;
+    /** All three are null for the same reason: the detail fetch reads a source
+     *  blend, which carries no ask, no spread and no time-to-sell for a single
+     *  combo. They were hardcoded zeros. */
+    medianAsk: number | null;
+    askSoldSpreadPct: number | null;
+    daysToSell: number | null;
     volume: number;
   };
   attribution: Attribution;
@@ -260,14 +275,25 @@ export type BreederRow = {
    *  source catches up. */
   id?: string;
   name: string;
-  region: RegionKey;
+  /** Null when the seller's location string could not be mapped, which is most
+   *  of them: about 85% of listings carry no location at all. It used to
+   *  default to "US", which then fed the "Top region" KPI, so the dashboard
+   *  reported a US-dominated market that was really an unparsed one. */
+  region: RegionKey | null;
   activeListings: number;
   soldInWindow: number;
-  avgSoldPrice: number;
-  avgDaysToSell: number;
+  /** Mean of that seller's sold prices. Null when none of their sold listings
+   *  carried one: it used to fall back to `market_sellers.avg_price`, which is
+   *  an average asking price printed under a "sold" heading. */
+  avgSoldPrice: number | null;
+  /** Mean days from first seen to sold across sold events in the window. Null
+   *  when the seller has none, which is nearly every seller today. */
+  avgDaysToSell: number | null;
   specialty: Combo;
   velocity: number[];
-  lineageScore: number;
+  /** Null when the seller row carries none of the score's inputs. Not a
+   *  lineage measurement either way, see the comment at the call site. */
+  lineageScore: number | null;
   attribution: Attribution;
 };
 
@@ -275,8 +301,12 @@ export type BreedersData = {
   rows: BreederRow[];
   kpis: {
     totalBreeders: number;
-    topRegion: RegionKey;
-    avgSoldPrice: number;
-    avgDaysToSell: number;
+    /** Null when no seller's location could be mapped at all. */
+    topRegion: RegionKey | null;
+    /** How many of the listed breeders had a location we could map, so the KPI
+     *  can say what it is a top region OF. */
+    regionMapped: number;
+    avgSoldPrice: number | null;
+    avgDaysToSell: number | null;
   };
 };

@@ -57,11 +57,19 @@ export default function ScrollytellingSection({
     price_usd_equivalent: l.price_usd_equivalent,
   }));
 
+  // Bucketed on first_listed_at, the date MorphMarket says the animal went up,
+  // and never on first_seen_at. The panel claims to show when breeders choose
+  // to list, and first_seen_at is when our scraper ran: across 10,011 priced
+  // listings it takes 11 distinct values, so the old chart drew eleven solid
+  // columns and captioned them a seasonal rhythm. first_listed_at is present
+  // on fewer rows but spreads over 199 days, which is a cadence. There is
+  // deliberately no fallback to first_seen_at, since one scraper day mixed in
+  // puts a spike back into the picture the panel is trying to show.
   const calendarData = data.listings
-    .filter((l): l is ScrollyListing & { first_seen_at: string } =>
-      Boolean(l.first_seen_at),
+    .filter((l): l is ScrollyListing & { first_listed_at: string } =>
+      Boolean(l.first_listed_at),
     )
-    .map((l) => ({ first_seen_at: l.first_seen_at }));
+    .map((l) => ({ listed_on: l.first_listed_at }));
 
   return (
     <div className="space-y-16">
@@ -145,9 +153,10 @@ export default function ScrollytellingSection({
         title="When the market is most active."
         description={
           <>
-            Each cell is a day, colored by how many new listings landed. The
-            pattern shows the weekly and seasonal rhythm of when breeders
-            choose to list.
+            Each cell is a day, colored by how many animals MorphMarket says
+            went up for sale on it. Only the {calendarData.length.toLocaleString()} listings
+            carrying a list date are counted, because the date our ingest first
+            saw a row records when the scraper ran, not when a breeder listed.
           </>
         }
         viz={
@@ -156,7 +165,7 @@ export default function ScrollytellingSection({
           ) : (
             <ThinDataNote
               what="First-seen cadence"
-              detail="Needs first_seen_at populated on listings."
+              detail="No listing in this sample carries a first_listed_at date, and the date our ingest first saw a row would show when the scraper ran instead."
             />
           )
         }

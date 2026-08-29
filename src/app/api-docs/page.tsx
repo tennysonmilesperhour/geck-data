@@ -78,16 +78,25 @@ export default function ApiDocsPage() {
       <Endpoint
         method="GET"
         path="/api/market/temperature"
-        purpose="Composite market temperature 0..100 plus weekly time series of listing volume, sold count, sell-through rate, median sold price, and median days to sell."
+        purpose={
+          "Composite market temperature plus a weekly time series of listing " +
+          "volume, sold count, sell-through rate, median sold price and median " +
+          "days to sell. `score` is a number from 0 to 100 only when the data " +
+          "supports one: it is null whenever `status` is 'unavailable', which " +
+          "is the current state, and the response then carries " +
+          "`unavailable_reason` and a plain-English `unavailable_detail` " +
+          "naming the gate that failed. A client that reads `score` without " +
+          "checking `status` will treat a refusal to score as a zero."
+        }
         params={[]}
         example="/api/market/temperature"
-        notes="Backs the floating temperature card on /market."
+        notes="Backs the floating temperature card on /market. The gates are, in order: no weeks in the view, no captured sale in the trailing window, too few captured sales, too few complete weeks to rank against, a baseline with no spread, and a current week not yet fully observed. Sales inferred from listings that stopped appearing are deliberately not counted toward the demand side."
       />
 
       <Endpoint
         method="GET"
         path="/api/market/arbitrage"
-        purpose="Cross-platform arbitrage pair candidates. Joins MorphMarket and cross-platform listings by image pHash and emits the price delta."
+        purpose="Cross-platform arbitrage pair candidates. Joins MorphMarket and cross-platform listings by image pHash and emits the price delta. cross_platform_listings currently holds no rows, so this returns an empty set rather than pairs."
         params={[]}
         example="/api/market/arbitrage"
         notes="Empty until the pHash worker has populated phash columns. Best-effort: pHash collisions exist; treat each row as a heads-up rather than a confirmation."

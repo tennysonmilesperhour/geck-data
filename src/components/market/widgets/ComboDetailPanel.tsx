@@ -4,9 +4,9 @@
 //   2) Source badges (GI sales / GI listings / Breeder / +N more)
 //   3) Multi-series chart (MultiLineChart)
 //   4) Observations count + "See underlying transactions →"
-//   5) Blended price — contribution by source (stacked h-bars)
-//   6) Key metrics strip (Median ask / Ask→Sold spread / Days / Volume)
-import type { ComboDetailLive } from "@/lib/market/queries";
+//   5) Blended price, contribution by source (stacked h-bars)
+//   6) Key metrics strip (Median ask / ask-to-sold spread / Days / Volume)
+import type { ComboDetail } from "@/lib/market/widget-types";
 import { sourceMeta } from "@/lib/market/sources";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
@@ -21,7 +21,7 @@ export default function ComboDetailPanel({
   status,
   note,
 }: {
-  detail: ComboDetailLive | null;
+  detail: ComboDetail | null;
   status?: LivePreviewStatus;
   note?: string;
 }) {

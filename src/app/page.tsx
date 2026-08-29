@@ -32,12 +32,14 @@ export default async function LandingPage() {
     getMarketSnapshot(),
     getScrollytellingData(),
   ]);
-  // Combo-level chronological data: 14-day appearance counts per combo,
-  // computed off market_listings.first_seen_at so the WhatsHotPanel
-  // sparklines reflect actual day-by-day discovery, not synthetic
-  // deltas. Done after the snapshot returns so the combo list is
-  // available; cheap enough at this scale that the extra serial round
-  // trip is acceptable.
+  // Combo-level chronological data: 14-day appearance counts per combo, so
+  // the WhatsHotPanel sparklines show real arrivals rather than synthetic
+  // deltas. Bucketed on first_listed_at, the date MorphMarket says the animal
+  // went up, and only on first_seen_at where no list date exists. The
+  // distinction is not cosmetic: first_seen_at is when our ingest ran, and
+  // under a weekly pass it collapses a whole week of arrivals onto one day.
+  // Done after the snapshot returns so the combo list is available; cheap
+  // enough at this scale that the extra serial round trip is acceptable.
   const comboDaily = await getComboDailyAppearances(
     snapshot.combos.slice(0, 12),
   );

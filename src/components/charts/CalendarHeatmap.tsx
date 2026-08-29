@@ -3,8 +3,13 @@ import { useEffect, useMemo, useRef } from "react";
 import * as d3 from "d3";
 import { chartTheme } from "./theme";
 
+// The field is named for what the chart means, not for whichever column a
+// caller happens to have. It was `first_seen_at`, and that name is why the
+// landing page spent months plotting scraper run days as breeder listing
+// cadence: across 10,011 priced listings first_seen_at takes 11 distinct
+// values. Pass the date the animal was advertised, not the date we saw it.
 export type CalendarInput = {
-  first_seen_at: string | null;
+  listed_on: string | null;
 };
 
 type Cell = {
@@ -28,8 +33,8 @@ export default function CalendarHeatmap({
     const start = d3.timeMonday.floor(d3.timeDay.offset(end, -weeks * 7));
     const counts = new Map<number, number>();
     for (const d of data) {
-      if (!d.first_seen_at) continue;
-      const t = new Date(d.first_seen_at);
+      if (!d.listed_on) continue;
+      const t = new Date(d.listed_on);
       if (Number.isNaN(t.getTime())) continue;
       if (t < start || t > end) continue;
       const k = d3.timeDay.floor(t).getTime();

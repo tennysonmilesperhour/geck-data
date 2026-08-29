@@ -11,7 +11,13 @@ export type ScrollyListing = {
   sex: string | null;
   cached_traits: string | null;
   norm_traits: string | null;
+  /** When our ingest first saw the row. This is a scraper date, not a market
+   * one: across 10,011 priced listings it takes only 11 distinct values. */
   first_seen_at: string | null;
+  /** When MorphMarket says the animal went up for sale. Present on 1,664 of
+   * those rows, but spread over 199 distinct days, so it is the only field
+   * here that can describe listing cadence. */
+  first_listed_at: string | null;
 };
 
 export type RegionalCell = {
@@ -40,7 +46,7 @@ export async function getScrollytellingData(): Promise<ScrollytellingData> {
     supabase
       .from("market_listings")
       .select(
-        "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits, first_seen_at",
+        "id, price, price_usd_equivalent, maturity, sex, cached_traits, norm_traits, first_seen_at, first_listed_at",
       )
       .not("price_usd_equivalent", "is", null)
       .limit(LIST_LIMIT),

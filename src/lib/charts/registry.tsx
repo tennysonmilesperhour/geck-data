@@ -24,12 +24,7 @@ import BubbleChart, {
 import GeoMap, { type GeoSeller } from "@/components/charts/GeoMap";
 import RidgePlot, { type RidgeInput } from "@/components/charts/RidgePlot";
 import ForceGraph, { type ForceInput } from "@/components/charts/ForceGraph";
-import CalendarHeatmap, {
-  type CalendarInput,
-} from "@/components/charts/CalendarHeatmap";
-import PriceHeatmap, {
-  type PriceHeatmapInput,
-} from "@/components/charts/PriceHeatmap";
+import CalendarHeatmap from "@/components/charts/CalendarHeatmap";
 import CumulativeSales, {
   type SoldActivityWeek,
 } from "@/components/charts/CumulativeSales";
@@ -160,22 +155,17 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     title: "Listing activity calendar",
     subtitle: "Daily new-listing counts over the trailing 52 weeks.",
     description:
-      "GitHub-style calendar heatmap. Cell color encodes count of listings whose first_seen_at falls on that day; deeper Claude-orange = busier day.",
+      "GitHub-style calendar heatmap. Cell color encodes how many animals MorphMarket says went up for sale that day, taken from first_listed_at; deeper Claude-orange means a busier day. Listings with no list date are left out rather than dated by when our ingest first saw them, which would plot scraper run days instead.",
     category: "activity",
     pages: ["home"],
-    render: (ctx) => <CalendarHeatmap data={ctx.listings as CalendarInput[]} />,
-  },
-  "price-heatmap-hour-weekday": {
-    id: "price-heatmap-hour-weekday",
-    title: "Post-activity heatmap",
-    subtitle:
-      "When new listings actually appear — hour of day vs. day of week.",
-    description:
-      "7×24 grid of new-listing counts bucketed by weekday and hour (local time of the viewer). Useful for spotting seller posting rhythms.",
-    category: "activity",
-    pages: ["home"],
+    // ctx.listings carries first_listed_at; anything without one is dropped
+    // rather than dated by first_seen_at, which is a scraper date.
     render: (ctx) => (
-      <PriceHeatmap data={ctx.listings as PriceHeatmapInput[]} />
+      <CalendarHeatmap
+        data={(ctx.listings as Array<{ first_listed_at?: string | null }>)
+          .filter((l) => Boolean(l.first_listed_at))
+          .map((l) => ({ listed_on: l.first_listed_at ?? null }))}
+      />
     ),
   },
   "cumulative-sales": {
@@ -204,7 +194,24 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
 
 // Forward-looking menu of charts the settings panel can surface as
 // "coming soon." Moved into CHART_REGISTRY when implemented.
-export const PLANNED_CHARTS: PlannedChart[] = [];
+export const PLANNED_CHARTS: PlannedChart[] = [
+  {
+    // Demoted from the implemented registry: neither date field this
+    // warehouse holds carries a real posting time. first_seen_at is when the
+    // scraper ran, and it takes 11 distinct values across 10,011 priced
+    // listings, so an hour-of-week grid built from it is a picture of the
+    // ingest schedule. first_listed_at is the right date but 1,105 of its
+    // 1,670 values are exactly midnight, meaning MorphMarket gave a date with
+    // no time, so two thirds of the mass would pile into hour zero. The chart
+    // is fine; the data to support it does not exist yet.
+    id: "price-heatmap-hour-weekday",
+    title: "Post-activity heatmap",
+    description:
+      "7 by 24 grid of new-listing counts bucketed by weekday and hour, for spotting seller posting rhythms. Blocked on a listing timestamp that carries a time of day: the ingest date records when the scraper ran, and the MorphMarket list date is date-only on two thirds of the rows that have it.",
+    category: "activity",
+    pages: ["home"],
+  },
+];
 
 export function isImplemented(id: string): boolean {
   return id in CHART_REGISTRY;

@@ -15,8 +15,10 @@
 // zero-filled price renders as "$0" and a defaulted duration renders as
 // "30 d", and a reader cannot tell either of those from something we
 // actually observed. Several fields are nullable here as a result, which
-// widens the shapes in widget-types.ts; the `*Live` aliases below name
-// which ones and say why.
+// widens the shapes in widget-types.ts itself. There used to be a parallel
+// set of `*Live` aliases here that re-declared each widened field with an
+// Omit, on the theory that widget-types would catch up later. It has, so the
+// nullability now lives in one place and the aliases are gone.
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import type { Filters, SourceId } from "./types";
@@ -24,6 +26,7 @@ import {
   REGION_COLUMNS,
   type Arbitrage,
   type ArbitrageAxis,
+  type BreederRow,
   type BreedersData,
   type ComboDetail,
   type ComboRankSort,
@@ -549,36 +552,10 @@ export async function fetchPeakIndicators(
 // ----------------------------------------------------------------------------
 // Combo detail: v_combo_source_blend
 // ----------------------------------------------------------------------------
-// The detail panel's shape, with the three statistics nobody measured turned
-// into nulls and the mean renamed to a mean. Widens ComboDetail locally; the
-// alias collapses once widget-types carries the same fields.
-export type ComboDetailLive = Omit<
-  ComboDetail,
-  "medianSold" | "range" | "keyMetrics"
-> & {
-  /** Each source's average price, weighted by that source's share of the
-   *  observations. A mean of means. It was returned as `medianSold` until the
-   *  2026-08-29 audit, which is a different statistic and a different word. */
-  meanBlendedPrice: number | null;
-  /** Observed low and high. Null because nothing here computes them: the blend
-   *  RPC returns no extremes, and the old value was a hardcoded [0, 0] that
-   *  the panel rendered as a real $0 to $0 range. */
-  range: [number, number] | null;
-  keyMetrics: {
-    /** All three are null for the same reason: this fetch reads a source blend,
-     *  which carries no ask, no spread and no time-to-sell for one combo. They
-     *  were hardcoded zeros. */
-    medianAsk: number | null;
-    askSoldSpreadPct: number | null;
-    daysToSell: number | null;
-    volume: number;
-  };
-};
-
 export async function fetchComboDetail(
   filters: Filters,
   combo: string | null,
-): Promise<QueryResult<ComboDetailLive | null>> {
+): Promise<QueryResult<ComboDetail | null>> {
   if (!combo) {
     return ok(null);
   }
@@ -620,7 +597,7 @@ export async function fetchComboDetail(
       weighted += px * pct;
       totalPct += pct;
     }
-    return ok<ComboDetailLive>(
+    return ok<ComboDetail>(
       {
         combo: combo as ComboDetail["combo"],
         meanBlendedPrice: totalPct > 0 ? Math.round(weighted / totalPct) : null,
@@ -927,48 +904,9 @@ function supplyColor(): (combo: string) => string {
 // ----------------------------------------------------------------------------
 // Breeders: market_sellers + listing_status_events + seller_snapshots
 // ----------------------------------------------------------------------------
-// Breeder rows with the invented numbers turned into nulls. Widens the
-// BreedersData shapes locally until widget-types carries the same fields.
-export type BreederRowLive = Omit<
-  BreedersData["rows"][number],
-  "avgSoldPrice" | "avgDaysToSell" | "lineageScore" | "region"
-> & {
-  /** Null when the seller's location string could not be mapped, which is
-   *  most of them: about 85% of listings carry no location at all. It used to
-   *  default to "US", which then fed the "Top region" KPI, so the dashboard
-   *  reported a US-dominated market that was really an unparsed one. */
-  region: RegionKey | null;
-  /** Mean of that seller's sold prices. Null when none of their sold listings
-   *  carried one: it used to fall back to `market_sellers.avg_price`, which is
-   *  an average asking price printed under a "sold" heading. */
-  avgSoldPrice: number | null;
-  /** Mean days from first seen to sold across sold events in the window. Null
-   *  when the seller has none, which is nearly every seller today. */
-  avgDaysToSell: number | null;
-  /** Null when the seller row carries none of the score's inputs. Not a
-   *  lineage measurement either way, see the comment at the call site. */
-  lineageScore: number | null;
-};
-
-export type BreedersDataLive = {
-  rows: BreederRowLive[];
-  kpis: Omit<
-    BreedersData["kpis"],
-    "avgSoldPrice" | "avgDaysToSell" | "topRegion"
-  > & {
-    avgSoldPrice: number | null;
-    avgDaysToSell: number | null;
-    /** Null when no seller's location could be mapped at all. */
-    topRegion: RegionKey | null;
-    /** How many of the listed breeders had a location we could map, so the
-     *  KPI can say what it is a top region OF. */
-    regionMapped: number;
-  };
-};
-
 export async function fetchBreeders(
   filters: Filters,
-): Promise<QueryResult<BreedersDataLive | null>> {
+): Promise<QueryResult<BreedersData | null>> {
   try {
     const supabase = createClient();
     const since = new Date(
@@ -1047,7 +985,7 @@ export async function fetchBreeders(
       arr.push(r.days_since_first_seen);
       daysBySeller.set(sid, arr);
     }
-    const built: BreederRowLive[] = rows.slice(0, 12).map((s) => {
+    const built: BreederRow[] = rows.slice(0, 12).map((s) => {
       const soldAgg = soldBySeller.get(s.seller_id);
       const daysArr = daysBySeller.get(s.seller_id) ?? [];
       const avgDays =
@@ -1125,7 +1063,7 @@ export async function fetchBreeders(
       dayValues.length === 0
         ? null
         : Math.round(dayValues.reduce((a, b) => a + b, 0) / dayValues.length);
-    return ok<BreedersDataLive>(
+    return ok<BreedersData>(
       {
         rows: built,
         kpis: {
