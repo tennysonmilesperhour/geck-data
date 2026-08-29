@@ -15,7 +15,15 @@ import MorphTerm from "@/components/morphs/MorphTerm";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { comboFromName } from "@/lib/market/combos";
 import { anchorOf, paletteFor } from "@/lib/market/anchors";
-import type { ComboRow, ComboRankSort } from "@/lib/market/widget-types";
+import type { ComboRankSort } from "@/lib/market/widget-types";
+import type { RankedComboRow } from "@/lib/market/queries";
+
+// One rendering for every unmeasured cell, so a reader learns the symbol once.
+const notMeasured = (
+  <span className="text-forest-600" title="Not measured in this window">
+    no data
+  </span>
+);
 
 export default function RankedCombosTable({
   rows,
@@ -26,7 +34,7 @@ export default function RankedCombosTable({
   status,
   note,
 }: {
-  rows: ComboRow[];
+  rows: RankedComboRow[];
   sort: ComboRankSort;
   onSortChange: (s: ComboRankSort) => void;
   selected: string | null;
@@ -143,26 +151,29 @@ export default function RankedCombosTable({
                     </div>
                   </td>
                   <td className="px-3 py-3 align-top font-mono">
+                    {/* Null is not zero. Every one of these was previously
+                        rendered as a number: medianSold from a coalesce, the
+                        dispersion from median * 0.15, and days-to-sell from a
+                        default of 30 that looked exactly like a measured
+                        month. */}
                     <div className="tabular-nums text-ready">
-                      ${r.medianSold.toLocaleString()}
-                    </div>
-                    <div className="text-[10px] text-forest-500">
-                      ±${r.stddev.toLocaleString()}
+                      {r.medianSold == null
+                        ? notMeasured
+                        : `$${r.medianSold.toLocaleString()}`}
                     </div>
                   </td>
                   <td className="px-3 py-3 text-right align-top font-mono tabular-nums text-forest-100">
-                    ${r.ask.toLocaleString()}
+                    {r.ask == null ? notMeasured : `$${r.ask.toLocaleString()}`}
                   </td>
                   <td
-                    className={`px-3 py-3 text-right align-top font-mono tabular-nums ${spreadTone(
-                      r.spreadPct,
-                    )}`}
+                    className={`px-3 py-3 text-right align-top font-mono tabular-nums ${
+                      r.spreadPct == null ? "text-forest-600" : spreadTone(r.spreadPct)
+                    }`}
                   >
-                    {r.spreadPct >= 0 ? "" : ""}
-                    {r.spreadPct.toFixed(1)}%
+                    {r.spreadPct == null ? notMeasured : `${r.spreadPct.toFixed(1)}%`}
                   </td>
                   <td className="px-3 py-3 text-right align-top font-mono tabular-nums text-forest-200">
-                    {r.daysToSell}d
+                    {r.daysToSell == null ? notMeasured : `${r.daysToSell}d`}
                   </td>
                   <td className="px-3 py-3 text-right align-top font-mono tabular-nums text-forest-200">
                     {r.volume}

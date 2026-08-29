@@ -1,23 +1,27 @@
 // Real-data fetchers for every /market widget. Each fetcher wraps a
 // Supabase query and returns a `QueryResult<T | null>`:
 //
-//   - `live: true`        — rows came from Supabase
-//   - `live: false`, data: null — no data yet (DB empty, view missing,
-//                                  RLS denied, or feature genuinely not
-//                                  wired up). Widgets render an empty
-//                                  state, never synthetic numbers.
+//   - `live: true`: rows came from Supabase
+//   - `live: false`, data: null: no data yet (DB empty, view missing,
+//     RLS denied, or the feature genuinely is not wired up). Widgets
+//     render an empty state, never synthetic numbers.
 //
 // `attributionNote` carries either a one-line provenance string for
 // live results ("v_combo_rollups(90d)") or the reason an empty state
 // is showing ("v_market_sub_index not implemented").
+//
+// Second rule, added after the 2026-08-29 data audit: a metric the
+// warehouse did not measure comes back as null, never as a default. A
+// zero-filled price renders as "$0" and a defaulted duration renders as
+// "30 d", and a reader cannot tell either of those from something we
+// actually observed. Several fields are nullable here as a result, which
+// widens the shapes in widget-types.ts; the `*Live` aliases below name
+// which ones and say why.
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import type { Filters, SourceId } from "./types";
 import {
   REGION_COLUMNS,
-  actionForScore,
-  sortComboRows,
-  tierForScore,
   type Arbitrage,
   type ArbitrageAxis,
   type BreedersData,
@@ -80,8 +84,45 @@ function confidenceSources(filters: Filters): SourceId[] {
     : Array.from(filters.sources);
 }
 
+// Postgres numerics arrive as strings through PostgREST, and any of them can
+// be null. Parsing is centralised so no call site reaches for `?? 0`: a price
+// we never observed is not zero dollars, and a duration we never observed is
+// not zero days.
+function num(v: number | string | null | undefined): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function roundOrNull(v: number | null): number | null {
+  return v == null ? null : Math.round(v);
+}
+
+// Confidence means one thing across this file: how many observations sit
+// behind the number on screen. Every fetcher used to carry its own formula
+// (20 + n * 2 here, 20 + min(40, n) there, a SQL score with a floor of 20 in
+// v_combo_rollups), so the same 0..100 chip meant three different things and
+// none of them matched the rubric /methodology publishes. One curve instead:
+//
+//   score = 100 * log10(n) / log10(SATURATION), and 0 when n <= 0
+//
+// Every doubling of the sample is worth the same fixed step, a single
+// observation earns nothing, and past SATURATION more rows stop changing what
+// we are willing to say. It is a sample-size statement and nothing else: it
+// says nothing about how fresh those observations are, which is what the
+// stale-data banner is for.
+const CONFIDENCE_SATURATION_N = 200;
+
+function sampleConfidence(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const capped = Math.min(n, CONFIDENCE_SATURATION_N);
+  return Math.round(
+    (Math.log10(capped) / Math.log10(CONFIDENCE_SATURATION_N)) * 100,
+  );
+}
+
 // ----------------------------------------------------------------------------
-// Market Index — v_market_index(window_days) + delta vs period start
+// Market Index: v_market_index(window_days) + delta vs period start
 // ----------------------------------------------------------------------------
 export async function fetchMarketIndex(
   filters: Filters,
@@ -115,7 +156,7 @@ export async function fetchMarketIndex(
         series,
         attribution: {
           sources: confidenceSources(filters),
-          confidence: { score: Math.min(99, Math.max(20, 20 + n * 2)) },
+          confidence: { score: sampleConfidence(n) },
         },
       },
       `v_market_index(${windowDays(filters)}d, ${rows.length} weeks)`,
@@ -126,7 +167,7 @@ export async function fetchMarketIndex(
 }
 
 // ----------------------------------------------------------------------------
-// Market Sub-Indices — v_market_sub_index(window_days), 0035
+// Market Sub-Indices: v_market_sub_index(window_days), 0035
 // ----------------------------------------------------------------------------
 type SubIndexRow = {
   anchor: string;
@@ -180,7 +221,7 @@ export async function fetchMarketSubIndices(
         series,
         attribution: {
           sources: confidenceSources(filters),
-          confidence: { score: Math.min(99, 20 + Math.min(40, nAcc.get(anchor) ?? 0)) },
+          confidence: { score: sampleConfidence(nAcc.get(anchor) ?? 0) },
         },
       });
     }
@@ -197,7 +238,7 @@ export async function fetchMarketSubIndices(
 }
 
 // ----------------------------------------------------------------------------
-// Combos ranked — v_combo_rollups(window_days)
+// Combos ranked: v_combo_rollups(window_days)
 // ----------------------------------------------------------------------------
 type RollupRow = {
   combo_name: string;
@@ -232,10 +273,60 @@ async function fetchRollups(filters: Filters): Promise<{
   }
 }
 
+// A ranked row where every metric the rollup can fail to measure is
+// nullable, so the table prints a dash instead of a number nobody observed.
+// `stddev` is dropped rather than nulled: it was `medianSold * 0.15`, and no
+// query in this codebase measures dispersion, so there is nothing to put back
+// until a real p25/p75 source lands.
+//
+// This widens widget-types' ComboRow locally. Once that type carries the same
+// nullability, this alias collapses to `ComboRow` and can be deleted.
+export type RankedComboRow = Omit<
+  ComboRow,
+  "stddev" | "medianSold" | "ask" | "spreadPct" | "daysToSell"
+> & {
+  /** Median sold price in the window. Null while the combo has no sold rows,
+   *  which is every combo at 90d today. */
+  medianSold: number | null;
+  /** Median live asking price. Null when nothing is listed. */
+  ask: number | null;
+  /** Ask over sold, in percent. Needs both sides, so it follows medianSold. */
+  spreadPct: number | null;
+  /** Mean days from first seen to sold. Null when no sold event carried one,
+   *  rather than the old default of 30, which was indistinguishable from a
+   *  measured month. */
+  daysToSell: number | null;
+};
+
+// sortComboRows() in widget-types keys on plain numbers, so a null would sort
+// as if it were zero: cheapest on a price sort, fastest on a days-to-sell
+// sort. Unmeasured rows go to the bottom in every direction instead, so the
+// top of the table is always rows we have data for.
+function sortRankedRows(
+  rows: RankedComboRow[],
+  sort: ComboRankSort,
+): RankedComboRow[] {
+  const keyFn: Record<ComboRankSort, (r: RankedComboRow) => number | null> = {
+    volume: (r) => r.volume,
+    medianSold: (r) => r.medianSold,
+    ask: (r) => r.ask,
+    spread: (r) => (r.spreadPct == null ? null : Math.abs(r.spreadPct)),
+    days: (r) => (r.daysToSell == null ? null : -r.daysToSell),
+  };
+  return [...rows].sort((a, b) => {
+    const av = keyFn[sort](a);
+    const bv = keyFn[sort](b);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return bv - av;
+  });
+}
+
 export async function fetchCombosRanked(
   filters: Filters,
   sort: ComboRankSort,
-): Promise<QueryResult<ComboRow[] | null>> {
+): Promise<QueryResult<RankedComboRow[] | null>> {
   const { rows, live, reason } = await fetchRollups(filters);
   if (!live) return empty(null, reason ?? "no data");
 
@@ -276,34 +367,48 @@ export async function fetchCombosRanked(
     // Non-fatal; rows just render without sparklines.
   }
 
-  const mapped: ComboRow[] = rows.map((r) => {
+  const mapped: RankedComboRow[] = rows.map((r) => {
     const parts = r.combo_name.split(" × ");
-    const medianSold = r.median_sold ? Number(r.median_sold) : 0;
-    const ask = r.median_ask ? Number(r.median_ask) : medianSold;
-    const spreadPct = r.spread_pct ? Number(r.spread_pct) : 0;
+    // Nothing is substituted for anything else here. `ask` used to fall back
+    // to the sold median, which put an asking price under a "sold" heading
+    // whenever the combo had no live listings.
     return {
       combo: r.combo_name as ComboRow["combo"],
       traits: [parts[0] ?? r.combo_name, parts[1] ?? ""],
-      medianSold: Math.round(medianSold),
-      stddev: Math.round(medianSold * 0.15),
-      ask: Math.round(ask),
-      spreadPct,
-      daysToSell: Math.round(Number(r.avg_days_to_sell ?? 30)),
+      medianSold: roundOrNull(num(r.median_sold)),
+      ask: roundOrNull(num(r.median_ask)),
+      spreadPct: num(r.spread_pct),
+      daysToSell: roundOrNull(num(r.avg_days_to_sell)),
       volume: r.sold_count,
       attribution: {
         sources: confidenceSources(filters),
-        confidence: { score: r.confidence_score },
+        // Recomputed from the observation count rather than passing through
+        // the rollup's confidence_score, which starts at 20 for a combo with
+        // nothing behind it at all.
+        confidence: { score: sampleConfidence(r.sold_count + r.live_count) },
       },
       spark: sparkByCombo.get(r.combo_name) ?? [],
     };
   });
-  return ok(sortComboRows(mapped, sort), `v_combo_rollups(${windowDays(filters)}d)`);
+  return ok(
+    sortRankedRows(mapped, sort),
+    `v_combo_rollups(${windowDays(filters)}d), ${mapped.length} combos`,
+  );
 }
 
 // ----------------------------------------------------------------------------
-// Top Movers — derived from v_combo_rollups at the current window vs the
-// preceding window of equal length.
+// Top Movers: suppressed until there is a disjoint window to compare with.
 // ----------------------------------------------------------------------------
+// A mover claims a price changed between two periods, so the two periods have
+// to be different periods. This read v_combo_rollups(w) against
+// v_combo_rollups(2w), and 2w contains w, so every delta was damped toward
+// zero by construction: a combo that doubled inside w was compared against a
+// baseline that already included the doubling.
+//
+// The RPC only accepts a trailing window from now(), and a median cannot be
+// un-mixed from a longer window's median, so the preceding window cannot be
+// derived here either. Until the warehouse exposes a lagged window, the honest
+// output is the empty state plus the reason for it.
 export async function fetchTopMovers(
   filters: Filters,
 ): Promise<
@@ -312,48 +417,23 @@ export async function fetchTopMovers(
   try {
     const supabase = createClient();
     const w = windowDays(filters);
-    const [curr, prev] = await Promise.all([
-      supabase.rpc("v_combo_rollups", { window_days: w }),
-      supabase.rpc("v_combo_rollups", { window_days: w * 2 }),
-    ]);
-    if (curr.error || prev.error) throw curr.error ?? prev.error;
-    const currRows = (curr.data ?? []) as RollupRow[];
-    const prevRows = (prev.data ?? []) as RollupRow[];
-    if (currRows.length === 0) {
+    const { data, error } = await supabase.rpc("v_combo_rollups", {
+      window_days: w,
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as RollupRow[];
+    if (rows.length === 0) {
       return empty(null, "no combos with observations");
     }
-    const prevByCombo = new Map(
-      prevRows.map((r) => [r.combo_name, Number(r.median_sold ?? 0)]),
-    );
-    const movers: Mover[] = currRows
-      .filter((r) => Number(r.median_sold ?? 0) > 0)
-      .map((r) => {
-        const currPx = Number(r.median_sold ?? 0);
-        const prevPx = prevByCombo.get(r.combo_name) ?? currPx;
-        const deltaPct = prevPx === 0 ? 0 : ((currPx - prevPx) / prevPx) * 100;
-        const spark = [prevPx, currPx];
-        return {
-          combo: r.combo_name as Mover["combo"],
-          avgPrice: Math.round(currPx),
-          n: r.sold_count,
-          deltaPct,
-          spark,
-          attribution: {
-            sources: confidenceSources(filters),
-            confidence: { score: r.confidence_score },
-          },
-        };
-      });
-    if (movers.length === 0) {
-      return empty(null, "no priced combos in window");
+    // Today's state: sold_count is 0 for every combo at 90d, so there is no
+    // sold price on either side of the comparison to move.
+    const soldTotal = rows.reduce((a, r) => a + (r.sold_count ?? 0), 0);
+    if (soldTotal === 0) {
+      return empty(null, `no sold observations in the last ${w}d`);
     }
-    const byDelta = [...movers].sort((a, b) => b.deltaPct - a.deltaPct);
-    return ok(
-      {
-        appreciating: byDelta.slice(0, 5),
-        depreciating: [...byDelta].reverse().slice(0, 5),
-      },
-      `v_combo_rollups delta over ${w}d`,
+    return empty(
+      null,
+      `no preceding ${w}d window to compare against: v_combo_rollups only takes a trailing window`,
     );
   } catch (e) {
     return empty(null, `fetchTopMovers error: ${errMsg(e)}`);
@@ -361,72 +441,77 @@ export async function fetchTopMovers(
 }
 
 // ----------------------------------------------------------------------------
-// Peak Indicator
+// Peak Indicator: suppressed for the same reason as movers.
 // ----------------------------------------------------------------------------
+// The old score was 35 plus a volume term plus a momentum term plus a spread
+// term, clamped to 5..95. Two of those three inputs are unavailable: sold
+// volume is zero for every combo, and the momentum term came from the same
+// w-inside-2w comparison the movers used. What survived was the constant 35
+// and a usually-null spread, presented as a read on the market.
+//
+// A real version needs the combo's own recent range (p25/p75 from a daily or
+// weekly index), which is what the tier labels in widget-types now describe,
+// plus sold volume on both sides of a disjoint comparison.
 export async function fetchPeakIndicators(
   filters: Filters,
 ): Promise<QueryResult<PeakIndicator[] | null>> {
   try {
     const supabase = createClient();
     const w = windowDays(filters);
-    const [curr, prev] = await Promise.all([
-      supabase.rpc("v_combo_rollups", { window_days: w }),
-      supabase.rpc("v_combo_rollups", { window_days: w * 2 }),
-    ]);
-    if (curr.error || prev.error) throw curr.error ?? prev.error;
-    const currRows = (curr.data ?? []) as RollupRow[];
-    const prevRows = (prev.data ?? []) as RollupRow[];
-    if (currRows.length === 0) {
+    const { data, error } = await supabase.rpc("v_combo_rollups", {
+      window_days: w,
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as RollupRow[];
+    if (rows.length === 0) {
       return empty(null, "no combos with observations");
     }
-    const prevByCombo = new Map(
-      prevRows.map((r) => [r.combo_name, Number(r.median_sold ?? 0)]),
+    const soldTotal = rows.reduce((a, r) => a + (r.sold_count ?? 0), 0);
+    if (soldTotal === 0) {
+      return empty(null, `no sold observations in the last ${w}d`);
+    }
+    return empty(
+      null,
+      `no preceding ${w}d window to score momentum against: v_combo_rollups only takes a trailing window`,
     );
-    const maxSold = Math.max(1, ...currRows.map((r) => r.sold_count));
-    const cards: PeakIndicator[] = currRows
-      .filter((r) => r.sold_count + r.live_count > 0)
-      .map((r) => {
-        const volumeTerm = (r.sold_count / maxSold) * 40;
-        const prevPx = prevByCombo.get(r.combo_name) ?? Number(r.median_sold ?? 0);
-        const currPx = Number(r.median_sold ?? prevPx);
-        const momentumPct = prevPx === 0 ? 0 : ((currPx - prevPx) / prevPx) * 100;
-        const momentumTerm = Math.max(-20, Math.min(30, momentumPct * 0.5));
-        const spreadTerm =
-          r.spread_pct != null ? Math.max(-15, Math.min(15, Number(r.spread_pct))) : 0;
-        const score = Math.max(
-          5,
-          Math.min(95, Math.round(35 + volumeTerm + momentumTerm + spreadTerm)),
-        );
-        return {
-          combo: r.combo_name as PeakIndicator["combo"],
-          score,
-          tier: tierForScore(score),
-          action: actionForScore(score),
-          n: r.sold_count + r.live_count,
-          attribution: {
-            sources: confidenceSources(filters),
-            confidence: { score: r.confidence_score },
-          },
-        };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6);
-    if (cards.length === 0) {
-      return empty(null, "no combos with observations");
-    }
-    return ok(cards, `derived from v_combo_rollups(${w}d)`);
   } catch (e) {
     return empty(null, `fetchPeakIndicators error: ${errMsg(e)}`);
   }
 }
 
 // ----------------------------------------------------------------------------
-// Combo detail — price_history series + v_combo_source_blend
+// Combo detail: v_combo_source_blend
 // ----------------------------------------------------------------------------
+// The detail panel's shape, with the three statistics nobody measured turned
+// into nulls and the mean renamed to a mean. Widens ComboDetail locally; the
+// alias collapses once widget-types carries the same fields.
+export type ComboDetailLive = Omit<
+  ComboDetail,
+  "medianSold" | "range" | "keyMetrics"
+> & {
+  /** Each source's average price, weighted by that source's share of the
+   *  observations. A mean of means. It was returned as `medianSold` until the
+   *  2026-08-29 audit, which is a different statistic and a different word. */
+  meanBlendedPrice: number | null;
+  /** Observed low and high. Null because nothing here computes them: the blend
+   *  RPC returns no extremes, and the old value was a hardcoded [0, 0] that
+   *  the panel rendered as a real $0 to $0 range. */
+  range: [number, number] | null;
+  keyMetrics: {
+    /** All three are null for the same reason: this fetch reads a source blend,
+     *  which carries no ask, no spread and no time-to-sell for one combo. They
+     *  were hardcoded zeros. */
+    medianAsk: number | null;
+    askSoldSpreadPct: number | null;
+    daysToSell: number | null;
+    volume: number;
+  };
+};
+
 export async function fetchComboDetail(
   filters: Filters,
   combo: string | null,
-): Promise<QueryResult<ComboDetail | null>> {
+): Promise<QueryResult<ComboDetailLive | null>> {
   if (!combo) {
     return ok(null);
   }
@@ -455,21 +540,28 @@ export async function fetchComboDetail(
     if (blendRows.length === 0) {
       return empty(null, "no blend rows for combo");
     }
-    // We don't have a multi-series chart pipeline yet, so we return a
-    // detail object with the blend populated and the chart series empty.
-    // ComboDetailPanel renders the empty series as a "chart not wired"
-    // placeholder rather than a fake line.
-    return ok<ComboDetail>(
+    const observations = blendRows.reduce((a, b) => a + b.n, 0);
+    // `pct` is each source's share of the observations. Divide by the shares
+    // that survived the n > 0 filter above rather than by a hardcoded 100,
+    // otherwise dropping a source quietly deflates the average.
+    let weighted = 0;
+    let totalPct = 0;
+    for (const b of blendRows) {
+      const px = num(b.avg_price);
+      const pct = num(b.pct);
+      if (px == null || pct == null) continue;
+      weighted += px * pct;
+      totalPct += pct;
+    }
+    return ok<ComboDetailLive>(
       {
         combo: combo as ComboDetail["combo"],
-        medianSold: Math.round(
-          blendRows.reduce(
-            (a, b) => a + Number(b.avg_price) * Number(b.pct),
-            0,
-          ) / 100,
-        ),
-        range: [0, 0],
-        observations: blendRows.reduce((a, b) => a + b.n, 0),
+        meanBlendedPrice: totalPct > 0 ? Math.round(weighted / totalPct) : null,
+        range: null,
+        observations,
+        // There is still no per-combo multi-series pipeline, so the chart data
+        // stays empty on purpose and ComboDetailPanel shows its "chart not
+        // wired" placeholder instead of a line drawn from one blended number.
         series: [],
         blend: blendRows.map((b) => {
           const id = normalizeSourceId(b.source);
@@ -485,19 +577,17 @@ export async function fetchComboDetail(
           };
         }),
         keyMetrics: {
-          medianAsk: 0,
-          askSoldSpreadPct: 0,
-          daysToSell: 0,
-          volume: blendRows.reduce((a, b) => a + b.n, 0),
+          medianAsk: null,
+          askSoldSpreadPct: null,
+          daysToSell: null,
+          volume: observations,
         },
         attribution: {
           sources: confidenceSources(filters),
-          confidence: {
-            score: Math.min(99, 20 + blendRows.reduce((a, b) => a + b.n, 0)),
-          },
+          confidence: { score: sampleConfidence(observations) },
         },
       },
-      `v_combo_source_blend(${combo}, ${w}d)`,
+      `v_combo_source_blend(${combo}, ${w}d), ${observations} observations`,
     );
   } catch (e) {
     return empty(null, `fetchComboDetail error: ${errMsg(e)}`);
@@ -505,7 +595,7 @@ export async function fetchComboDetail(
 }
 
 // ----------------------------------------------------------------------------
-// Regional heatmap — v_regional_heatmap(window_days)
+// Regional heatmap: v_regional_heatmap(window_days)
 // ----------------------------------------------------------------------------
 export async function fetchRegionalHeatmap(
   filters: Filters,
@@ -552,8 +642,11 @@ export async function fetchRegionalHeatmap(
         if (value == null) continue;
         const v = Math.round(Number(value));
         cells[region] = {
+          // 0..1 for the cell's opacity. Floored at 0.18 so a thin cell is
+          // still readable, and driven by the cell's own observation count
+          // rather than the view's confidence_score, which floors at 20.
+          confidence: Math.max(0.18, sampleConfidence(row.n) / 100),
           value: v,
-          confidence: Math.max(0.18, Math.min(1, row.confidence_score / 100)),
           n: row.n,
         };
         if (v < lo) lo = v;
@@ -572,10 +665,7 @@ export async function fetchRegionalHeatmap(
         attribution: {
           sources: confidenceSources(filters),
           confidence: {
-            score: Math.round(
-              rows.reduce((a, r) => a + r.confidence_score, 0) /
-                Math.max(1, rows.length),
-            ),
+            score: sampleConfidence(rows.reduce((a, r) => a + r.n, 0)),
           },
         },
       },
@@ -599,7 +689,7 @@ function pickMetric(
 }
 
 // ----------------------------------------------------------------------------
-// Arbitrage — derived from v_regional_heatmap (axis='region'). The
+// Arbitrage: derived from v_regional_heatmap (axis='region'). The
 // 'source' axis returns an empty state until we have real multi-source
 // price data; it used to return fixture data unconditionally.
 // ----------------------------------------------------------------------------
@@ -659,9 +749,8 @@ export async function fetchArbitrage(
           spreadPct,
           attribution: {
             sources: confidenceSources(filters),
-            confidence: {
-              score: Math.min(low.confidence_score, high.confidence_score),
-            },
+            // A spread is only as good as its thinner side.
+            confidence: { score: sampleConfidence(Math.min(low.n, high.n)) },
           },
         };
       })
@@ -689,7 +778,7 @@ export async function fetchArbitrage(
 }
 
 // ----------------------------------------------------------------------------
-// Supply pipeline — v_supply_pipeline_monthly (admin + owner visibility)
+// Supply pipeline: v_supply_pipeline_monthly (admin + owner visibility)
 // ----------------------------------------------------------------------------
 export async function fetchSupplyPipeline(
   filters: Filters,
@@ -769,11 +858,37 @@ function supplyColor(): (combo: string) => string {
 }
 
 // ----------------------------------------------------------------------------
-// Breeders — market_sellers + listing_status_events + seller_snapshots
+// Breeders: market_sellers + listing_status_events + seller_snapshots
 // ----------------------------------------------------------------------------
+// Breeder rows with the invented numbers turned into nulls. Widens the
+// BreedersData shapes locally until widget-types carries the same fields.
+export type BreederRowLive = Omit<
+  BreedersData["rows"][number],
+  "avgSoldPrice" | "avgDaysToSell" | "lineageScore"
+> & {
+  /** Mean of that seller's sold prices. Null when none of their sold listings
+   *  carried one: it used to fall back to `market_sellers.avg_price`, which is
+   *  an average asking price printed under a "sold" heading. */
+  avgSoldPrice: number | null;
+  /** Mean days from first seen to sold across sold events in the window. Null
+   *  when the seller has none, which is nearly every seller today. */
+  avgDaysToSell: number | null;
+  /** Null when the seller row carries none of the score's inputs. Not a
+   *  lineage measurement either way, see the comment at the call site. */
+  lineageScore: number | null;
+};
+
+export type BreedersDataLive = {
+  rows: BreederRowLive[];
+  kpis: Omit<BreedersData["kpis"], "avgSoldPrice" | "avgDaysToSell"> & {
+    avgSoldPrice: number | null;
+    avgDaysToSell: number | null;
+  };
+};
+
 export async function fetchBreeders(
   filters: Filters,
-): Promise<QueryResult<BreedersData | null>> {
+): Promise<QueryResult<BreedersDataLive | null>> {
   try {
     const supabase = createClient();
     const since = new Date(
@@ -814,14 +929,31 @@ export async function fetchBreeders(
         .gte("observed_at", since)
         .limit(5000),
     ]);
-    const soldBySeller = new Map<string, { total: number; sumPx: number }>();
+    // `sold` is every listing currently marked sold, with no date filter:
+    // market_listings has no sold timestamp this query can bound, so the count
+    // is sold-to-date, not sold-in-window. The attribution note says so rather
+    // than the label implying a window the query never applied.
+    const soldBySeller = new Map<
+      string,
+      { sold: number; priced: number; sumPx: number }
+    >();
     for (const r of (sold.data ?? []) as Array<{
       seller_id: string;
       price_usd_equivalent: number | null;
     }>) {
-      const rec = soldBySeller.get(r.seller_id) ?? { total: 0, sumPx: 0 };
-      rec.total += 1;
-      rec.sumPx += r.price_usd_equivalent ?? 0;
+      const rec = soldBySeller.get(r.seller_id) ?? {
+        sold: 0,
+        priced: 0,
+        sumPx: 0,
+      };
+      rec.sold += 1;
+      // A sold listing with no price is not a $0 sale, so it stays out of the
+      // average instead of dragging it toward zero.
+      const px = num(r.price_usd_equivalent);
+      if (px != null) {
+        rec.priced += 1;
+        rec.sumPx += px;
+      }
       soldBySeller.set(r.seller_id, rec);
     }
     const daysBySeller = new Map<string, number[]>();
@@ -835,45 +967,52 @@ export async function fetchBreeders(
       arr.push(r.days_since_first_seen);
       daysBySeller.set(sid, arr);
     }
-    const built = rows.slice(0, 12).map((s, idx) => {
+    const built: BreederRowLive[] = rows.slice(0, 12).map((s) => {
       const soldAgg = soldBySeller.get(s.seller_id);
       const daysArr = daysBySeller.get(s.seller_id) ?? [];
       const avgDays =
         daysArr.length === 0
-          ? 30
-          : Math.round(
-              daysArr.reduce((a, b) => a + b, 0) / daysArr.length,
-            );
+          ? null
+          : Math.round(daysArr.reduce((a, b) => a + b, 0) / daysArr.length);
       const region = (regionOfText(s.seller_location) ?? "US") as RegionKey;
-      const score =
-        Math.min(
-          100,
-          Math.round(
-            25 +
-              Math.min(40, (s.total_listings ?? 0) * 0.4) +
-              Math.min(25, (s.avg_price ?? 0) / 200) +
-              Math.min(10, (s.feedback_count ?? 0) * 0.02),
-          ),
-        ) || 30 + (idx % 60);
+      // The pill says lineage, but nothing in this pipeline observes lineage:
+      // the inputs are listing count, average asking price and feedback count,
+      // so it is a coverage weight wearing the wrong name. It is null when the
+      // seller row carries none of the three, because the old
+      // `|| 30 + (idx % 60)` fallback made the pill a function of the row's
+      // position in a list sorted by listing count, which is not reputation.
+      const hasScoreInputs =
+        s.total_listings != null ||
+        s.avg_price != null ||
+        s.feedback_count != null;
+      const lineageScore = hasScoreInputs
+        ? Math.min(
+            100,
+            Math.round(
+              25 +
+                Math.min(40, (s.total_listings ?? 0) * 0.4) +
+                Math.min(25, (s.avg_price ?? 0) / 200) +
+                Math.min(10, (s.feedback_count ?? 0) * 0.02),
+            ),
+          )
+        : null;
       return {
         id: s.seller_id,
         name: s.seller_name ?? s.seller_id,
         region,
         activeListings: Math.max(0, s.total_listings ?? 0),
-        soldInWindow: soldAgg?.total ?? 0,
+        soldInWindow: soldAgg?.sold ?? 0,
         avgSoldPrice:
-          soldAgg && soldAgg.total > 0
-            ? Math.round(soldAgg.sumPx / soldAgg.total)
-            : Math.round(s.avg_price ?? 0),
+          soldAgg && soldAgg.priced > 0
+            ? Math.round(soldAgg.sumPx / soldAgg.priced)
+            : null,
         avgDaysToSell: avgDays,
         specialty: "—" as BreedersData["rows"][number]["specialty"],
         velocity: [],
-        lineageScore: score,
+        lineageScore,
         attribution: {
           sources: ["gi_listings"] as SourceId[],
-          confidence: {
-            score: Math.min(99, 30 + Math.floor((soldAgg?.total ?? 0) * 3)),
-          },
+          confidence: { score: sampleConfidence(soldAgg?.sold ?? 0) },
         },
       };
     });
@@ -881,19 +1020,25 @@ export async function fetchBreeders(
     for (const r of built) byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + 1);
     const topRegion = ([...byRegion.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
       "US") as RegionKey;
+    // Both KPI averages skip the rows that have no value instead of counting
+    // them as zero, and go null when no row has one at all.
+    const soldPrices = built
+      .map((r) => r.avgSoldPrice)
+      .filter((v): v is number => v != null);
+    const dayValues = built
+      .map((r) => r.avgDaysToSell)
+      .filter((v): v is number => v != null);
     const avgPx =
-      built.length === 0
-        ? 0
+      soldPrices.length === 0
+        ? null
         : Math.round(
-            built.reduce((a, r) => a + r.avgSoldPrice, 0) / built.length,
+            soldPrices.reduce((a, b) => a + b, 0) / soldPrices.length,
           );
     const avgDays =
-      built.length === 0
-        ? 0
-        : Math.round(
-            built.reduce((a, r) => a + r.avgDaysToSell, 0) / built.length,
-          );
-    return ok(
+      dayValues.length === 0
+        ? null
+        : Math.round(dayValues.reduce((a, b) => a + b, 0) / dayValues.length);
+    return ok<BreedersDataLive>(
       {
         rows: built,
         kpis: {
@@ -903,7 +1048,7 @@ export async function fetchBreeders(
           avgDaysToSell: avgDays,
         },
       },
-      "market_sellers + listing_status_events",
+      `market_sellers + market_listings (sold to date) + listing_status_events (sold events in the last ${windowDays(filters)}d)`,
     );
   } catch (e) {
     return empty(null, `fetchBreeders error: ${errMsg(e)}`);

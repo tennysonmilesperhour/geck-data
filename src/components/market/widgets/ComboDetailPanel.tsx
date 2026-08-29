@@ -6,7 +6,7 @@
 //   4) Observations count + "See underlying transactions →"
 //   5) Blended price — contribution by source (stacked h-bars)
 //   6) Key metrics strip (Median ask / Ask→Sold spread / Days / Volume)
-import type { ComboDetail } from "@/lib/market/widget-types";
+import type { ComboDetailLive } from "@/lib/market/queries";
 import { sourceMeta } from "@/lib/market/sources";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import SourceBadge, { SourceBadgeList } from "@/components/market/SourceBadge";
@@ -21,7 +21,7 @@ export default function ComboDetailPanel({
   status,
   note,
 }: {
-  detail: ComboDetail | null;
+  detail: ComboDetailLive | null;
   status?: LivePreviewStatus;
   note?: string;
 }) {
@@ -45,14 +45,26 @@ export default function ComboDetailPanel({
               <MorphTerm name={detail.combo} />
             </h2>
             <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+              {/* This headline used to read "median sold" over a mean of
+                  per-source averages, beside a range that was a hardcoded
+                  [0, 0] rendered as a real $0 to $0. Both now say what they
+                  are, or say nothing. */}
               <span className="text-3xl font-semibold tabular-nums text-ready">
-                ${detail.medianSold.toLocaleString()}
+                {detail.meanBlendedPrice == null
+                  ? "No data"
+                  : `$${detail.meanBlendedPrice.toLocaleString()}`}
               </span>
-              <span className="text-xs text-forest-400">median sold</span>
-              <span className="text-xs text-forest-500">
-                range ${detail.range[0].toLocaleString()}–$
-                {detail.range[1].toLocaleString()}
+              <span className="text-xs text-forest-400">
+                mean of per-source averages
               </span>
+              {detail.range ? (
+                <span className="text-xs text-forest-500">
+                  range ${detail.range[0].toLocaleString()} to $
+                  {detail.range[1].toLocaleString()}
+                </span>
+              ) : (
+                <span className="text-xs text-forest-600">range not computed</span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -147,19 +159,39 @@ export default function ComboDetailPanel({
       <section className="forest-surface p-5">
         <h3 className="text-sm font-semibold text-forest-50">Key metrics</h3>
         <dl className="mt-3 grid grid-cols-2 gap-3">
-          <Metric label="Median ask" value={`$${detail.keyMetrics.medianAsk.toLocaleString()}`} />
           <Metric
-            label="Ask → Sold spread"
-            value={`${detail.keyMetrics.askSoldSpreadPct > 0 ? "+" : ""}${detail.keyMetrics.askSoldSpreadPct.toFixed(1)}%`}
+            label="Median ask"
+            value={
+              detail.keyMetrics.medianAsk == null
+                ? "no data"
+                : `$${detail.keyMetrics.medianAsk.toLocaleString()}`
+            }
+          />
+          <Metric
+            label="Ask to sold spread"
+            value={
+              detail.keyMetrics.askSoldSpreadPct == null
+                ? "no data"
+                : `${detail.keyMetrics.askSoldSpreadPct > 0 ? "+" : ""}${detail.keyMetrics.askSoldSpreadPct.toFixed(1)}%`
+            }
             tone={
-              Math.abs(detail.keyMetrics.askSoldSpreadPct) < 5
+              detail.keyMetrics.askSoldSpreadPct == null
+                ? undefined
+                : Math.abs(detail.keyMetrics.askSoldSpreadPct) < 5
                 ? "positive"
                 : Math.abs(detail.keyMetrics.askSoldSpreadPct) < 15
                 ? "warn"
                 : "danger"
             }
           />
-          <Metric label="Days to sell" value={`${detail.keyMetrics.daysToSell}d`} />
+          <Metric
+            label="Days to sell"
+            value={
+              detail.keyMetrics.daysToSell == null
+                ? "no data"
+                : `${detail.keyMetrics.daysToSell}d`
+            }
+          />
           <Metric label="Volume in window" value={`${detail.keyMetrics.volume}`} />
         </dl>
         <div className="mt-3">

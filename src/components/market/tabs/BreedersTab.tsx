@@ -45,7 +45,11 @@ export default function BreedersTab({
         <KpiCard label="Top region" value={data.kpis.topRegion} tone="info" />
         <KpiCard
           label="Avg sold price"
-          value={`$${data.kpis.avgSoldPrice.toLocaleString()}`}
+          value={
+            data.kpis.avgSoldPrice == null
+              ? "no data"
+              : `$${data.kpis.avgSoldPrice.toLocaleString()}`
+          }
           tone="positive"
         />
         <KpiCard
@@ -116,10 +120,12 @@ export default function BreedersTab({
                     {r.soldInWindow}
                   </td>
                   <td className="px-3 py-3 text-right align-middle font-mono tabular-nums text-forest-100">
-                    ${r.avgSoldPrice.toLocaleString()}
+                    {r.avgSoldPrice == null
+                      ? "no data"
+                      : `$${r.avgSoldPrice.toLocaleString()}`}
                   </td>
                   <td className="px-3 py-3 text-right align-middle font-mono tabular-nums text-forest-200">
-                    {r.avgDaysToSell}d
+                    {r.avgDaysToSell == null ? "no data" : `${r.avgDaysToSell}d`}
                   </td>
                   <td className="px-3 py-3 align-middle">
                     {r.velocity.length > 0 ? (
@@ -152,7 +158,16 @@ export default function BreedersTab({
                     )}
                   </td>
                   <td className="px-3 py-3 text-right align-middle">
-                    <LineagePill score={r.lineageScore} />
+                    {/* The old fallback here was 30 + (idx % 60), a number
+                        derived from the row's position in the sort. With no
+                        real inputs there is nothing to show. */}
+                    {r.lineageScore == null ? (
+                      <span className="font-mono text-[11px] text-forest-600">
+                        no data
+                      </span>
+                    ) : (
+                      <LineagePill score={r.lineageScore} />
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right align-middle">
                     <ConfidenceBadge
