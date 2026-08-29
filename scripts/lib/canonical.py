@@ -183,6 +183,30 @@ def trait_tokens(raw: Any) -> list[str]:
     return out
 
 
+# Multi-animal listings price a GROUP, so they cannot sit in a per-animal
+# median or be compared against one to compute a discount. Production had
+# "Group Of 5" at $100 total and a wholesale 5/10 lot at $50, which the
+# landing page advertised as a 90% deal. Mirror of public._looks_like_group_lot
+# (migration 0042); keep the two in step. Eager by design: a false positive
+# costs one listing of comp breadth, a false negative distorts a median.
+_GROUP_LOT_RES = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\b(lot|lots|pack|packs|wholesale|bundle|colony|pair|pairs|trio|trios|quad|group)\b",
+        r"\b(x\s*[2-9]|[2-9]\s*x)\b",
+        r"\b(two|three|four|five|six)\s+(pack|lot|group|of)\b",
+        r"\bgroup\s+of\s+[0-9]+\b",
+    )
+)
+
+
+def looks_like_group_lot(title: Optional[str]) -> bool:
+    """True when the title describes more than one animal."""
+    if not title:
+        return False
+    return any(rx.search(title) for rx in _GROUP_LOT_RES)
+
+
 def cached_traits_string(
     trait_array: Optional[list[str]], traits_csv: Optional[str]
 ) -> Optional[str]:
@@ -254,6 +278,7 @@ def transform_listing(row: dict[str, Any]) -> Optional[dict[str, Any]]:
         "cached_traits": cached_traits_string(
             row.get("trait_array"), row.get("traits")
         ),
+        "is_group_lot": looks_like_group_lot(row.get("name")),
         "norm_traits": norm_traits_string(
             row.get("trait_array"), row.get("traits")
         ),

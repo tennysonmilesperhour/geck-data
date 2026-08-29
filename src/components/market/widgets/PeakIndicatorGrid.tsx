@@ -14,20 +14,20 @@ const TIER_META: Record<
   PeakTier,
   { label: string; tint: string; text: string; marker: string }
 > = {
-  Peaking: {
-    label: "PEAKING",
+  "Above recent range": {
+    label: "ABOVE RANGE",
     tint: "bg-busy/10 border-busy/40",
     text: "text-busy",
     marker: "#fbbf24",
   },
-  "Fair value": {
-    label: "FAIR VALUE",
+  "Within recent range": {
+    label: "WITHIN RANGE",
     tint: "bg-yellow-500/10 border-yellow-500/30",
     text: "text-yellow-300",
     marker: "#fde047",
   },
-  Accumulate: {
-    label: "ACCUMULATE",
+  "Below recent range": {
+    label: "BELOW RANGE",
     tint: "bg-ready/10 border-ready/40",
     text: "text-ready",
     marker: "#2dbf95",
@@ -55,11 +55,12 @@ export default function PeakIndicatorGrid({
           </span>
           <div>
             <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
-              Peak Indicator — Hold, Sell, or Accumulate
+              Where asking prices sit against each combo's recent range
             </h2>
             <p className="mt-0.5 text-xs text-forest-400">
-              Composite 0–100 score. Higher = market heat, lower = early /
-              undervalued.
+              Composite 0 to 100 score built from observed asking prices, not
+              from sales. It describes position within a combo&apos;s own recent
+              range. It is not a recommendation to buy or sell.
             </p>
           </div>
         </div>

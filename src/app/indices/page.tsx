@@ -23,6 +23,9 @@ import { comboSlugFromId } from "@/lib/market/combo-slug";
 
 export const dynamic = "force-dynamic";
 
+// A pair carried by a single seller is that seller's pricing, not a market.
+const MIN_SELLERS = 2;
+
 type ObservedTrait = {
   trait: string;
   n: number | string;
@@ -38,6 +41,27 @@ type ComboSummary = {
   delta_7d: number | string | null;
   delta_30d: number | string | null;
   delta_90d: number | string | null;
+  // Added in migration 0044 so a null delta can explain itself. A blank cell
+  // used to be indistinguishable from a measured 0.0%, which is exactly the
+  // confusion the audit caught: every delta on this page read "+0.0%" because
+  // the priors were anchored on CURRENT_DATE and matched each combo's own
+  // latest row.
+  observed_days: number | string | null;
+  first_day: string | null;
+  is_stale: boolean | null;
+  latest_age_days: number | string | null;
+  baseline_90d_day: string | null;
+  baseline_90d_lag_days: number | string | null;
+};
+
+// Evidence breadth per pair (migration 0046). Two labels that are really one
+// trait (Extreme Harlequin with Harlequin, Dalmatian with Super Dalmatian)
+// are not a combo, and a pair carried by one seller is not a market.
+type ComboBreadth = {
+  combo_id: string;
+  n_listings: number | string | null;
+  n_sellers: number | string | null;
+  is_redundant_pair: boolean | null;
 };
 
 type ComboDailyRow = {
@@ -68,7 +92,7 @@ export default async function IndicesPage({
 
   const supabase = createClient();
 
-  const [traitsRes, comboRes, sparkRes] = await Promise.all([
+  const [traitsRes, comboRes, sparkRes, breadthRes] = await Promise.all([
     supabase
       .from("v_observed_traits")
       .select("trait, n, median_price")
@@ -77,7 +101,7 @@ export default async function IndicesPage({
     supabase
       .from("v_combo_index_summary")
       .select(
-        "combo_id, latest_day, current_value, latest_n, total_n, delta_7d, delta_30d, delta_90d",
+        "combo_id, latest_day, current_value, latest_n, total_n, delta_7d, delta_30d, delta_90d, observed_days, first_day, is_stale, latest_age_days, baseline_90d_day, baseline_90d_lag_days",
       )
       .limit(2000),
     supabase
@@ -89,11 +113,17 @@ export default async function IndicesPage({
       )
       .order("day", { ascending: true })
       .limit(20000),
+    supabase
+      .from("v_combo_breadth")
+      .select("combo_id, n_listings, n_sellers, is_redundant_pair")
+      .limit(5000),
   ]);
 
   const traitRows = (traitsRes.data ?? []) as ObservedTrait[];
   const comboRows = (comboRes.data ?? []) as ComboSummary[];
   const sparkRows = (sparkRes.data ?? []) as ComboDailyRow[];
+  const breadthRows = (breadthRes.data ?? []) as ComboBreadth[];
+  const breadthByCombo = new Map(breadthRows.map((b) => [b.combo_id, b]));
 
   // Anchor tiles: top 8 traits by sample size.
   const anchors = traitRows.slice(0, 8).map((t) => ({
@@ -113,16 +143,38 @@ export default async function IndicesPage({
     sparkByCombo.set(r.combo_id, arr);
   }
 
+  // Two gates before a pair is charted at all, per the audit's release gates:
+  // it must be a real pair (not one trait wearing two labels) and it must
+  // carry independent evidence (more than one seller). 36 pairs are redundant
+  // and the three largest of them, Extreme Harlequin x Harlequin at 209
+  // listings, Red x Red Base and Dalmatian x Super Dalmatian at 136 each,
+  // were ranking at the top of this table.
+  const redundantHidden = comboRows.filter(
+    (r) => breadthByCombo.get(r.combo_id)?.is_redundant_pair === true,
+  ).length;
+  const thinHidden = comboRows.filter((r) => {
+    const b = breadthByCombo.get(r.combo_id);
+    return b?.is_redundant_pair !== true && Number(b?.n_sellers ?? 0) < MIN_SELLERS;
+  }).length;
+
   const filtered = comboRows
     .filter((r) => Number(r.total_n ?? r.latest_n ?? 0) >= minN)
+    .filter((r) => {
+      const b = breadthByCombo.get(r.combo_id);
+      if (b?.is_redundant_pair === true) return false;
+      return Number(b?.n_sellers ?? 0) >= MIN_SELLERS;
+    })
     .map((r) => {
       const traits = comboTraits(r.combo_id);
       const dominant = traits ? traits[0]! : r.combo_id;
+      const b = breadthByCombo.get(r.combo_id);
       return {
         ...r,
         traits,
         dominant,
         spark: sparkByCombo.get(r.combo_id) ?? [],
+        n_sellers: b?.n_sellers ?? null,
+        n_listings_breadth: b?.n_listings ?? null,
       };
     })
     .sort(
@@ -180,19 +232,19 @@ export default async function IndicesPage({
       key: "d7",
       header: "7d",
       align: "right",
-      render: (r) => <Delta n={r.delta_7d} />,
+      render: (r) => <Delta n={r.delta_7d} stale={r.is_stale === true} />,
     },
     {
       key: "d30",
       header: "30d",
       align: "right",
-      render: (r) => <Delta n={r.delta_30d} />,
+      render: (r) => <Delta n={r.delta_30d} stale={r.is_stale === true} />,
     },
     {
       key: "d90",
       header: "90d",
       align: "right",
-      render: (r) => <Delta n={r.delta_90d} />,
+      render: (r) => <Delta n={r.delta_90d} stale={r.is_stale === true} />,
     },
     {
       key: "spark",
@@ -220,6 +272,36 @@ export default async function IndicesPage({
         </span>
       ),
     },
+    {
+      key: "sellers",
+      header: "sellers",
+      align: "right",
+      render: (r) => (
+        <span className="font-mono tabular-nums text-ink-400">
+          {r.n_sellers == null ? "no data" : fmtInt(Number(r.n_sellers))}
+        </span>
+      ),
+    },
+    {
+      key: "asof",
+      header: "Last observed",
+      align: "right",
+      render: (r) => (
+        <span
+          className={`font-mono text-[11px] ${
+            r.is_stale ? "text-warn" : "text-ink-400"
+          }`}
+          title={
+            r.is_stale
+              ? `No observation for ${fmtInt(Number(r.latest_age_days ?? 0))} days, so every delta is withheld`
+              : undefined
+          }
+        >
+          {r.latest_day ?? "no data"}
+          {r.observed_days ? ` · ${fmtInt(Number(r.observed_days))}d obs` : ""}
+        </span>
+      ),
+    },
   ];
 
   return (
@@ -227,7 +309,7 @@ export default async function IndicesPage({
       <SectionHeader
         eyebrow="Indices"
         title="Composite market indices"
-        description="Every morph family and every two-trait combo we observe in the listings stream, with current median, 7/30/90 day deltas, and a 90d sparkline. The dashboard auto-discovers combos from cached_traits; nothing is hand-picked."
+        description="Median observed asking price per morph family and per two-trait combo, with the deltas we can actually measure and the date each was last observed. Combos are auto-discovered from trait tags; same-trait pairs and single-seller pairs are filtered out."
         right={
           <Link href="/methodology#combo-index" className="text-xs text-ink-400 underline hover:text-ink-100">
             Methodology →
@@ -319,6 +401,9 @@ export default async function IndicesPage({
                 delta_90d: r.delta_90d,
                 latest_n: r.latest_n,
                 total_n: r.total_n,
+                n_sellers: r.n_sellers,
+                observed_days: r.observed_days,
+                is_stale: r.is_stale,
               }))}
               filename={`indices-${new Date().toISOString().slice(0, 10)}`}
             />
@@ -338,22 +423,40 @@ export default async function IndicesPage({
         )}
       </Panel>
 
-      <Panel tone="soft" title="Why these morphs?">
+      <Panel tone="soft" title="What this table does and does not show">
         <p className="text-sm text-ink-300">
-          The list above is generated from{" "}
-          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_observed_traits</code>{" "}
-          and{" "}
-          <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">v_combo_index_summary</code>{" "}
-          (migration 0037). Every morph trait that appears on at least
-          three listings shows up; every two-trait combination that
-          co-occurs on at least three listings shows up. Use the{" "}
-          <strong className="text-ink-100">min n</strong> chip group above
-          to widen or narrow the cutoff.
+          Combos are discovered from listing trait tags, not hand-picked. Two
+          filters run before anything is charted. A pair whose two labels are
+          really the same trait is dropped, because Extreme Harlequin with
+          Harlequin, Dalmatian with Super Dalmatian, or Axanthic with Het
+          Axanthic is one trait described twice, not a pairing a breeder can
+          make. A pair carried by fewer than {MIN_SELLERS} sellers is also
+          dropped, because one breeder&apos;s asking prices are not a market.
+          {redundantHidden + thinHidden > 0 ? (
+            <>
+              {" "}
+              Right now that hides {fmtInt(redundantHidden)} same-trait{" "}
+              {redundantHidden === 1 ? "pair" : "pairs"} and{" "}
+              {fmtInt(thinHidden)} single-seller{" "}
+              {thinHidden === 1 ? "pair" : "pairs"}.
+            </>
+          ) : null}
         </p>
         <p className="mt-2 text-sm text-ink-300">
-          There is no curated allowlist. If you see a morph you expect to
-          appear and it is missing, it means we have fewer than three
-          listings carrying that trait in the current catalogue.
+          Deltas compare a combo against its own earlier observations, never
+          against today&apos;s date. A cell reading{" "}
+          <strong className="text-ink-100">no baseline</strong> means nothing
+          was observed at the far end of that window, and{" "}
+          <strong className="text-ink-100">stale</strong> means the combo has
+          not been seen recently at all. Neither is a measured zero. Because
+          collection stopped between 2026-06-10 and 2026-08-26, no combo
+          currently has a 7 or 30 day baseline, and only the 90 day column has
+          real comparisons in it.
+        </p>
+        <p className="mt-2 text-sm text-ink-300">
+          Values are median observed asking prices in USD, one observation per
+          listing per day, with multi-animal lots excluded. They are not sale
+          prices.
         </p>
       </Panel>
 
@@ -371,10 +474,33 @@ export default async function IndicesPage({
   );
 }
 
-function Delta({ n }: { n: number | string | null | undefined }) {
-  if (n == null) return <span className="text-ink-600">—</span>;
+// A null delta is not a zero. Since migration 0044 it means one of two
+// specific things, and saying which is the whole point: either this combo has
+// not been observed recently enough to compare, or nothing was observed at the
+// far end of the labelled horizon because of the 78 day collection gap.
+function Delta({
+  n,
+  stale = false,
+}: {
+  n: number | string | null | undefined;
+  stale?: boolean;
+}) {
+  if (n == null) {
+    return (
+      <span
+        className="text-ink-600"
+        title={
+          stale
+            ? "Not measured: this combo has no recent observation"
+            : "Not measured: no observation at the start of this window"
+        }
+      >
+        {stale ? "stale" : "no baseline"}
+      </span>
+    );
+  }
   const v = Number(n);
-  if (!Number.isFinite(v)) return <span className="text-ink-600">—</span>;
+  if (!Number.isFinite(v)) return <span className="text-ink-600">no data</span>;
   const cls = v >= 0 ? "text-ready" : "text-danger";
   return (
     <span className={`font-mono tabular-nums ${cls}`}>

@@ -56,7 +56,13 @@ export type CalendarEntry = {
   kind: "expo" | "release";
 };
 
-export type PeakTier = "Peaking" | "Fair value" | "Accumulate";
+// Evidence labels, not trading advice. These used to read "Peaking" / "Fair
+// value" / "Accumulate" with actions "Sell into strength" / "Hold" /
+// "Accumulate", which told a breeder what to DO with their animals off a
+// composite score built from as few as two listings. The score describes
+// where current asking prices sit against that combo's own recent range, and
+// nothing more, so the labels now say only that.
+export type PeakTier = "Above recent range" | "Within recent range" | "Below recent range";
 
 export type PeakIndicator = {
   combo: Combo;
@@ -68,15 +74,27 @@ export type PeakIndicator = {
 };
 
 export function tierForScore(score: number): PeakTier {
-  if (score >= 70) return "Peaking";
-  if (score >= 35) return "Fair value";
-  return "Accumulate";
+  if (score >= 70) return "Above recent range";
+  if (score >= 35) return "Within recent range";
+  return "Below recent range";
 }
 
-export function actionForScore(score: number): string {
-  if (score >= 70) return "Sell into strength";
-  if (score >= 35) return "Hold";
-  return "Accumulate";
+// Minimum observations before any characterisation is offered at all. Below
+// this the honest output is that we cannot say.
+export const MIN_ACTION_OBSERVATIONS = 8;
+
+/**
+ * Describes what was observed. `n` is the number of observations behind the
+ * score; pass it so a thin sample suppresses the phrasing entirely rather
+ * than dressing two listings up as a market signal.
+ */
+export function actionForScore(score: number, n?: number): string {
+  if (n != null && n < MIN_ACTION_OBSERVATIONS) {
+    return "Too few observations to characterise";
+  }
+  if (score >= 70) return "Asking prices above this combo's recent range";
+  if (score >= 35) return "Asking prices within this combo's recent range";
+  return "Asking prices below this combo's recent range";
 }
 
 export type ComboRow = {

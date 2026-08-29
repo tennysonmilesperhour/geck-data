@@ -304,6 +304,10 @@ def patch_canonical_extras(
         slug = owner.get("id")
     slug = slug or detail.get("store")
     patch: dict[str, Any] = {
+        # This walk only accepts crested geckos (is_crested gates every row),
+        # so the species column can finally say so instead of defaulting to
+        # 'unknown' on 100% of the catalogue as it did before migration 0042.
+        "species": "crested",
         "first_listed": listed_at.isoformat(),
         "first_listed_at": listed_at.isoformat(),
         "detail_collected": True,

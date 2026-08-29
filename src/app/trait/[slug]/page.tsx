@@ -51,8 +51,12 @@ type SoldRow = {
   price_usd_equivalent: number | null;
   sold_at: string | null;
   days_to_sell: number | null;
-  seller_name: string | null;
   cached_traits: string | null;
+  // 'captured_event' means the pipeline watched the listing flip to sold.
+  // 'inferred_unseen' means the catalogue walk stopped seeing it and a sale
+  // is inferred. Different evidence, so it travels with the row.
+  sold_basis: string | null;
+  is_group_lot: boolean | null;
 };
 
 function priceOf(r: { price: number | null; price_usd_equivalent: number | null }): number | null {
@@ -107,12 +111,19 @@ export default async function TraitPage({
       .eq("current_status", "live")
       .or(`cached_traits.ilike.${ilikePattern},norm_traits.ilike.${ilikePattern}`)
       .limit(1500),
+    // v_sold_reconciled (migration 0045) instead of sold_listings_v: the old
+    // view joined only listing_status_events, which is 92 rows from four days
+    // in May, and silently omitted the 2,840 inferred sales from May and June.
+    // Both pools come back here carrying sold_basis so nothing is merged
+    // without saying so. Group lots price several animals at once, so they
+    // cannot sit in a per-animal comp.
     supabase
-      .from("sold_listings_v")
+      .from("v_sold_reconciled")
       .select(
-        "id, title, price, price_usd_equivalent, cached_traits, sold_at, days_to_sell, seller_name",
+        "id, title, price, price_usd_equivalent, cached_traits, sold_at, days_to_sell, sold_basis, is_group_lot",
       )
       .or(`cached_traits.ilike.${ilikePattern}`)
+      .eq("is_group_lot", false)
       .order("sold_at", { ascending: false })
       .limit(300),
   ]);
@@ -140,6 +151,7 @@ export default async function TraitPage({
   const soldPrices = soldRows.map(priceOf).filter((p): p is number => p != null);
   const medianAsk = median(livePrices) ?? 0;
   const medianSold = median(soldPrices) ?? 0;
+  const newestSoldAt = soldRows.find((r) => r.sold_at)?.sold_at ?? null;
 
   // Find every observed combo that includes this trait, ranked by
   // sample size. Pulls from v_observed_combos (auto-discovered, ~350
@@ -276,8 +288,21 @@ export default async function TraitPage({
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Live listings" value={fmtInt(liveFiltered.length)} sub="active, matches trait" />
         <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "—"} sub="from filtered set" />
-        <KpiCard label="Sold (180d)" value={fmtInt(soldRows.length)} sub="recent comps" tone="positive" />
-        <KpiCard label="Median sold" value={medianSold ? fmtUsd(medianSold) : "—"} sub="recent comps" />
+        <KpiCard
+          label="Recorded sales"
+          value={fmtInt(soldRows.length)}
+          sub={
+            newestSoldAt
+              ? `newest ${newestSoldAt.slice(0, 10)}${soldRows.length >= 300 ? ", newest 300 shown" : ""}`
+              : "none recorded"
+          }
+          tone="positive"
+        />
+        <KpiCard
+          label="Median recorded price"
+          value={medianSold ? fmtUsd(medianSold) : "no data"}
+          sub="last observed ask, not a negotiated price"
+        />
       </section>
 
       {freqSpark.length > 1 && (

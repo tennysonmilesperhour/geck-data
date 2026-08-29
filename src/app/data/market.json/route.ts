@@ -346,9 +346,26 @@ export async function GET(_req: NextRequest) {
       const status = sold ? "sold" : "listed";
 
       const soldDate = rr?.sold_at ?? (ev?.status === "sold" ? ev.observed_at : null);
+      // `date` keeps its old fallback chain so existing consumers do not break,
+      // but a sold row whose sale we never dated used to inherit its LISTING
+      // date, which reads downstream as "sold in February". date_basis says
+      // which clock the value actually came from so nobody has to guess.
       const date = sold
         ? soldDate ?? r.first_listed_at ?? r.first_seen_at ?? r.last_seen_at ?? generatedAt
         : r.first_listed_at ?? r.first_seen_at ?? r.last_seen_at ?? generatedAt;
+      const date_basis: string = sold
+        ? soldDate
+          ? "sold_observed"
+          : r.first_listed_at
+            ? "listed_not_sold_dated"
+            : r.first_seen_at
+              ? "first_seen_not_sold_dated"
+              : "generated"
+        : r.first_listed_at
+          ? "listed"
+          : r.first_seen_at
+            ? "first_seen"
+            : "generated";
 
       // Time on market for sold rows: prefer measured sold_at - first_seen_at,
       // fall back to the status event's precomputed delta.
@@ -356,6 +373,11 @@ export async function GET(_req: NextRequest) {
       if (sold && soldDate && r.first_seen_at) {
         const ms = Date.parse(soldDate) - Date.parse(r.first_seen_at);
         if (Number.isFinite(ms) && ms >= 0) time_on_market_days = Math.round(ms / 86_400_000);
+        // Under an hour between first sighting and sale is an import
+        // coincidence, not a listing that sold in an hour. 84 of the 92
+        // captured sold events carry that shape, which is what produced the
+        // "median 0 days to sell" the audit flagged.
+        if (Number.isFinite(ms) && ms < 3_600_000) time_on_market_days = null;
       }
 
       const internalAge = classifyAge({
@@ -384,6 +406,8 @@ export async function GET(_req: NextRequest) {
         sold_price: sold ? askPrice : null,
         time_on_market_days,
         date,
+        date_basis,
+        sold_date_known: sold ? soldDate != null : null,
         source_id: "external.morphmarket",
       });
     }

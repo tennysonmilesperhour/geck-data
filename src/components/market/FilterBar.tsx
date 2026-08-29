@@ -1,12 +1,22 @@
 "use client";
-// Top-of-page filter row. Five controls, all wired to the same `Filters`
-// state on MarketDashboard:
+// Top-of-page filter row.
 //
 //   [timeframe]   [region]   [age]   [lineage]   [sources]
 //
-// Forest-themed surfaces + emerald-green active states match the handoff
-// screenshots. Age/Lineage/Region use a native <select> underneath a styled
-// pill — good enough until one of them needs a searchable popover.
+// Only timeframe actually reaches the queries. Region, age, lineage and
+// sources were never wired into the RPCs: they changed the label and, for
+// sources, the attribution badge, while every widget kept returning the same
+// population. A control that confirms a filter it did not apply is worse than
+// no control at all, so those four are rendered disabled with the measured
+// reason they cannot work yet. Re-enable one only when its query actually
+// narrows the rows AND the displayed n moves with it.
+//
+// Coverage measured on production 2026-08-29:
+//   seller_location present on 1,572 of 10,239 rows (15%)
+//   maturity present on 1,277 of 10,239 rows (12%)
+//   lineage: no populated source
+//   sources: two values exist in the data, 'scraper' and 'manual', against
+//            the eight this control offers
 import { useState } from "react";
 import type {
   Age,
@@ -64,6 +74,7 @@ export default function FilterBar({
         options={REGIONS.map((r) => ({ value: r, label: REGION_LABEL[r] }))}
         value={filters.region}
         onChange={(v) => onChange({ ...filters, region: v as Region })}
+        disabledReason="Only 15% of listings carry a seller location, and the mapped rows are almost all US, so a regional split would describe the gaps rather than the market."
       />
 
       <Chip
@@ -80,6 +91,7 @@ export default function FilterBar({
         }))}
         value={filters.age}
         onChange={(v) => onChange({ ...filters, age: v as Age })}
+        disabledReason="Only 12% of listings report maturity, so filtering on it would silently drop the other 88%."
       />
 
       <Chip
@@ -98,11 +110,13 @@ export default function FilterBar({
         }))}
         value={filters.lineage}
         onChange={(v) => onChange({ ...filters, lineage: v as Lineage })}
+        disabledReason="No lineage data is collected yet."
       />
 
       <SourcesControl
         value={filters.sources}
         onChange={(v) => onChange({ ...filters, sources: v })}
+        disabledReason="One feed is active. Selecting sources changed the badge, not the rows."
       />
 
       <div className="ml-auto">
@@ -159,6 +173,7 @@ function Chip<T extends string>({
   value,
   options,
   onChange,
+  disabledReason,
 }: {
   label: React.ReactNode;
   icon?: string;
@@ -166,7 +181,20 @@ function Chip<T extends string>({
   value: T;
   options: Array<{ value: T; label: string }>;
   onChange: (v: string) => void;
+  disabledReason?: string;
 }) {
+  if (disabledReason) {
+    return (
+      <span
+        className="relative inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-forest-800 bg-forest-950/30 px-3 py-1.5 text-xs text-forest-600 line-through decoration-forest-700"
+        title={`${title} is unavailable. ${disabledReason}`}
+        aria-disabled="true"
+      >
+        {icon ? <span aria-hidden>{icon}</span> : null}
+        <span>{label}</span>
+      </span>
+    );
+  }
   return (
     <label
       className="relative inline-flex items-center gap-1.5 rounded-lg border border-forest-700 bg-forest-950/60 px-3 py-1.5 text-xs text-forest-200 hover:border-forest-600"
@@ -200,11 +228,25 @@ function Chip<T extends string>({
 function SourcesControl({
   value,
   onChange,
+  disabledReason,
 }: {
   value: Set<SourceId> | "all";
   onChange: (v: Set<SourceId> | "all") => void;
+  disabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
+
+  if (disabledReason) {
+    return (
+      <span
+        className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-forest-800 bg-forest-950/30 px-3 py-1.5 text-xs text-forest-600 line-through decoration-forest-700"
+        title={`Sources filter is unavailable. ${disabledReason}`}
+        aria-disabled="true"
+      >
+        Sources
+      </span>
+    );
+  }
 
   const activeCount = value === "all" ? ALL_SOURCE_IDS.length : value.size;
   const allLabel =

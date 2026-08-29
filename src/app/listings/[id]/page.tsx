@@ -5,7 +5,9 @@
 // What we show:
 //   - Listing title, price, currency, sex/weight/maturity
 //   - First image (if any) from listing_images
-//   - Price history line chart from price_history (last 180d)
+//   - Price history chart from price_history (every observation we hold for
+//     this listing, newest 500). The header used to claim "last 180d" while
+//     the query had no date filter at all.
 //   - Status timeline (live/sold/removed events from listing_status_events)
 //
 // Server-rendered. Public read on every backing table.
@@ -125,6 +127,8 @@ export default async function ListingDetailPage({
   const priceSeries = history
     .map((h) => h.price_usd_equivalent ?? h.price)
     .filter((v): v is number => v != null);
+  const firstObservedAt = history[0]?.observed_at ?? null;
+  const lastObservedAt = history[history.length - 1]?.observed_at ?? null;
   const firstImg = images.find(publicImageUrl);
 
   return (
@@ -192,8 +196,18 @@ export default async function ListingDetailPage({
         <section className="md:col-span-2 space-y-4">
           <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-4">
             <div className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Price history ({history.length} samples)
+              Observed asking price ({history.length}{" "}
+              {history.length === 1 ? "observation" : "observations"}
+              {firstObservedAt && lastObservedAt
+                ? `, ${firstObservedAt.slice(0, 10)} to ${lastObservedAt.slice(0, 10)}`
+                : ""}
+              )
             </div>
+            <p className="mt-1 text-[10px] leading-snug text-ink-500">
+              Points are spaced evenly by observation, not by date, so a long
+              collection gap looks the same as a short one. Collection stopped
+              between 2026-06-10 and 2026-08-26.
+            </p>
             {priceSeries.length > 0 ? (
               <MiniSparkline values={priceSeries} width={520} height={120} />
             ) : (

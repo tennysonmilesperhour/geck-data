@@ -213,14 +213,38 @@ export default async function ComboPage({
   const spreadPct =
     medianSold > 0 ? Math.round(((medianAsk - medianSold) / medianSold) * 100) : null;
 
-  const priceSpark = weeklyMedianSeries([
-    ...priceTicks,
-    ...soldRows.map((r) => ({
-      observed_at: r.sold_at ?? "",
-      price: r.price,
-      price_usd_equivalent: r.price_usd_equivalent,
-    })),
-  ]).slice(-26);
+  // Weekly ask history now comes from combo_weekly_prices (migration 0047)
+  // rather than being assembled here. The old version took the price ticks of
+  // the first 200 listings that are live RIGHT NOW and merged sold prices into
+  // the same median. That meant an animal which sold in May disappeared from
+  // May's history, so the line described the listings that failed to sell, and
+  // it mixed two different measurements. The RPC uses every listing that ever
+  // carried both traits, one observation per listing per week, asks only.
+  const comboWeeks = (await supabase
+    .rpc("combo_weekly_prices", {
+      p_trait_a: combo.traits[0],
+      p_trait_b: combo.traits[1] ?? combo.traits[0],
+      window_days: 180,
+    })
+    .then(({ data }) =>
+      (data ?? []) as Array<{
+        week_start: string;
+        median_price: number | string | null;
+        n_listings: number | string | null;
+        observed_days: number | string | null;
+      }>,
+    )) ?? [];
+
+  const priceSpark = comboWeeks
+    .map((w) => (w.median_price == null ? null : Number(w.median_price)))
+    .filter((v): v is number => v != null && Number.isFinite(v));
+  // Weeks we actually observed, and the listing breadth behind the newest one.
+  const observedWeeks = comboWeeks.length;
+  const newestWeek = comboWeeks[comboWeeks.length - 1] ?? null;
+  const priceSparkListings = comboWeeks.reduce(
+    (max, w) => Math.max(max, Number(w.n_listings ?? 0)),
+    0,
+  );
 
   // Top sellers in this combo.
   const sellerCount = new Map<string, { id: string; name: string; loc: string | null; n: number }>();
@@ -456,11 +480,12 @@ export default async function ComboPage({
       </section>
 
       <Panel
-        title="Price history"
-        subtitle="Weekly median of price_history ticks + sold events for this combo, last 26 weeks. Sparkline is a directional read; the listings tables below have exact numbers."
+        title="Observed asking prices by week"
+        subtitle="Median asking price per week across every listing that has carried this combo, live or sold, one observation per listing per week. Asking prices only: sale prices are a different measurement and are not mixed in. Weeks with no observation are absent rather than drawn as zero."
         right={
           <span className="font-mono text-[11px] text-ink-500">
-            {priceSpark.length} weeks
+            {observedWeeks} observed {observedWeeks === 1 ? "week" : "weeks"}
+            {priceSparkListings > 0 ? ` · up to ${priceSparkListings} listings` : ""}
           </span>
         }
       >
@@ -478,8 +503,19 @@ export default async function ComboPage({
               color={anchorPalette?.hex}
             />
             <div className="text-right font-mono text-xs text-ink-400">
-              <div>Earliest: {fmtUsd(priceSpark[0] ?? 0)}</div>
-              <div>Latest: {fmtUsd(priceSpark[priceSpark.length - 1] ?? 0)}</div>
+              <div>
+                Earliest observed week: {comboWeeks[0]?.week_start ?? "no data"}{" "}
+                {fmtUsd(priceSpark[0] ?? 0)}
+              </div>
+              <div>
+                Latest observed week: {newestWeek?.week_start ?? "no data"}{" "}
+                {fmtUsd(priceSpark[priceSpark.length - 1] ?? 0)}
+              </div>
+              {observedWeeks > 1 ? (
+                <div className="mt-1 text-ink-500">
+                  Gaps between those dates were not observed.
+                </div>
+              ) : null}
             </div>
           </div>
         )}
