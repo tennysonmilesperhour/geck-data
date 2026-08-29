@@ -131,43 +131,55 @@ NON_TRAIT_KEYS = (
     "payment", "scientific name", "category",
 )
 
-_TRAIT_SPLIT_RE = re.compile(r"\s*[|,]\s*")
-
-
-def _is_non_trait(token: str) -> bool:
-    """True for 'Diet: Meal Replacement' and the bare 'Diet' form."""
-    head = token.split(":", 1)[0].strip().lower()
+def _is_non_trait(segment: str) -> bool:
+    """True for 'Diet: Cricket, Meal Replacement' and the bare 'Diet' form."""
+    head = segment.split(":", 1)[0].strip().lower()
     return head in NON_TRAIT_KEYS
 
 
 def trait_tokens(raw: Any) -> list[str]:
     """Split a raw trait string into real morph tokens.
 
-    MorphMarket delimits with pipes, older CSV rows use commas, and a single
-    string can mix both ("Diet: Meal Replacement | Extreme Harlequin, Cream").
-    Split on either, drop the non-trait property segments, de-duplicate
-    case-insensitively while preserving order.
+    The delimiters are not interchangeable. Pipes separate PROPERTIES and
+    commas list values INSIDE one property:
+
+        Diet: Cricket, Meal Replacement | Proven breeder: No | Harlequin, Dark
+
+    So the parse is pipe-first: drop a non-trait property segment whole (its
+    values go with it), then comma-split only what survives. Splitting on
+    both at once orphans the diet values and they end up looking like morphs,
+    which is what migration 0039 did and 0041 had to undo.
+
+    De-duplicates case-insensitively while preserving order.
     """
     if raw is None:
         return []
     if isinstance(raw, (list, tuple)):
-        parts = [str(t) for t in raw]
+        # Already tokenized upstream (the API ingest passes trait names), so
+        # each element is atomic; do not comma-split a real trait name.
+        segments = [(str(t), False) for t in raw]
     else:
         text = str(raw).strip()
         if not text:
             return []
-        parts = _TRAIT_SPLIT_RE.split(text)
+        segments = [(seg, True) for seg in text.split("|")]
+
     out: list[str] = []
     seen: set[str] = set()
-    for part in parts:
-        token = part.strip()
-        if not token or _is_non_trait(token):
+    for segment, splittable in segments:
+        segment = segment.strip()
+        if not segment or _is_non_trait(segment):
             continue
-        key = token.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(token)
+        pieces = segment.split(",") if splittable else [segment]
+        for piece in pieces:
+            token = piece.strip()
+            if not token:
+                continue
+            key = token.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(token)
     return out
 
 
