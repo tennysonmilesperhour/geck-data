@@ -1,25 +1,31 @@
 // Shared formatters for dashboard views. Kept small so server components can
 // import them cheaply.
+//
+// A missing value formats as the words "no data", not as a dash. Two reasons:
+// an em dash is a house-rule violation, and more importantly a lone glyph in a
+// table reads as a rendering quirk rather than as a statement. The audit found
+// several places where absent data was indistinguishable from a measured zero,
+// so absence is spelled out wherever it reaches a reader.
 export function fmtUsd(n: number | null | undefined, decimals = 0): string {
-  if (n == null || !Number.isFinite(n)) return "—";
+  if (n == null || !Number.isFinite(n)) return "no data";
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}`;
 }
 
 export function fmtPct(n: number | null | undefined, decimals = 1): string {
-  if (n == null || !Number.isFinite(n)) return "—";
+  if (n == null || !Number.isFinite(n)) return "no data";
   const sign = n > 0 ? "+" : "";
   return `${sign}${n.toFixed(decimals)}%`;
 }
 
 export function fmtInt(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
+  if (n == null || !Number.isFinite(n)) return "no data";
   return Math.trunc(n).toLocaleString();
 }
 
 export function fmtDate(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "no data";
   const t = Date.parse(s);
-  if (Number.isNaN(t)) return "—";
+  if (Number.isNaN(t)) return "no data";
   return new Date(t).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -28,9 +34,9 @@ export function fmtDate(s: string | null | undefined): string {
 }
 
 export function fmtDateTime(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "no data";
   const t = Date.parse(s);
-  if (Number.isNaN(t)) return "—";
+  if (Number.isNaN(t)) return "no data";
   return new Date(t).toLocaleString(undefined, {
     year: "numeric",
     month: "short",
@@ -41,9 +47,9 @@ export function fmtDateTime(s: string | null | undefined): string {
 }
 
 export function fmtRelative(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "no data";
   const t = Date.parse(s);
-  if (Number.isNaN(t)) return "—";
+  if (Number.isNaN(t)) return "no data";
   const diffSec = Math.round((Date.now() - t) / 1000);
   if (diffSec < 60) return `${diffSec}s ago`;
   const min = Math.round(diffSec / 60);

@@ -16,6 +16,7 @@
 // The two are never averaged into one median or one count.
 
 import { createClient } from "@/lib/supabase/server";
+import { looksLikeGroupLot } from "@/lib/traits";
 
 export type ComboSnapshot = {
   combo_name: string;
@@ -160,8 +161,6 @@ const FRESH_SELLER_SCAN_LIMIT = 5000;
 // rows written since then default to false. Re-running the same heuristic here
 // keeps a "Wholesale 5/10 Lot Cresties" out of the single-animal comps even
 // when the column has not caught up.
-const MULTI_ANIMAL_TITLE =
-  /\b(lots?|packs?|wholesale|bundle|colony|pairs?|trios?|quad|group)\b|\bx\s*[2-9]\b|\b[2-9]\s*x\b/i;
 
 /**
  * Split a combo display name into the trait phrases that make it up.
@@ -354,7 +353,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     }
 
     for (const row of oppQ.data ?? []) {
-      if (MULTI_ANIMAL_TITLE.test(row.title ?? "")) continue;
+      if (looksLikeGroupLot(row.title)) continue;
       const traits = (row.norm_traits || row.cached_traits || "").toLowerCase();
       if (!traits) continue;
       let matched: { name: string; median: number; n: number } | null = null;

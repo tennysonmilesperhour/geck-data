@@ -140,3 +140,29 @@ export function sanitizeNormTraits(raw: unknown): string | null {
   if (kept.length === 0) return null;
   return kept.join(", ");
 }
+
+/**
+ * Does this listing title describe more than one animal?
+ *
+ * Group lots, packs, pairs and trios price the GROUP, so their price cannot
+ * sit in a per-animal median or act as the baseline for a discount. Production
+ * had "Group Of 5" at $100 total and a wholesale 5/10 lot at $50, which the
+ * landing page then advertised as a 90% deal against a single-animal median.
+ *
+ * This is the TypeScript half of a rule that also exists in SQL
+ * (public._looks_like_group_lot, migration 0042) and in Python
+ * (scripts/lib/canonical.py looks_like_group_lot). All three must agree; the
+ * SQL one backfills, and these two keep new rows correct as they arrive.
+ *
+ * Deliberately eager: a false positive costs one listing of comp breadth, a
+ * false negative distorts a median.
+ */
+export function looksLikeGroupLot(title: unknown): boolean {
+  if (typeof title !== "string" || !title.trim()) return false;
+  return (
+    /\b(lots?|packs?|wholesale|bundle|colony|pairs?|trios?|quad|group)\b/i.test(title) ||
+    /\b(x\s*[2-9]|[2-9]\s*x)\b/i.test(title) ||
+    /\b(two|three|four|five|six)\s+(pack|lot|group|of)\b/i.test(title) ||
+    /\bgroup\s+of\s+[0-9]+\b/i.test(title)
+  );
+}

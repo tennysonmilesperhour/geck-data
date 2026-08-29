@@ -18,7 +18,9 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adaptLegacyEvent } from "./legacyAdapter";
 import { isCrested } from "./species";
-import { sanitizeCachedTraits, sanitizeNormTraits } from "@/lib/traits";
+import { sanitizeCachedTraits, sanitizeNormTraits,
+  looksLikeGroupLot,
+} from "@/lib/traits";
 import { evaluateAlerts, type AlertEvaluationContext } from "@/lib/alerts/matcher";
 import { dispatchMatches } from "@/lib/alerts/notify";
 
@@ -197,6 +199,13 @@ function projectListing(payload: Record<string, unknown>): Record<string, unknow
     }
   } else if ("norm_traits" in out) {
     out.norm_traits = sanitizeNormTraits(out.norm_traits);
+  }
+  // Flag multi-animal listings on the way in. Migration 0042 backfilled the
+  // column once, but nothing on this path set it, so every row written after
+  // that backfill would have defaulted to false and quietly re-entered the
+  // per-animal medians it was meant to stay out of.
+  if ("title" in out) {
+    out.is_group_lot = looksLikeGroupLot(out.title);
   }
   return out;
 }

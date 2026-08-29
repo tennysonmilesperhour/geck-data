@@ -8,6 +8,7 @@ import {
   parseTraitList,
   sanitizeCachedTraits,
   sanitizeNormTraits,
+  looksLikeGroupLot,
 } from "../src/lib/traits";
 
 test("parseTraitList strips Diet: Meal Replacement leak", () => {
@@ -60,4 +61,39 @@ test("sanitizeNormTraits drops any comma-segment containing a colon", () => {
     sanitizeNormTraits("diet: meal replacement, pinstripe, crowned"),
     "pinstripe, crowned",
   );
+});
+
+// Group-lot detection. This rule exists three times: here, in SQL
+// (public._looks_like_group_lot, migration 0042) and in Python
+// (scripts/lib/canonical.py). These cases are the shared contract, and were
+// checked against all three implementations on real production titles.
+test("looksLikeGroupLot flags listings that price more than one animal", () => {
+  for (const title of [
+    "4 Pack",
+    "Three Pack",
+    "Group Of 5",
+    "Proven Pair",
+    "Breeding Pair",
+    "X3 Cresties",
+    "2 Lot Red Dals",
+    "Wholesale 5/10 Lot Cresties",
+    "R2B Frap Trio",
+  ]) {
+    assert.equal(looksLikeGroupLot(title), true, title);
+  }
+});
+
+test("looksLikeGroupLot leaves single animals alone", () => {
+  for (const title of [
+    "Lilly White Male",
+    "Extreme Harlequin",
+    "Axanthic Female",
+    "Cappuccino Het Axanthic",
+    "",
+  ]) {
+    assert.equal(looksLikeGroupLot(title), false, title);
+  }
+  assert.equal(looksLikeGroupLot(null), false);
+  assert.equal(looksLikeGroupLot(undefined), false);
+  assert.equal(looksLikeGroupLot(42), false);
 });
