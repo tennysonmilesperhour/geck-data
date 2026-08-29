@@ -1,0 +1,86 @@
+name: Refresh combo_index_daily
+description: >
+  Refreshes the combo_index_daily materialized view and then verifies the
+  view actually caught up with its inputs.
+
+  Why the verify step exists: refresh_combo_index_daily() returns void, so
+  the old workflow printed success on any 2xx. It did that for weeks while
+  the view held five days of history, because the view was starved of
+  parseable traits rather than un-refreshed (migration 0039). A green run
+  that proves nothing is worse than no run, so this action fails when
+  combo_index_health() reports the view sitting behind the newest day it
+  could have built.
+
+inputs:
+  supabase-url:
+    description: Supabase project URL (pass secrets.SUPABASE_URL)
+    required: true
+  supabase-service-key:
+    description: Supabase service role key (pass secrets.SUPABASE_SERVICE_KEY)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Refresh and verify combo_index_daily
+      shell: bash
+      env:
+        SUPABASE_URL: ${{ inputs.supabase-url }}
+        SUPABASE_SERVICE_KEY: ${{ inputs.supabase-service-key }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
+          echo "SUPABASE_URL / SUPABASE_SERVICE_KEY secrets are not set." >&2
+          exit 1
+        fi
+
+        call_rpc() {
+          # $1 = function name, writes body to /tmp/rpc.json, echoes status
+          curl -sS -m 300 -o /tmp/rpc.json -w '%{http_code}' \
+            -X POST \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "$SUPABASE_URL/rest/v1/rpc/$1"
+        }
+
+        echo "Refreshing combo_index_daily..."
+        code=$(call_rpc refresh_combo_index_daily)
+        cat /tmp/rpc.json
+        case "$code" in
+          200|201|204) echo "refresh_combo_index_daily returned $code" ;;
+          *) echo "refresh_combo_index_daily returned HTTP $code" >&2; exit 1 ;;
+        esac
+
+        echo "Verifying the view caught up..."
+        code=$(call_rpc combo_index_health)
+        if [ "$code" != "200" ]; then
+          echo "combo_index_health returned HTTP $code" >&2
+          cat /tmp/rpc.json >&2
+          exit 1
+        fi
+        cat /tmp/rpc.json
+
+        # PostgREST returns a single-row array for a TABLE-returning function.
+        lag=$(jq -r '.[0].lag_days // "null"' /tmp/rpc.json)
+        mv_max=$(jq -r '.[0].mv_max_day // "null"' /tmp/rpc.json)
+        newest=$(jq -r '.[0].newest_eligible_day // "null"' /tmp/rpc.json)
+        rows=$(jq -r '.[0].mv_rows // "null"' /tmp/rpc.json)
+        combos=$(jq -r '.[0].mv_combos // "null"' /tmp/rpc.json)
+
+        echo "combo_index_daily: max_day=$mv_max newest_eligible=$newest lag_days=$lag rows=$rows combos=$combos"
+
+        if [ "$lag" = "null" ]; then
+          echo "No eligible observations yet; nothing to verify against." >&2
+          exit 0
+        fi
+        if [ "$lag" -gt 0 ]; then
+          echo "FAIL: combo_index_daily is $lag day(s) behind its inputs." >&2
+          echo "The refresh reported success but the view did not catch up." >&2
+          echo "Check that SUPABASE_URL points at the Geck Data project and" >&2
+          echo "that refresh_combo_index_daily() still owns the view." >&2
+          exit 1
+        fi
+        echo "OK: combo_index_daily is current."

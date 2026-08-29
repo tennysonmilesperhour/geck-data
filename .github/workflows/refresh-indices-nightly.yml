@@ -1,14 +1,16 @@
 name: Nightly Index Refresh
 
-# combo_index_daily is a MATERIALIZED view (migration 0035/0036/0037):
-# it only reflects new price_history rows after an explicit refresh.
-# Before this workflow existed the refresh was a manual SQL-editor step
-# that nobody ran, so /indices and every combo sparkline sat frozen at
-# whatever the last hand refresh saw. This runs the SECURITY DEFINER
-# helper once a night.
+# combo_index_daily is a MATERIALIZED view (migrations 0035/0036/0037): it
+# only reflects new price_history rows after an explicit refresh. This runs
+# the SECURITY DEFINER helper once a night and then verifies the view
+# actually caught up, because a refresh that returns 2xx proves nothing on
+# its own (see .github/actions/refresh-indices and migration 0040).
+#
+# The weekly ingest triggers its own refresh when it finishes, so Monday's
+# listings appear the same day instead of waiting for this run.
 on:
   schedule:
-    - cron: '30 8 * * *'   # 08:30 UTC nightly, before the 09:00 scrape slot
+    - cron: '30 8 * * *'   # 08:30 UTC nightly
   workflow_dispatch:
 
 jobs:
@@ -19,37 +21,15 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v7
 
-      # Calls the SECURITY DEFINER helper through PostgREST's rpc
-      # endpoint using the same SUPABASE_URL / SUPABASE_SERVICE_KEY
-      # secrets the scrape workflows already use. (An earlier revision
-      # used psql with a SUPABASE_DB_URL secret, but that secret has
-      # never been configured in this repo - the apply-migrations
-      # workflow fails for the same reason.)
-      - name: Refresh combo_index_daily
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: |
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
-            echo "SUPABASE_URL / SUPABASE_SERVICE_KEY secrets are not set." >&2
-            exit 1
-          fi
-          http_code=$(curl -sS -m 300 -o /tmp/resp.txt -w '%{http_code}' \
-            -X POST \
-            -H "apikey: $SUPABASE_SERVICE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            "$SUPABASE_URL/rest/v1/rpc/refresh_combo_index_daily")
-          cat /tmp/resp.txt
-          case "$http_code" in
-            200|201|204) echo "refreshed combo_index_daily" ;;
-            *) echo "refresh_combo_index_daily returned HTTP $http_code" >&2; exit 1 ;;
-          esac
+      - name: Refresh and verify combo_index_daily
+        uses: ./.github/actions/refresh-indices
+        with:
+          supabase-url: ${{ secrets.SUPABASE_URL }}
+          supabase-service-key: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Notify Discord on failure
         if: ${{ failure() || cancelled() }}
         uses: ./.github/actions/notify-failure
         with:
           webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
-          context: "Nightly combo_index_daily refresh failed; /indices and combo sparklines will go stale."
+          context: "Nightly combo_index_daily refresh failed or the view is behind its inputs; /indices and combo sparklines will go stale."

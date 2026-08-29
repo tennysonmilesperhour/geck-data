@@ -41,6 +41,15 @@ jobs:
         working-directory: scripts
         run: python scrape_listings_api.py
 
+      # The ingest is the only thing that adds new observations, so refresh
+      # the combo index here instead of leaving Monday's listings invisible
+      # until the 08:30 UTC nightly run the next morning.
+      - name: Refresh and verify combo_index_daily
+        uses: ./.github/actions/refresh-indices
+        with:
+          supabase-url: ${{ secrets.SUPABASE_URL }}
+          supabase-service-key: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
       - name: Notify Discord on failure
         if: ${{ failure() || cancelled() }}
         uses: ./.github/actions/notify-failure
