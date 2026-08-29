@@ -602,7 +602,7 @@ composite becomes 50. The live page then says:
 
 That is not a measured temperature. It is the mathematical fallback for no
 variation/no evidence. The API should return `score: null` unless minimum
-coverage gates are met, and the card should say “Unavailable — sold stream
+coverage gates are met, and the card should say “Unavailable: sold stream
 last observed 2026-05-14.” Never classify a fallback as Warm.
 
 ### 4. Sold history is stale, internally split, and cannot measure velocity
@@ -671,9 +671,9 @@ listing per bucket (normally the last valid USD-equivalent ask), then take
 the median across unique listings. Keep raw ticks only for within-listing
 change detection. Report these separately:
 
-- `n listings` — economic sample breadth;
-- `n observations` — collection density;
-- `n observed days / expected days` — temporal coverage.
+- `n listings`: economic sample breadth;
+- `n observations`: collection density;
+- `n observed days / expected days`: temporal coverage.
 
 `/trends` also selects raw `price` rather than
 `price_usd_equivalent`. With USD, CAD, EUR, and GBP now present, its headline
@@ -716,7 +716,7 @@ computed, linked status summary such as “Partial coverage · listings 2h ·
 sales 106d.”
 
 Only 1,572 / 10,239 listings had a non-empty seller location. The production
-`region_of()` mapping returned 1,339 US, 102 CA, and 8,798 unmapped rows—no
+`region_of()` mapping returned 1,339 US, 102 CA, and 8,798 unmapped rows, with no
 EU/UK/AU/JP buckets despite the UI offering them. Regional pricing and
 arbitrage must be unavailable until each compared region clears minimum
 unique-listing and seller counts. Never infer an arbitrage opportunity from
@@ -1052,10 +1052,16 @@ workflows, which independently rules out the wrong-project theory.
 
 **The real cause was starvation, not staleness.** The view held five
 days of history because only five days had any parseable trait data to
-build a combo from. Fixed in migration 0039 (section 2): after
-backfilling traits and re-refreshing, the same view went from **5 days
-to 32 days** (22 in May, 7 in June, 3 in August), 1,013 to 2,991
-combos, 1,764 to 15,743 rows.
+build a combo from. Fixed in migrations 0039 and 0041 (section 2):
+after backfilling traits and re-refreshing, the same view went from
+**5 days to 32 days** (22 in May, 7 in June, 3 in August), 1,013 to
+**2,473** combos and 1,764 to **13,117** rows.
+
+A manual run of the rewired workflow then confirmed the target from CI:
+`refresh_combo_index_daily returned 204` followed by
+`max_day=2026-08-29 newest_eligible=2026-08-29 lag_days=0 rows=15743`.
+That row count only existed in this project at that moment, which
+settles the wrong-project question for good.
 
 **Why it matters for "accurate over time."** Audit 1's screenshots
 caught the frozen state: every `/indices` delta printed **+0.0%**
@@ -1382,13 +1388,23 @@ surfaced, in leverage order:
     move", because under a weekly ingest most nights add nothing and a
     movement check would false-alarm six days a week.
 12. ~~**Backfill canonical traits from the scraper table.**~~
-    **Done 2026-08-29, migration 0039.** Trait coverage went 1,154 to
-    6,533 rows; `combo_index_daily` went from 5 days to 32 days of
-    history (22 in May, 7 in June, 3 in August) and 1,013 to 2,991
-    combos. The backfill also strips the leaked `Diet: ...` /
-    `Proven breeder: ...` segments, so the pseudo-trait combos the July
-    audit flagged are gone from the canonical column. `canonical.py` now
-    normalizes on write so the scraper cannot re-create the problem.
+    **Done 2026-08-29, migrations 0039 + 0041.** Trait coverage went
+    1,154 to 6,485 rows; `combo_index_daily` went from 5 days to 32 days
+    of history (22 in May, 7 in June, 3 in August) and 1,013 to 2,473
+    combos. `canonical.py` now normalizes on write so the scraper cannot
+    re-create the problem.
+
+    Worth recording how the first attempt failed, because it is the same
+    trap the vocabulary cleanup keeps falling into. 0039 split on pipe
+    and comma at once. The scrapers emit `Diet: Cricket, Meal
+    Replacement | Proven breeder: No | Harlequin, Partial Pinstripe`,
+    where pipes separate properties and commas list values *inside* one
+    property. Flattening both dropped the `Diet:` head but kept its
+    values, so the top combos on `/indices` briefly became `Harlequin x
+    Meal Replacement` (n=159) and `Meal Replacement x Roach`. 0041
+    re-parses pipe-first, dropping a non-trait property whole, and
+    rebuilds the affected rows. Zero diet values and zero fake combos
+    remain.
 13. **Bound every delta's baseline age.** `delta_7d/30d/90d` (and the
     movers math) should return null with a "no baseline in window"
     chip when the comparison row is older than the labeled horizon by
