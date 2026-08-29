@@ -28,6 +28,12 @@ function morphTermFromTitle(title: string | null | undefined): string | null {
   return cleaned;
 }
 
+// The two sold pools v_sold_reconciled keeps apart. captured_event is a
+// transition the pipeline watched happen; inferred_unseen is a listing the
+// catalogue walk stopped seeing, so a sale is inferred from its absence.
+// They are never summed into one number anywhere on this page.
+export type SoldBasis = "captured_event" | "inferred_unseen";
+
 export type SoldRow = {
   id: string;
   seller_id: string | null;
@@ -40,7 +46,28 @@ export type SoldRow = {
   sold_at: string | null;
   days_to_sell: number | null;
   sold_source: string | null;
+  // Optional so the narrower row shapes built elsewhere (filter fixtures,
+  // callers that only need the identity columns) still satisfy the type.
+  // Rows coming from v_sold_reconciled always carry both.
+  sold_basis?: SoldBasis | null;
+  is_group_lot?: boolean | null;
 };
+
+const BASIS_BADGE: Record<SoldBasis, { label: string; title: string }> = {
+  captured_event: {
+    label: "Captured",
+    title: "The pipeline observed this listing flip to sold.",
+  },
+  inferred_unseen: {
+    label: "Inferred",
+    title:
+      "The catalogue walk stopped seeing this listing, so the sale is inferred from its absence.",
+  },
+};
+
+// Rows the table paints. Sorting reorders the loaded set first, so this is
+// a display cap, not a claim about how deep the pool goes.
+const VISIBLE_ROWS = 200;
 
 type SortKey = "price" | "days" | "sold_at";
 type SortDir = "asc" | "desc";
@@ -64,7 +91,17 @@ function cmp(a: SoldRow, b: SoldRow, key: SortKey): number {
   }
 }
 
-export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
+export default function SortableSoldTable({
+  rows,
+  poolTotal,
+  poolLabel,
+}: {
+  rows: SoldRow[];
+  /** True size of the pool these rows were drawn from, for the footnote. */
+  poolTotal?: number | null;
+  /** How to name that pool in the footnote, e.g. "inferred sold records". */
+  poolLabel?: string;
+}) {
   const [sortKey, setSortKey] = useState<SortKey>("sold_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -113,31 +150,67 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
       header: "Listing",
       render: (r) => (
         <div>
-          <div className="font-medium text-ink-100">{r.title ?? r.id}</div>
+          <div className="font-medium text-ink-100">
+            {r.title ?? r.id}
+            {r.is_group_lot ? (
+              <span
+                className="ml-2 rounded border border-busy/50 px-1 py-0.5 font-mono text-[9px] uppercase tracking-wider text-busy"
+                title="One price covering several animals, so it is not a per-animal comp."
+              >
+                Group lot
+              </span>
+            ) : null}
+          </div>
           <div className="text-xs text-ink-400">{r.id}</div>
         </div>
       ),
     },
-    { key: "maturity", header: "Maturity", render: (r) => r.maturity ?? "—" },
-    { key: "sex", header: "Sex", render: (r) => r.sex ?? "—" },
+    {
+      key: "maturity",
+      header: "Maturity",
+      render: (r) => r.maturity ?? "Unreported",
+    },
+    { key: "sex", header: "Sex", render: (r) => r.sex ?? "Unreported" },
     {
       key: "price",
-      header: headerFor("price", "Price"),
+      header: headerFor("price", "Last ask"),
       align: "right",
-      render: (r) => fmtUsd(r.price_usd_equivalent ?? r.price),
+      render: (r) => {
+        const ask = r.price_usd_equivalent ?? r.price;
+        return ask == null ? (
+          <span className="text-ink-500">unpriced</span>
+        ) : (
+          fmtUsd(ask)
+        );
+      },
     },
     {
       key: "days",
       header: headerFor("days", "Days"),
       align: "right",
-      render: (r) => fmtInt(r.days_to_sell),
+      // A null here is not a zero. It means first-seen and sold landed in the
+      // same import, so no time on market can be measured for this row.
+      render: (r) =>
+        r.days_to_sell == null ? (
+          <span
+            className="text-ink-500"
+            title="First seen and sold were stamped in the same import, so time on market cannot be measured."
+          >
+            not measurable
+          </span>
+        ) : (
+          fmtInt(r.days_to_sell)
+        ),
     },
     {
       key: "sold_at",
       header: headerFor("sold_at", "Sold"),
-      render: (r) => (
-        <span title={fmtDate(r.sold_at)}>{fmtRelative(r.sold_at)}</span>
-      ),
+      render: (r) =>
+        r.sold_at ? (
+          <span title={fmtDate(r.sold_at)}>{fmtRelative(r.sold_at)}</span>
+        ) : (
+          <span className="text-ink-500">undated</span>
+        ),
     },
     {
       key: "seller",
@@ -151,17 +224,28 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
             {r.seller_id}
           </Link>
         ) : (
-          "—"
+          "Unreported"
         ),
     },
     {
-      key: "source",
-      header: "Source",
-      render: (r) => (
-        <span className="rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200">
-          {r.sold_source ?? "—"}
-        </span>
-      ),
+      key: "basis",
+      header: "Basis",
+      render: (r) => {
+        const badge = r.sold_basis ? BASIS_BADGE[r.sold_basis] : null;
+        return (
+          <div>
+            <span
+              className="rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200"
+              title={badge?.title}
+            >
+              {badge?.label ?? "Unlabelled"}
+            </span>
+            <div className="mt-0.5 font-mono text-[9px] uppercase tracking-wider text-ink-500">
+              {r.sold_source ?? "source unrecorded"}
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: "watch",
@@ -195,10 +279,14 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
         first_seen_at: r.first_seen_at,
         sold_at: r.sold_at,
         days_to_sell: r.days_to_sell,
+        sold_basis: r.sold_basis,
         sold_source: r.sold_source,
+        is_group_lot: r.is_group_lot,
       })),
     [sorted],
   );
+
+  const shown = Math.min(VISIBLE_ROWS, sorted.length);
 
   return (
     <div className="space-y-2">
@@ -211,10 +299,19 @@ export default function SortableSoldTable({ rows }: { rows: SoldRow[] }) {
       </div>
       <DataTable
         columns={columns}
-        rows={sorted.slice(0, 200)}
+        rows={sorted.slice(0, VISIBLE_ROWS)}
         rowKey={(r) => r.id}
-        emptyMessage="No sold listings recorded yet."
+        emptyMessage="No sold records in this slice."
       />
+      {sorted.length > 0 ? (
+        <p className="text-xs text-ink-500">
+          {`Showing ${fmtInt(shown)} of ${fmtInt(sorted.length)} loaded rows${
+            poolTotal != null && poolTotal > sorted.length
+              ? `, drawn from ${fmtInt(poolTotal)} ${poolLabel ?? "rows"} in this pool`
+              : ""
+          }. Sorting reorders the loaded rows first, so it changes which ${fmtInt(VISIBLE_ROWS)} appear here. The CSV covers all ${fmtInt(sorted.length)} loaded rows.`}
+        </p>
+      ) : null}
     </div>
   );
 }
