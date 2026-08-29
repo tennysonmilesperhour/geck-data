@@ -1,5 +1,8 @@
 "use client";
-// What's Hot — top combos ranked by current activity (live + sold count).
+// What's Hot: top combos ranked by catalogue depth over the rollup window,
+// live plus sold. "Live" here is a catalogue count and includes rows we have
+// not re-confirmed lately, so the copy calls it a catalogue rather than
+// implying every one of those ads is on sale this morning.
 // Visual rank bars proportional to total volume. Click a row to pin it as
 // an active filter; the Opportunities panel listens to the same context.
 // Hovering a row writes hoveredCombo into the shared filter state for
@@ -17,7 +20,7 @@ import { useLandingFilters } from "./LandingFilters";
 
 type Props = {
   combos: ComboSnapshot[];
-  /** Combo_name -> 14 daily appearance counts (oldest first). */
+  /** Combo_name -> 14 daily arrival counts (oldest first). */
   comboDaily?: Map<string, number[]>;
   limit?: number;
 };
@@ -46,7 +49,8 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
             What&apos;s hot
           </h2>
           <p className="mt-1.5 text-xs text-ink-400">
-            Top combos by current activity. <span className="text-ink-300">Click</span> to filter the page.
+            Top combos by catalogue depth, live plus sold, over 365 days.{" "}
+            <span className="text-ink-300">Click</span> to filter the page.
           </p>
         </div>
         <Link
@@ -146,7 +150,7 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                         />
                       </span>
                       <span className="text-ink-100">
-                        {combo.median_ask ? fmtUsd(combo.median_ask) : "—"}
+                        {combo.median_ask ? fmtUsd(combo.median_ask) : "n/a"}
                       </span>
                       <ConfidenceBadge score={combo.confidence_score} />
                     </div>
@@ -157,6 +161,13 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
           })
         )}
       </ol>
+
+      <p className="mt-3 text-[11px] leading-4 text-ink-500">
+        Sparklines count arrivals per day over the last 14 days, dated by
+        MorphMarket&apos;s own list date where the source gave us one and by the
+        date our ingest first saw the ad otherwise. The ingest runs weekly, so a
+        flat stretch means no pass ran, not that nothing was listed.
+      </p>
     </section>
   );
 }

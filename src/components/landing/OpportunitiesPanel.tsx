@@ -1,14 +1,20 @@
 "use client";
-// Opportunities — live listings priced more than 25% below their combo's
-// median ask AND re-observed by the extension within the last week. Without
-// the freshness gate, current_status='live' was sticky enough that the
-// panel surfaced listings the extension hadn't actually seen in 2+ weeks,
-// which in practice meant most clicks led to sold/delisted pages. Reads
-// selectedCombos from the landing filter context: when the user has
-// pinned one or more combos in What's Hot, the list narrows to just
-// those. Empty filter = show all opportunities.
+// Opportunities: single animals priced well under their combo's median ask and
+// re-observed by the ingest within the last week.
+//
+// Two gates do the honesty work upstream in getMarketSnapshot. The freshness
+// gate exists because current_status='live' is sticky, so without it the panel
+// advertised ads nobody had confirmed in months. The group-lot gate exists
+// because a wholesale lot at $50 against a $500 per-animal median is not a 90%
+// discount, it is a different unit; that one listing was the biggest "deal" on
+// the page. Both exclusions are stated in the copy below, because a discount
+// with an unstated denominator is not a number a breeder can act on.
+//
+// Reads selectedCombos from the landing filter context: when the user has
+// pinned one or more combos in What's Hot, the list narrows to just those.
+// Empty filter = show all opportunities.
 import { useMemo } from "react";
-import { fmtUsd, fmtRelative } from "@/lib/format";
+import { fmtUsd, fmtInt, fmtRelative } from "@/lib/format";
 import type { OpportunityListing } from "@/lib/landing/snapshot";
 import { useLandingFilters } from "./LandingFilters";
 
@@ -45,8 +51,8 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
             Opportunities
           </h2>
           <p className="mt-1 text-xs text-ink-400">
-            Listings priced ≥25% below their combo&apos;s median ask, seen in
-            the last 7 days.
+            Single animals priced ≥25% below their combo&apos;s median ask, seen
+            in the last 7 days. Multi-animal lots, pairs and trios are excluded.
           </p>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
@@ -58,7 +64,7 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
         <div className="rounded-md border border-ink-700/60 bg-ink-900/40 px-3 py-4 text-sm text-ink-400">
           {selectedCombos.size > 0
             ? "No opportunities match the active combo filter."
-            : "No fresh listings priced ≥25% below their combo median. Genuine bargains tend to sell within days — check back as new listings appear."}
+            : "No single-animal listing seen in the last 7 days is priced ≥25% below its combo median. The ingest runs weekly, so this list is thickest right after a fresh pass and can be empty by the end of the week."}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -88,7 +94,9 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
                     <div className="mt-0.5 font-mono text-[10px] text-ink-500">
                       {opp.last_seen_at
                         ? `seen ${fmtRelative(opp.last_seen_at)}`
-                        : fmtRelative(opp.first_seen_at)}
+                        : opp.first_seen_at
+                          ? `first seen ${fmtRelative(opp.first_seen_at)}`
+                          : "no observation date"}
                     </div>
                   </div>
                   <div className="text-right">
@@ -96,7 +104,10 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
                       {fmtUsd(opp.price)}
                     </div>
                     <div className="text-xs text-ink-500">
-                      vs {opp.combo_median_ask ? fmtUsd(opp.combo_median_ask) : "—"}
+                      {opp.combo_median_ask != null
+                        ? `vs ${fmtUsd(opp.combo_median_ask)}`
+                        : "no baseline"}
+                      {opp.combo_n != null ? ` (n=${fmtInt(opp.combo_n)})` : ""}
                     </div>
                     <div className="mt-0.5 inline-flex rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-amber-300">
                       −{opp.discount_pct.toFixed(1)}%
@@ -108,6 +119,13 @@ export default function OpportunitiesPanel({ opportunities }: Props) {
           })}
         </ul>
       )}
+
+      <p className="mt-3 text-[11px] leading-4 text-ink-500">
+        The baseline (n) is each combo&apos;s median ask across its whole 365 day
+        live catalogue, fresh and stale together, so it is a slower number than
+        the listing beside it. Combos with fewer than five live ads do not set a
+        baseline at all.
+      </p>
     </section>
   );
 }

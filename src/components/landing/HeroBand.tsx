@@ -1,14 +1,18 @@
 "use client";
-// Landing hero — the first thing a paying client sees. Four live KPIs
-// (median, count, sellers, hottest combo) plus a one-line market summary.
-// Numbers animate in on first paint via CountUp so the page feels alive,
-// then sit still — no scrolling tickers, no churn.
+// Landing hero, the first thing a paying client sees. Four KPIs plus the
+// sentence that says what those KPIs are measured over.
 //
-// Marked "use client" because CountUp accepts a `format` function prop;
-// passing functions across the server→client boundary isn't allowed.
+// The tiles report the FRESH population only: live rows the ingest re-confirmed
+// inside snapshot's freshness window. The much larger block of rows we have not
+// re-confirmed since spring gets its own count and its own median underneath,
+// never blended into the headline. A median taken across both describes a
+// market that no longer exists.
+//
+// Marked "use client" because CountUp accepts a `format` function prop, and
+// functions cannot cross the server to client boundary.
 import Link from "next/link";
 import CountUp from "./CountUp";
-import { fmtUsd, fmtInt } from "@/lib/format";
+import { fmtUsd, fmtInt, fmtDate, fmtRelative } from "@/lib/format";
 import type { MarketSnapshot } from "@/lib/landing/snapshot";
 
 type Props = {
@@ -17,6 +21,41 @@ type Props = {
 
 export default function HeroBand({ snapshot }: Props) {
   const { totals, hottest_combo } = snapshot;
+
+  // The dot is the one piece of chrome that reads as a health claim, so it
+  // tracks the data instead of being decorative: green only while the newest
+  // observation is still inside the freshness window.
+  const newestSeenMs = totals.newest_seen_at
+    ? Date.parse(totals.newest_seen_at)
+    : NaN;
+  const feedIsFresh =
+    Number.isFinite(newestSeenMs) &&
+    Date.now() - newestSeenMs < totals.fresh_hours * 3_600_000;
+
+  const midRange =
+    totals.fresh_p25_ask != null && totals.fresh_p75_ask != null
+      ? `${fmtUsd(totals.fresh_p25_ask)} to ${fmtUsd(totals.fresh_p75_ask)} middle half`
+      : null;
+  const medianSample =
+    totals.fresh_priced_listings != null
+      ? `${fmtInt(totals.fresh_priced_listings)} fresh asks`
+      : "fresh asks only";
+  const medianSub = midRange
+    ? `${midRange}, ${medianSample}`
+    : `No priced fresh ads in the last ${totals.fresh_hours} hours`;
+
+  const staleRange =
+    totals.oldest_stale_seen_at && totals.newest_stale_seen_at
+      ? `${fmtDate(totals.oldest_stale_seen_at)} to ${fmtDate(totals.newest_stale_seen_at)}`
+      : totals.oldest_stale_seen_at
+        ? `from ${fmtDate(totals.oldest_stale_seen_at)}`
+        : null;
+  const staleSub =
+    totals.stale_listings > 0
+      ? staleRange
+        ? `${fmtInt(totals.stale_listings)} more last confirmed ${staleRange}`
+        : `${fmtInt(totals.stale_listings)} more not re-confirmed since`
+      : `Every live ad re-confirmed in the last ${totals.fresh_hours} hours`;
 
   return (
     <section className="relative overflow-hidden rounded-2xl border border-ink-700/80 bg-gradient-to-br from-ink-850 via-ink-900 to-ink-900 p-7 shadow-panel">
@@ -36,17 +75,20 @@ export default function HeroBand({ snapshot }: Props) {
       <div className="relative flex flex-col gap-7 md:flex-row md:items-end md:justify-between">
         <div className="max-w-2xl">
           <div className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-400">
-            <span className="status-dot" />
-            Live · Crested Gecko Market
+            <span className={feedIsFresh ? "status-dot" : "status-dot idle"} />
+            {totals.newest_seen_at
+              ? `Crested gecko market · last confirmed ${fmtRelative(totals.newest_seen_at)}`
+              : "Crested gecko market · no observations on record"}
           </div>
           <h1 className="font-display text-balance text-[44px] font-medium leading-[1.05] tracking-[-0.015em] text-ink-50 md:text-[56px]">
-            What&apos;s happening{" "}
-            <span className="text-claude-glow">right now.</span>
+            What&apos;s actually{" "}
+            <span className="text-claude-glow">for sale.</span>
           </h1>
           <p className="mt-4 text-base leading-7 text-ink-300">
-            Pricing, trait economics, regional spread, and seller signal —
-            refreshed from MorphMarket every day. New to crested geckos? Start
-            with{" "}
+            Pricing, trait economics, regional spread, and seller signal, rebuilt
+            from a weekly MorphMarket ingest. The tiles below count only ads we
+            re-confirmed in the last {totals.fresh_hours} hours. New to crested
+            geckos? Start with{" "}
             <Link href="#whats-hot" className="text-claude-glow hover:underline">
               what&apos;s selling
             </Link>
@@ -68,46 +110,68 @@ export default function HeroBand({ snapshot }: Props) {
 
       <div className="relative mt-7 grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile
-          label="Median listing"
+          label="Median fresh ask"
           value={
-            totals.median_price ? (
+            totals.fresh_median_ask != null ? (
               <CountUp
-                to={totals.median_price}
+                to={totals.fresh_median_ask}
                 format={(n) => fmtUsd(n)}
               />
             ) : (
-              "—"
+              "Unavailable"
+            )
+          }
+          sub={medianSub}
+        />
+        <KpiTile
+          label="Fresh live ads"
+          value={<CountUp to={totals.fresh_listings} format={(n) => fmtInt(n)} />}
+          sub={staleSub}
+        />
+        <KpiTile
+          label="Sellers on fresh ads"
+          value={
+            totals.fresh_sellers != null ? (
+              <CountUp to={totals.fresh_sellers} format={(n) => fmtInt(n)} />
+            ) : (
+              "Unavailable"
             )
           }
           sub={
-            totals.p25_price && totals.p75_price
-              ? `${fmtUsd(totals.p25_price)} – ${fmtUsd(totals.p75_price)} mid range`
-              : ""
+            totals.live_sellers != null
+              ? `${fmtInt(totals.live_sellers)} across every live ad, stale included`
+              : "Seller count not available for this window"
           }
         />
         <KpiTile
-          label="Live listings"
-          value={
-            <CountUp to={totals.live_listings} format={(n) => fmtInt(n)} />
-          }
-          sub={`${fmtInt(totals.sold_listings)} sold all-time`}
-        />
-        <KpiTile
-          label="Active sellers"
-          value={<CountUp to={totals.sellers} format={(n) => fmtInt(n)} />}
-          sub="Across MorphMarket"
-        />
-        <KpiTile
-          label="Hottest combo"
-          value={hottest_combo?.combo_name ?? "—"}
+          label="Deepest combo"
+          value={hottest_combo?.combo_name ?? "No combos in window"}
           sub={
             hottest_combo
-              ? `${hottest_combo.live_count} live · median ${hottest_combo.median_ask ? fmtUsd(hottest_combo.median_ask) : "—"}`
+              ? `${fmtInt(hottest_combo.live_count)} in the 365 day catalogue · ${
+                  hottest_combo.median_ask != null
+                    ? `${fmtUsd(hottest_combo.median_ask)} median ask`
+                    : "no median ask"
+                }`
               : "No combos in window"
           }
           accent
         />
       </div>
+
+      <p className="relative mt-4 max-w-3xl text-xs leading-5 text-ink-400">
+        {totals.stale_listings > 0 && staleRange
+          ? `The other ${fmtInt(totals.stale_listings)} ads still flagged live were last confirmed ${staleRange}, and nothing has re-confirmed them since, so they are kept out of the median and the count above. On their own they sit at a ${
+              totals.stale_median_ask != null
+                ? fmtUsd(totals.stale_median_ask)
+                : "n/a"
+            } median ask. `
+          : ""}
+        {totals.group_lots_excluded > 0
+          ? `${fmtInt(totals.group_lots_excluded)} multi-animal lots are held out of every price above, since a lot prices a group rather than an animal. `
+          : ""}
+        Combo counts are 365 day catalogue totals, fresh and stale together.
+      </p>
     </section>
   );
 }

@@ -11,6 +11,22 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SettingsDrawer from "@/components/settings/SettingsDrawer";
 import Logo from "@/components/ui/Logo";
+import type { FeedLevel, FeedVerdict } from "@/lib/market/freshness";
+
+// The pip used to be a hardcoded "Ready" while /status reported Lagging,
+// Down and Stale on the same page load. It now renders whatever verdict the
+// server hands down, and renders no claim at all when it is handed none:
+// a header that says nothing is better than a header that says Ready over a
+// catalogue nobody has re-observed since June.
+//
+// `ready` (green) is reserved for a passed coverage gate. Anything unmeasured
+// gets the neutral dot.
+const STATUS_DOT: Record<FeedLevel, string> = {
+  ok: "",
+  partial: "busy",
+  stale: "idle",
+  unknown: "info",
+};
 
 type Group = "core" | "analysis" | "ops";
 type Tab = { href: string; label: string; group?: Group };
@@ -36,7 +52,7 @@ const GROUP_LABELS: Record<Group, string> = {
   ops: "Operations",
 };
 
-export default function Header() {
+export default function Header({ feed }: { feed?: FeedVerdict | null }) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -129,7 +145,7 @@ export default function Header() {
           </span>
         </Link>
 
-        {/* Inline tab bar — large screens only. */}
+        {/* Inline tab bar, large screens only. */}
         <div className="hidden flex-1 flex-wrap items-center gap-0.5 text-[13px] lg:flex">
           {TABS.map((t, i) => {
             const prev = TABS[i - 1];
@@ -176,10 +192,16 @@ export default function Header() {
         <div className="flex-1 lg:hidden" />
 
         <div className="flex items-center gap-2 text-[13px] sm:gap-3">
-          <span className="hidden items-center gap-1.5 text-ink-400 md:inline-flex">
-            <span className="status-dot" />
-            <span className="font-mono text-[11px] uppercase tracking-wider">Ready</span>
-          </span>
+          <Link
+            href="/status"
+            title={feed ? feed.detail : "Pipeline status"}
+            className="hidden items-center gap-1.5 text-ink-400 hover:text-ink-200 md:inline-flex"
+          >
+            {feed ? <span className={`status-dot ${STATUS_DOT[feed.level]}`} /> : null}
+            <span className="font-mono text-[11px] uppercase tracking-wider">
+              {feed ? feed.headline : "Status"}
+            </span>
+          </Link>
           <SettingsDrawer />
           {loaded && user ? (
             <>
@@ -207,7 +229,7 @@ export default function Header() {
             </Link>
           ) : null}
 
-          {/* Hamburger — small screens only. */}
+          {/* Hamburger, small screens only. */}
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
