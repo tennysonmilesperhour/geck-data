@@ -996,7 +996,7 @@ score = more damage to a visitor's decisions right now.
 
 | # | Finding | Score | Tier | Action |
 |---|---|---|---|---|
-| 1 | The latest eligible nightly index refresh did not advance this production MV; 53 green runs lack a postcondition check, and a manual refresh advanced it | 95 | Critical | Verify target + fail on stale output |
+| 1 | Combo index held 5 days of history because nothing had parseable traits to build a combo from; the nightly refresh was healthy but could not report a starved view (corrected finding, see section 1) | 95 | Critical | Fixed 2026-08-29 (migrations 0039 + 0040) |
 | 2 | May-June observation era is invisible to every trait/combo timeline (ticks join to canonical rows with empty `cached_traits`) | 92 | Critical | Backfill now |
 | 3 | 7d/30d/90d deltas on `/indices` all compare against the same May 9-11 island; today all three columns print the same number per combo | 88 | Critical | Fix now |
 | 4 | No current scheduled writer maps the API's `sold` state into the canonical sold ledger | 85 | Critical | Fix this week |
@@ -1009,40 +1009,67 @@ score = more damage to a visitor's decisions right now.
 
 ---
 
-## 1. The index stack was frozen; the refresh target remains unverified
+## 1. The index stack was frozen, but not for the reason I first published
+
+> **Correction, same day.** This section originally claimed the nightly
+> refresh workflow had never touched this database and told Tennyson to
+> go hunting for mis-pointed GitHub secrets. That was wrong, and it was
+> wrong in the direction that wastes someone's afternoon. When I went to
+> fix the wiring I tested the claim properly and it collapsed. The
+> corrected finding is below; the original reasoning is kept visible
+> because the way it failed is instructive.
 
 **What I found.** `combo_index_daily` is the materialized view behind
 `/indices`, the 60-day sparklines on `/market`, and the gainers/losers
 in `/reports`. At 2026-08-29 ~15:30 UTC its newest day was
-**2026-05-11**. The repo has a Nightly Index Refresh workflow, and
-GitHub Actions shows **53 runs, effectively all green, ~10 seconds
-each** (checked via the Actions API). The older green runs do not prove
-failure: 39,038 price ticks from May 12-June 9 join to zero canonical
-rows with `cached_traits`, so a correct refresh would still have stopped
-at May 11. Run 694 finished on 2026-08-28 at 22:52 UTC, however, before
-the 08:30 UTC nightly job on Aug 29 and with newly trait-eligible rows.
-The materialized view still did not advance. That makes the latest run a
-real no-op against this production view, but it does not by itself prove
-what target the job used.
+**2026-05-11**, and the Nightly Index Refresh workflow had ~53 green
+runs behind it. I inferred that a working refresh would have pulled
+June's 28,000+ ticks in, so the refresh must not be reaching this
+database.
 
-**The proof.** One manual call from this audit
-(`select refresh_combo_index_daily()`, ~16:45 UTC) advanced the view
-from May 11 to Aug 29 in seconds. The function works. The database
-works, and the pre-refresh state was stale. A wrong Supabase project in
-`SUPABASE_URL` / `SUPABASE_SERVICE_KEY` is one plausible explanation,
-but the evidence does not establish it as fact. Other possibilities are
-an unexpected RPC/search-path target or data visibility/timing around the
-eligible rows. Inspect the resolved project reference in the workflow and
-add a postcondition (`max(day)` and row count before/after); secrets alone
-cannot be inferred from an HTTP 200.
+**Why that inference was wrong.** June's ticks were never eligible for
+the view in the first place. The MV builds combos by splitting
+`market_listings.cached_traits` on commas, and every June-era tick
+joins to a canonical row whose `cached_traits` is empty (section 2).
+So a perfectly healthy refresh would still have produced
+`max(day) = 2026-05-11`. My "proof" was consistent with both a broken
+refresh and a working one, which means it was proof of neither.
+
+**What the evidence actually says.** Two checks settle it:
+
+- The last nightly run before my query (2026-08-29 13:53 UTC) logged
+  `refreshed combo_index_daily` on an HTTP 2xx (read from the job log
+  via the Actions API).
+- At that moment **zero** trait-bearing listings had a tick newer than
+  May 11: the 59 trait-bearing rows behind the Aug 27 ticks were
+  imported at 15:04 UTC, over an hour *after* that run. Queried:
+  `count(*) = 0` for Aug-27 trait ticks with `imported_at < 13:53 UTC`.
+
+So the nightly refresh has been working, and reaching the right
+database, the whole time. The same `SUPABASE_URL` secret also writes
+the `scrape_runs` rows this project shows for the sellers and details
+workflows, which independently rules out the wrong-project theory.
+
+**The real cause was starvation, not staleness.** The view held five
+days of history because only five days had any parseable trait data to
+build a combo from. Fixed in migration 0039 (section 2): after
+backfilling traits and re-refreshing, the same view went from **5 days
+to 32 days** (22 in May, 7 in June, 3 in August), 1,013 to 2,991
+combos, 1,764 to 15,743 rows.
 
 **Why it matters for "accurate over time."** Audit 1's screenshots
 caught the frozen state: every `/indices` delta printed **+0.0%**
 (latest day and every "prior" day were the same May 11 row) and every
 90d spark column was empty. Audit 1 explicitly left the refresh
-question open ("not re-checked in SQL this pass"). Answered more
-narrowly: the production view had not incorporated the latest eligible
-rows, and the workflow's green status did not detect that failure.
+question open ("not re-checked in SQL this pass"). Answered: the
+refresh was fine, the inputs were not.
+
+**The wiring lesson that survives.** A refresh that returns void and a
+workflow that prints success on any 2xx cannot tell "refreshed 15,743
+rows" apart from "refreshed five days of nothing." That blind spot is
+real and is now closed by `combo_index_health()` (migration 0040),
+which compares the newest day the view holds against the newest day it
+could build and fails the job when the view is behind.
 
 **And after the refresh it is still wrong, differently.** The summary
 view computes `delta_30d` as "latest value vs the newest row at least
@@ -1294,13 +1321,13 @@ signal that the verdict is right.
 
 **Their open question, narrowed.** Audit 1's UI pass ends with:
 closest daily series is `combo_index_daily` "if that materialized view
-is actually refreshed (not re-checked in SQL this pass)." It had not
-incorporated the newest eligible rows before the screenshot; one manual
-refresh advanced it 110 days in seconds. The workflow target remains
-unverified, and the older no-op runs are inconclusive because the dense
-May-June era had no canonical traits. See section 1, including why their screenshotted
-"+0.0% everywhere" has now become "identical large deltas in all three
-columns," which is the same bug wearing louder clothes.
+is actually refreshed (not re-checked in SQL this pass)." It had never
+been refreshed *usefully*, though not for the reason I first wrote:
+the refresh was running fine and the view was starving for want of
+parseable traits. See section 1 for the correction and the evidence
+that settles it. Their screenshotted "+0.0% everywhere" became
+"identical large deltas in all three columns" after the first refresh,
+and is now backed by 32 days of real history after the 0039 backfill.
 
 **Refinements to their findings:**
 
@@ -1344,15 +1371,24 @@ the most recent eligible run, not a demonstrated secret value.
 Audit 1's items 1-10 stand. These are the additional fixes my pass
 surfaced, in leverage order:
 
-11. **Verify the nightly refresh target and add a postcondition.** Confirm
-    the resolved project is `dhotmtgryuovkmsncdby`; record `max(day)` and
-    row count before/after; fail loudly when eligible source rows exist but
-    the view does not advance. Do not re-point secrets until the target is
-    actually inspected.
-12. **Backfill canonical traits from the scraper table.** 5,461 rows,
-    pipe-to-comma normalization on 3,591, one MV refresh after. This
-    single migration resurrects May-June for every trait and combo
-    timeline on the site.
+11. ~~**Verify the nightly refresh target and add a postcondition.**~~
+    **Done 2026-08-29.** The target was already correct: the same
+    `SUPABASE_URL` secret writes this project's `scrape_runs` rows, and
+    the 13:53 UTC job log shows a successful refresh. Do not re-point the
+    secrets. The missing postcondition is now `combo_index_health()`
+    (migration 0040), called by `.github/actions/refresh-indices`, which
+    fails the job when the view sits behind the newest day it could
+    build. The check is lag-against-input rather than "did max(day)
+    move", because under a weekly ingest most nights add nothing and a
+    movement check would false-alarm six days a week.
+12. ~~**Backfill canonical traits from the scraper table.**~~
+    **Done 2026-08-29, migration 0039.** Trait coverage went 1,154 to
+    6,533 rows; `combo_index_daily` went from 5 days to 32 days of
+    history (22 in May, 7 in June, 3 in August) and 1,013 to 2,991
+    combos. The backfill also strips the leaked `Diet: ...` /
+    `Proven breeder: ...` segments, so the pseudo-trait combos the July
+    audit flagged are gone from the canonical column. `canonical.py` now
+    normalizes on write so the scraper cannot re-create the problem.
 13. **Bound every delta's baseline age.** `delta_7d/30d/90d` (and the
     movers math) should return null with a "no baseline in window"
     chip when the comparison row is older than the labeled horizon by
