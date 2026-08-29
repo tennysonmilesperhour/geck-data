@@ -436,6 +436,92 @@ on the site.
 
 ---
 
+## Live site, 2026-08-29 (screenshots)
+
+Base URL: `https://geck-data.vercel.app` (public, no Vercel auth).
+`https://geckintellect.geckinspect.com` serves the same app.
+`geckintellect.com` / `www.geckintellect.com` do not resolve.
+
+Logged-out visitor sees the full market product. Only watchlist/alerts
+ask for a login. Header pip is **READY** on every page. There is no
+stale banner today. Screenshots:
+`/workspace/geckintellect-audit/*.png` and `live-pages.json`.
+
+What the visitor actually saw (not inferred from code):
+
+**Pulse (`/`).** Settled live count **10,158** (matches SQL). Hero
+CountUp paints `$0`, `$22`, `$32`, `$75` and live `0` / `3,021` /
+`4,278` on the way to the final number, and those intermediates are
+visible as if they were the answer. Server caption under median was
+`$50 – $80 mid range` while SQL median of live priced rows is
+**$280**. Hottest combo Lilly White × Axanthic. Opportunities include
+Cappuccino × Super Dalmatian **$3,075 on n=2** used as the baseline
+for a **-90.2%** "deal", and a **5/10 lot at $50 vs $500**. Four
+homepage long-read charts stayed on "Loading chart…". CZ/GB/SK
+sellers are shown with a bare `$`.
+
+**`/trends`.** Market-date coverage pill **100%** (565 of 565
+in-window). Updated 2h ago. Window 90 days. KPIs: added **565
+(+100.0% vs early 45d)**, sold **0**, median **$250 (-100.0% vs
+early 45d)** on 995 ticks. Production vs sales is a flat zero from
+~May 31 to ~Aug 9, then a vertical cliff to ~150. No backfill
+annotation on the chart, despite the caption. Weekly median price:
+"not enough observations" (honest) next to a -100% headline (not).
+Maturity: **unknown 918 / $300** vs Baby 21, Juvenile 21, Subadult
+19, Adult 14. All 24 trait rows badged "new this period."
+
+**`/market`.** Timeframe chip **12 months**. Red banner: **NO DATA
+YET** / `v_market_index` returned 0 rows, immediately above
+temperature **50 warm** and four index cards (Lilly White 889,
+Harlequin 1,000, Axanthic 618, Cappuccino 1,400) with unlabeled
+deltas. Top movers: the **same two combos** as both appreciators and
+depreciators at ±0.0%. Peak Indicator says "Sell into strength" on
+n as small as 2.
+
+**`/indices`.** "80 of 671 known combos." Every visible 7d/30d/90d
+delta is **+0.0%**. The advertised 90d spark column is **—** on
+every row. `+0.0%` reads as a measured flat market, not "no
+history."
+
+**`/sold`.** **Updated 106d ago.** 92 sold all-time, 0 in 7 days,
+median time-to-sell **0 d**, median $275. Histogram caption claims
+92 bins; the chart is empty. Cumulative sales: May spike, then a
+dead plateau at 92 for ~3.5 months. Every row "4mo ago", source
+**SCRAPER**, copy still credits "the extension."
+
+**`/whats-it-worth` (Lilly White, subadult).** Headline typical sold
+**$300–$436**, midpoint **≈ $436** (the top of that band, not the
+middle), range **$229–$764**, medium confidence n=13. Trait chip
+says 236 listings (live count, not sold n). Comps dated
+**2026-05-10 to 05-14**, labeled recent on 2026-08-29. `0d`
+days-to-sell on 4 of 5 comps.
+
+**`/reports`.** August 2026: 0 sold events. September 2025 is a
+clickable month that reports **0 listings added**.
+
+**`/price-drops`.** Updated **80d ago**, biggest drop **-100.0%**.
+
+**Empty nav.** `/shows` and `/cross-platform` are 0/0 placeholders
+in top-level nav. `/listings` (no id) is 404. Nav "Drops" goes to
+`/price-drops`.
+
+**`/methodology`.** Last reviewed **2026-05-22**. It tells the
+visitor that chart copy which the methodology does not back is a
+bug. By that rule, `/market`, `/indices`, and `/trends` headlines
+are self-declared bugs. It also leaks RPC and file names
+(`v_market_index`, `src/lib/market/sources.ts`).
+
+**`/daily-log`** is the honest page: 7 of 9 event types "no
+activity," last event 2h ago.
+
+**`/combo/lw-axa`.** Caption "last 26 weeks" vs pill **3 weeks**.
+Looks like a -42% collapse ($795 to $463) across a window the
+ingest just created.
+
+---
+
+---
+
 ## Code honesty issues still on `main` (UI pass)
 
 The warehouse problems above are enough to mislead. These are
