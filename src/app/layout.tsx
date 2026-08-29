@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import { getMarketFeedVerdict } from "@/lib/market/freshness";
 import StaleDataBanner from "@/components/StaleDataBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TelemetryClient from "@/components/TelemetryClient";
@@ -62,7 +63,23 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // The header pip used to be a hardcoded "Ready" while /status could be
+  // reporting the pipeline as down on the same page load. Resolving the
+  // verdict here, in the one server component every page passes through,
+  // means the pip, the stale banner and /status cannot disagree. Failing
+  // closed to null keeps a Supabase hiccup from taking down every page.
+  let feed = null;
+  try {
+    feed = await getMarketFeedVerdict();
+  } catch {
+    feed = null;
+  }
+
   return (
     <html
       lang="en"
@@ -72,7 +89,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <TelemetryClient />
         <VersionToast />
         <StaleDataBanner />
-        <Header />
+        <Header feed={feed} />
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
           <MorphTermProvider>
             <ErrorBoundary>{children}</ErrorBoundary>
