@@ -1532,27 +1532,145 @@ combo-detail zeros are gone, replaced by nulls the widgets render as "no data".
 Action language ("Sell into strength", "Accumulate") is replaced by evidence
 phrasing, suppressed entirely below a minimum sample.
 
+## Second pass: the five open items, closed
+
+Everything listed as "not done" above has since been implemented except the
+visual redesign. What follows is what each turned into, because in three cases
+the fix found a worse bug than the one it was sent to fix.
+
+### The unique key, and what it protects
+
+`price_history` now has a unique index on `(listing_id, observed_at)`. All 104
+duplicate groups were checked first: every one is a pair, and none differ in
+price, USD equivalent, currency, source or rate, so they are the same
+observation recorded twice. The losing row of each pair is archived to
+`price_history_dupes_archive` before deletion, so the change is reversible
+even though the analysis says it is safe. 45,632 rows became 45,528.
+
+Both writers were plain `INSERT`s, which the key would have started failing.
+They now use `ON CONFLICT`, split by evidence: a `listingSeen` ignores
+conflicts, since a passive re-observation must not overwrite an explicit price
+change recorded at the same instant, while a `priceDropped` merges and wins.
+The Python writer also gained the intra-batch dedupe its own docstring already
+claimed it had, and which it needs now that a conflicting pair in one
+statement is an error rather than a merge.
+
+That is also most of the answer to the two-writer question. It was framed as a
+scheduling decision, and scheduling is still a decision, but the reason it was
+urgent was that two uncoordinated writers could corrupt the observation
+record. They no longer can: a replayed batch is a no-op, and the read side
+already reduced to one observation per listing per bucket.
+
+### Movers, rebuilt rather than un-suppressed
+
+`combo_index_daily` supplies what `v_combo_rollups` could not: two genuinely
+disjoint endpoints. `combo_index_movers` (0051) compares a combo's index on
+its latest observed day against the newest day at least the timeframe earlier,
+with the baseline bounded so it cannot drift back through a gap.
+
+The gate that matters is depth, on **both** endpoints. Ungated, the largest
+movers in this data are combos priced off a single ad: one $5,850 listing
+currently sets the index for six different combos at once, and produces a
++5,057% move on a combo whose latest day holds two listings. At five listings
+a side there are 131 real movers and the top of the list is legible. Peak
+indicators stay suppressed: they need sold volume on both sides, and sold
+volume is still zero.
+
+The panel now carries both endpoint values, both counts and both dates rather
+than a percentage alone, because the current index typically rests on six
+listings where the baseline rests on forty. A bare percentage hides that the
+composition changed as much as the price.
+
+### The three pages on the old sold view
+
+`/combo` and `/sellers/[id]` now read `v_sold_reconciled` and show which
+evidence each sale rests on. `/region/[code]` did not need migrating: its sold
+query fetched 3,000 rows on every page load, filtered them with a predicate
+that returned `true` for every row, and never referenced the result. It is
+deleted. A genuinely regional sold figure needs `seller_location`, which the
+sold views reach only through `seller_id`, and 395 of 2,932 reconciled sold
+rows carry one, so the page reports no regional sold number rather than
+relabelling a global total as regional.
+
+### Controls that confirmed choices they could not act on
+
+Two survived the earlier pass. The timeframe selector offered 30 days, 90
+days, 6 months, 12 months and 24 months against 129 days of observation, so
+the last three returned identical result sets: three buttons, one answer.
+`observation_span()` (0052) measures the archive and the control disables what
+reaches past it, as a runtime read rather than a cutoff, because the span
+grows daily and each option becomes real on its own schedule.
+
+The header carried tabs for Shows and Cross-platform whose tables hold zero
+rows and have never been written to. Both are now gated on a live count, so
+either returns on its own the moment its table receives rows. Both gates fail
+open, because hiding a section that does have data is the worse error.
+
+## The opportunity panel was measuring age, not value
+
+This was not on the original list. Wiring a fresh baseline into the landing
+page's "Opportunities" panel produced 248 candidates at an average 50%
+discount, which is not a plausible market, so the top of the list was
+inspected rather than shipped.
+
+Every one of the deepest discounts was a baby or a juvenile measured against a
+median that included adults. The maturity medians separate hard: Baby $190,
+Juvenile $200, Subadult $350, Adult $350. A $60 juvenile against a $350
+all-ages median is not an 83% discount, it is a young animal priced like a
+young animal. The old baseline also had no freshness filter, kept multi-animal
+lots in, kept auctions in (an auction price is a standing bid, which opens low
+by design), and where a listing matched several combos it took whichever the
+map iterated first.
+
+`combo_maturity_baselines` (0049) cuts the median per `(combo, maturity)` over
+freshly confirmed single animals, drops auctions, and returns a cell only when
+it holds at least five asks from at least three distinct sellers and its two
+traits are not redundant with each other. **34 of 1,938 cells qualify.** 146
+live ads have a comparison at all and 30 clear the 25% bar, against 248
+before. An ad matching several trait pairs is measured against the cheapest of
+them, so the percentage shown is the smallest the data supports rather than a
+denominator the page chose for itself.
+
+The panel is renamed to what it can claim: "Asking under comparables". It
+states the age class on every card, the comparison set's size and seller
+count, and the variables it does not control for (sex, weight, structure,
+lineage, pet-only grading). An empty panel means no claim is supported, not
+that nothing is cheap, and the empty state says so.
+
+## The calendar was plotting our scraper, not the market
+
+Also not on the original list. The landing page's activity calendar captioned
+itself "the weekly and seasonal rhythm of when breeders choose to list" and
+bucketed on `first_seen_at`. Across 10,011 priced listings that field takes
+**11 distinct values**, so the chart was eleven solid columns of ingest
+schedule presented as breeder behaviour. `first_listed_at` covers fewer rows
+but spreads over 199 days. The calendar now uses it with no fallback, since
+one scraper day mixed back in restores the spike the panel exists to show.
+
+The input field on `CalendarHeatmap` was itself named `first_seen_at`, which
+is how the wrong column got in; it is now `listed_on`, named for what the
+chart means. The post-activity heatmap (listings by hour of day and day of
+week) is demoted to the planned list, because neither field carries a posting
+time: `first_seen_at` is the scraper clock, and 1,105 of `first_listed_at`'s
+1,670 values are exactly midnight, so two thirds of the mass would pile into
+hour zero.
+
 ## Not done, and why
 
-1. **`price_history` still has no unique key on (listing_id, observed_at).**
-   Adding one requires deleting 104 byte-identical duplicate rows. That is a
-   deletion of production rows, and this repo's own rule is to ask first, so
-   it is left for an explicit yes. The double-counting it protects against is
-   already neutralised on the read side, because every median now reduces to
-   one observation per listing per bucket.
-2. **Movers and peak indicators are suppressed rather than fixed.**
-   `v_combo_rollups` only accepts a trailing window from `now()`, so the
-   preceding window cannot be requested, and a longer window's median cannot
-   be un-mixed to recover it. Both cards now return an empty state with the
-   reason. Giving them real numbers needs a disjoint-window form of that RPC.
-3. **`/combo`, `/sellers/[id]` and `/region/[code]` still read the old
-   `sold_listings_v`**, so they see 92 sales rather than the reconciled pools.
-   `/sold`, `/trait` and the valuation band were moved; those three were not.
-4. **The two-writer question is unresolved.** The repo's Monday workflow and
-   an external `geck-check` runner both ingest. Which one should own the
-   schedule is a decision, not a code change.
-5. **No visual redesign.** The audit's design direction (trust ribbon,
+1. **No visual redesign.** The audit's design direction (trust ribbon,
    navigation consolidation, Labs area) is a product change. What was
    implemented from it is the substance: coverage stated before the numbers,
    honest KPI nouns, gaps drawn as gaps, evidence verbs, and gates before any
    figure is published.
+2. **Peak indicators remain suppressed.** Unlike movers, they cannot be
+   rebuilt on the asking-price index alone: the score needs sold volume on
+   both sides of a disjoint comparison, and sold volume is zero for every
+   combo in the window. The card returns its reason.
+3. **Which writer owns the ingest schedule is still a decision.** The repo's
+   Monday workflow and the external `geck-check` runner both write. The
+   correctness risk is closed (see the unique key above), so what remains is a
+   choice about cadence and ownership rather than a bug.
+4. **Regional sold figures do not exist.** 395 of 2,932 reconciled sold rows
+   carry a `seller_id`, and 322 of 1,007 sellers carry a location, so the
+   intersection is too thin to publish. The page shows nothing rather than a
+   global total wearing a regional label.
