@@ -1464,3 +1464,95 @@ surfaced, in leverage order:
   from that codebase: its shared `Sparkline` already segments series
   at nulls instead of interpolating, which is precisely the drawing
   rule every geck-data timeline needs.
+
+---
+---
+
+# Implementation record, 2026-08-29
+
+Written by the Audit 2 session after implementing the fix list. Everything
+below is live on `main` and deployed. Migrations are applied to production
+(project `dhotmtgryuovkmsncdby`) and committed as files 0039 to 0048.
+
+Verification used on every push: `tsc --noEmit`, the 83 test suite, and a full
+`next build`. That last one matters: `tsc` passes code that `next build`
+rejects, and one deploy failed on an ESLint rule (`react/no-unescaped-entities`)
+that `tsc` does not run. Production was never down, because a failed Vercel
+build leaves the previous deployment serving.
+
+## What changed in the database
+
+| Migration | What it does |
+|---|---|
+| 0039, 0041 | Backfill canonical traits from the scraper table, parsing pipe-first so a non-trait property is dropped whole. Trait coverage 1,154 to 6,485 rows. 0041 corrects 0039, which flattened pipes and commas together and briefly promoted diet values (`Meal Replacement`, `Roach`) to top combos. |
+| 0040 | `combo_index_health()`, so a refresh that returns 2xx cannot report a starved view as success. |
+| 0042 | Stamp `species='crested'` on 6,715 provable rows. Flag 320 multi-animal listings (`is_group_lot`) so group pricing leaves per-animal medians. |
+| 0043 | Server-side aggregates: `trends_weekly_prices`, `trends_arrivals_weekly`, `trends_maturity_mix`, `market_price_summary`. One observation per listing per bucket, USD only, `observed_days` returned so an outage is a break rather than a zero. |
+| 0044 | Deltas anchored on each combo's own latest day, bounded by baseline age, nulled entirely when the combo itself is stale. |
+| 0045 | `market_coverage()` (coverage, not recency) and `v_sold_reconciled` (both sold pools, provenance kept, import-artifact durations nulled). |
+| 0046 | Trait ontology: redundancy detected structurally by stripping qualifier prefixes, plus a seeded table for allelic and overlapping labels. `v_combo_breadth` adds unique listing and seller counts. |
+| 0047 | `combo_weekly_prices`, so a combo's history is not conditioned on what is live today. |
+| 0048 | `sold_price_band`, the valuation band across both sold pools. |
+
+## Measured effect
+
+| Number | Before | After |
+|---|---|---|
+| Combo index history | 5 observed days | 32 observed days |
+| Combos in the index | 1,013 | 2,473, with 36 same-trait pairs excluded |
+| Combos printing a fake `+0.0%` | 1,142 | 0 |
+| Lilly White valuation comps | 14, from 12 sellers | 255, from 54 sellers |
+| Trait coverage | 1,154 rows | 6,485 rows |
+| Landing median | one blended figure ($280) | fresh $254.86 and stale $281, kept apart |
+| Feed health signal | newest row age | 5.6% of the catalogue re-observed |
+
+## Fix list status
+
+Audit 1 items 1 to 10: all implemented. The catalogue is split into fresh and
+stale wherever it is counted or priced, the stale rule is coverage-based, the
+78 day hole draws as a labelled outage instead of zeros, arrival buckets use
+MorphMarket's own listing date where we have it, uncovered report months are
+no longer clickable, the site says weekly rather than daily, demand widgets
+suppress themselves, CountUp server-renders the real number, the valuation
+band reads both sold pools, and species is stamped.
+
+Reconciliation P0s and P1s: all implemented. The row cap is closed by moving
+aggregation into SQL rather than raising a limit. Region, age, lineage and
+source filters are disabled with the measured reason each cannot work
+(seller_location on 15% of rows, maturity on 12%, no lineage source, two real
+source values against eight offered), because a control that confirms a filter
+it never applied is worse than no control. Market temperature returns no score
+with a reason instead of resolving to "50, Warm". Repeated ticks no longer
+outvote a listing seen once. The header pip and the stale banner read one
+shared verdict.
+
+Code-honesty items: the invented dispersion, the 30 day days-to-sell default,
+the sort-order breeder score, the mean labelled median and the hardcoded
+combo-detail zeros are gone, replaced by nulls the widgets render as "no data".
+Action language ("Sell into strength", "Accumulate") is replaced by evidence
+phrasing, suppressed entirely below a minimum sample.
+
+## Not done, and why
+
+1. **`price_history` still has no unique key on (listing_id, observed_at).**
+   Adding one requires deleting 104 byte-identical duplicate rows. That is a
+   deletion of production rows, and this repo's own rule is to ask first, so
+   it is left for an explicit yes. The double-counting it protects against is
+   already neutralised on the read side, because every median now reduces to
+   one observation per listing per bucket.
+2. **Movers and peak indicators are suppressed rather than fixed.**
+   `v_combo_rollups` only accepts a trailing window from `now()`, so the
+   preceding window cannot be requested, and a longer window's median cannot
+   be un-mixed to recover it. Both cards now return an empty state with the
+   reason. Giving them real numbers needs a disjoint-window form of that RPC.
+3. **`/combo`, `/sellers/[id]` and `/region/[code]` still read the old
+   `sold_listings_v`**, so they see 92 sales rather than the reconciled pools.
+   `/sold`, `/trait` and the valuation band were moved; those three were not.
+4. **The two-writer question is unresolved.** The repo's Monday workflow and
+   an external `geck-check` runner both ingest. Which one should own the
+   schedule is a decision, not a code change.
+5. **No visual redesign.** The audit's design direction (trust ribbon,
+   navigation consolidation, Labs area) is a product change. What was
+   implemented from it is the substance: coverage stated before the numbers,
+   honest KPI nouns, gaps drawn as gaps, evidence verbs, and gates before any
+   figure is published.
