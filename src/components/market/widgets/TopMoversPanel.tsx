@@ -1,6 +1,13 @@
 "use client";
 // Two-column Top Movers card (APPRECIATING / DEPRECIATING). Each row:
-//   [ combo name + sample size/avg ]   [ sparkline ]   [ % delta + arrow ]
+//   [ combo name + both endpoints ]   [ sparkline ]   [ % change + arrow ]
+//
+// Every number here is an asking-price index, never a sale. The move is
+// between two observed days of that index and nothing is observed between
+// them, so the sparkline is two points and the row states both dates and both
+// listing counts. The counts matter: the current endpoint typically rests on
+// far fewer listings than the baseline, because the live catalogue shrank
+// between the two dates, and a percentage on its own hides that entirely.
 //
 // Combo names link to /combo/[slug]; clicking elsewhere in the row
 // still fires onSelectCombo for in-tab drill-in.
@@ -38,7 +45,8 @@ export default function TopMoversPanel({
           <div>
             <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">Top Movers</h2>
             <p className="mt-0.5 text-xs text-forest-400">
-              Largest price swings in the selected timeframe
+              Largest changes in the combo asking-price index between two
+              observed days. Asking prices, not sales.
             </p>
           </div>
         </div>
@@ -87,7 +95,10 @@ function Column({
       </div>
       <ul className="divide-y divide-forest-700/60">
         {rows.length === 0 ? (
-          <li className="py-3 text-xs text-forest-500">No movers yet.</li>
+          <li className="py-3 text-xs text-forest-500">
+            Nothing on this side. A combo needs five or more listings on both
+            index days before a change is reported.
+          </li>
         ) : (
           rows.map((m) => (
             <li
@@ -113,11 +124,17 @@ function Column({
                   );
                 })()}
                 <div className="font-mono text-[10px] text-forest-500">
-                  ${m.avgPrice.toLocaleString()} avg · n={m.n}
+                  ${m.fromValue.toLocaleString()} (n={m.fromN}) to $
+                  {m.avgPrice.toLocaleString()} (n={m.n})
                 </div>
+                {m.fromDay && m.toDay ? (
+                  <div className="font-mono text-[10px] text-forest-600">
+                    {m.fromDay} to {m.toDay}
+                  </div>
+                ) : null}
               </div>
               <span
-                title="Prior window median → current window median (two endpoints, no daily breakdown)"
+                title="Index median on the earlier day, then on the later day. Two observed points only: nothing was measured in between, so the line between them is not a path the price took."
                 className="inline-flex"
               >
                 <MiniSparkline values={m.spark} width={64} height={22} />

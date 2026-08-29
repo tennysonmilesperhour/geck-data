@@ -40,12 +40,26 @@ export type MarketSubIndex = {
   attribution: Attribution;
 };
 
+// One combo's move between two observed days of the asking-price index. Both
+// endpoints travel with the row because the move is only as good as its
+// thinner side, and because the current index usually rests on far fewer
+// listings than the baseline (the live catalogue shrank between the two
+// dates). A panel that shows only the percentage hides that.
 export type Mover = {
   combo: Combo;
+  /** Index value on the later day. */
   avgPrice: number;
+  /** Listings behind the later day. */
   n: number;
   deltaPct: number;
+  /** The two endpoints, in order. Nothing is observed between them. */
   spark: number[];
+  /** Index value on the earlier day. */
+  fromValue: number;
+  /** Listings behind the earlier day. */
+  fromN: number;
+  fromDay: string | null;
+  toDay: string | null;
   attribution: Attribution;
 };
 

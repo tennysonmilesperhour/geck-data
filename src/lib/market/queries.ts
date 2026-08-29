@@ -397,18 +397,39 @@ export async function fetchCombosRanked(
 }
 
 // ----------------------------------------------------------------------------
-// Top Movers: suppressed until there is a disjoint window to compare with.
+// Top Movers: combo_index_movers, two disjoint observed days (migration 0051)
 // ----------------------------------------------------------------------------
-// A mover claims a price changed between two periods, so the two periods have
-// to be different periods. This read v_combo_rollups(w) against
-// v_combo_rollups(2w), and 2w contains w, so every delta was damped toward
-// zero by construction: a combo that doubled inside w was compared against a
-// baseline that already included the doubling.
+// This was suppressed, and the reason was structural. It read
+// v_combo_rollups(w) against v_combo_rollups(2w), and 2w contains w, so every
+// delta was damped toward zero by construction: a combo that doubled inside w
+// was measured against a baseline that already included the doubling. No
+// honest number can be recovered from nested windows.
 //
-// The RPC only accepts a trailing window from now(), and a median cannot be
-// un-mixed from a longer window's median, so the preceding window cannot be
-// derived here either. Until the warehouse exposes a lagged window, the honest
-// output is the empty state plus the reason for it.
+// combo_index_daily holds one median per combo per observed day, so a mover
+// is now that combo's index on its latest observed day against its index on a
+// day at least the timeframe earlier. Two dates, nothing nested, nothing
+// interpolated between them.
+//
+// min_n = MOVER_MIN_N on BOTH endpoints is not tuning, it is the difference
+// between a mover list and a noise list. Ungated, the biggest movers here are
+// combos priced off one ad: a single $5,850 listing currently sets the index
+// for six combos at once and produces a +5,057% "move" on a combo whose
+// latest day holds two listings.
+const MOVER_MIN_N = 5;
+const MOVER_ROWS_PER_SIDE = 5;
+
+type MoverRow = {
+  combo_id: string;
+  from_day: string | null;
+  to_day: string | null;
+  from_value: number | string | null;
+  to_value: number | string | null;
+  from_n: number | string | null;
+  to_n: number | string | null;
+  pct_change: number | string | null;
+  span_days: number | string | null;
+};
+
 export async function fetchTopMovers(
   filters: Filters,
 ): Promise<
@@ -417,23 +438,69 @@ export async function fetchTopMovers(
   try {
     const supabase = createClient();
     const w = windowDays(filters);
-    const { data, error } = await supabase.rpc("v_combo_rollups", {
-      window_days: w,
+    const { data, error } = await supabase.rpc("combo_index_movers", {
+      lookback_days: w,
+      min_n: MOVER_MIN_N,
+      // Both directions come out of one ordered-by-magnitude call, so ask for
+      // more than either column shows and split locally.
+      max_rows: MOVER_ROWS_PER_SIDE * 8,
     });
     if (error) throw error;
-    const rows = (data ?? []) as RollupRow[];
+    const rows = (data ?? []) as MoverRow[];
     if (rows.length === 0) {
-      return empty(null, "no combos with observations");
+      return empty(
+        null,
+        `no combo has ${MOVER_MIN_N}+ listings on both an index day and a day ${w}d earlier`,
+      );
     }
-    // Today's state: sold_count is 0 for every combo at 90d, so there is no
-    // sold price on either side of the comparison to move.
-    const soldTotal = rows.reduce((a, r) => a + (r.sold_count ?? 0), 0);
-    if (soldTotal === 0) {
-      return empty(null, `no sold observations in the last ${w}d`);
+
+    const mapped: Mover[] = [];
+    for (const r of rows) {
+      const from = num(r.from_value);
+      const to = num(r.to_value);
+      const pct = num(r.pct_change);
+      const toN = num(r.to_n);
+      const fromN = num(r.from_n);
+      if (from == null || to == null || pct == null || toN == null || fromN == null) {
+        continue;
+      }
+      mapped.push({
+        combo: r.combo_id,
+        // The current endpoint, which is what the row's price label describes.
+        avgPrice: to,
+        n: toN,
+        deltaPct: pct,
+        // Two observed endpoints and nothing in between. The sparkline draws
+        // exactly those two points rather than inventing a path between them.
+        spark: [from, to],
+        fromValue: from,
+        fromN,
+        fromDay: r.from_day,
+        toDay: r.to_day,
+        attribution: {
+          sources: confidenceSources(filters),
+          // The move rests on the thinner of its two endpoints.
+          confidence: { score: sampleConfidence(Math.min(fromN, toN)) },
+        },
+      });
     }
-    return empty(
-      null,
-      `no preceding ${w}d window to compare against: v_combo_rollups only takes a trailing window`,
+
+    const appreciating = mapped
+      .filter((m) => m.deltaPct > 0)
+      .slice(0, MOVER_ROWS_PER_SIDE);
+    const depreciating = mapped
+      .filter((m) => m.deltaPct < 0)
+      .slice(0, MOVER_ROWS_PER_SIDE);
+    if (appreciating.length === 0 && depreciating.length === 0) {
+      return empty(null, "no combo index moved between the two endpoints");
+    }
+
+    const span = num(rows[0]?.span_days);
+    return ok(
+      { appreciating, depreciating },
+      `combo_index_movers(${w}d, min n=${MOVER_MIN_N}): asking-price index, ${
+        rows[0]?.from_day ?? "unknown"
+      } to ${rows[0]?.to_day ?? "unknown"}${span != null ? `, ${span}d apart` : ""}`,
     );
   } catch (e) {
     return empty(null, `fetchTopMovers error: ${errMsg(e)}`);
