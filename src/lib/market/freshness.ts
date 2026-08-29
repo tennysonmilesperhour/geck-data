@@ -121,6 +121,46 @@ export const getLatestMarketSeenAt = unstable_cache(
 // UTC so the rendered date matches the date the pass is recorded under,
 
 
+// ----------------------------------------------------------------------------
+// Which optional sections have anything behind them.
+// ----------------------------------------------------------------------------
+// Two tabs in the header, Shows and Cross-platform, point at tables that hold
+// zero rows: show_mentions and cross_platform_listings have never been
+// written to. A nav item is a promise that there is something to see, and
+// both were breaking it on every page load.
+//
+// The check is a count rather than a hard-coded removal, so a tab comes back
+// the moment its table starts receiving rows and no one has to remember to
+// re-add it. Both reads are head-only counts against empty or small tables
+// and share the same five minute cache as the freshness read beside them.
+export type OptionalSections = {
+  shows: boolean;
+  crossPlatform: boolean;
+};
+
+async function fetchOptionalSections(): Promise<OptionalSections> {
+  const supabase = createPublicClient();
+  const [showsQ, crossQ] = await Promise.all([
+    supabase
+      .from("show_mentions")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("cross_platform_listings")
+      .select("id", { count: "exact", head: true }),
+  ]);
+  return {
+    // Fail open: a failed count must not hide a section that has data.
+    shows: showsQ.error ? true : (showsQ.count ?? 0) > 0,
+    crossPlatform: crossQ.error ? true : (crossQ.count ?? 0) > 0,
+  };
+}
+
+export const getOptionalSections = unstable_cache(
+  fetchOptionalSections,
+  ["optional-sections-v1"],
+  { revalidate: 300, tags: ["market-freshness"] },
+);
+
 /** Convenience for server components: read the row, return the verdict. */
 export async function getMarketFeedVerdict(): Promise<FeedVerdict> {
   try {

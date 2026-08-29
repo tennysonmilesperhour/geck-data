@@ -2,7 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
-import { getMarketFeedVerdict } from "@/lib/market/freshness";
+import {
+  getMarketFeedVerdict,
+  getOptionalSections,
+} from "@/lib/market/freshness";
 import StaleDataBanner from "@/components/StaleDataBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import TelemetryClient from "@/components/TelemetryClient";
@@ -73,12 +76,18 @@ export default async function RootLayout({
   // verdict here, in the one server component every page passes through,
   // means the pip, the stale banner and /status cannot disagree. Failing
   // closed to null keeps a Supabase hiccup from taking down every page.
-  let feed = null;
-  try {
-    feed = await getMarketFeedVerdict();
-  } catch {
-    feed = null;
-  }
+  //
+  // The section gate beside it decides whether the Shows and Cross-platform
+  // tabs render at all. Both point at tables that have never been written to,
+  // and a nav item that leads to a permanently empty page is a promise the
+  // site cannot keep. Resolved here for the same reason: the header is the
+  // one component every page passes through. Both fail to null, which shows
+  // every tab, because hiding a section that does have data is the worse
+  // error.
+  const [feed, sections] = await Promise.all([
+    getMarketFeedVerdict().catch(() => null),
+    getOptionalSections().catch(() => null),
+  ]);
 
   return (
     <html
@@ -89,7 +98,7 @@ export default async function RootLayout({
         <TelemetryClient />
         <VersionToast />
         <StaleDataBanner />
-        <Header feed={feed} />
+        <Header feed={feed} sections={sections} />
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
           <MorphTermProvider>
             <ErrorBoundary>{children}</ErrorBoundary>

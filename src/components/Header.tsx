@@ -11,7 +11,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SettingsDrawer from "@/components/settings/SettingsDrawer";
 import Logo from "@/components/ui/Logo";
-import type { FeedLevel, FeedVerdict } from "@/lib/market/freshness";
+import type {
+  FeedLevel,
+  FeedVerdict,
+  OptionalSections,
+} from "@/lib/market/freshness";
 
 // The pip used to be a hardcoded "Ready" while /status reported Lagging,
 // Down and Stale on the same page load. It now renders whatever verdict the
@@ -29,7 +33,19 @@ const STATUS_DOT: Record<FeedLevel, string> = {
 };
 
 type Group = "core" | "analysis" | "ops";
-type Tab = { href: string; label: string; group?: Group };
+// `needs` names an optional section this tab depends on. A tab carrying one is
+// only rendered when that section has rows behind it, because a nav item is a
+// promise that there is something to see: show_mentions and
+// cross_platform_listings are both empty and have never been written to, so
+// Shows and Cross-platform were breaking that promise on every page load. The
+// gate is a live count rather than a deletion, so either tab returns on its
+// own the moment its table starts receiving rows.
+type Tab = {
+  href: string;
+  label: string;
+  group?: Group;
+  needs?: keyof OptionalSections;
+};
 
 const TABS: Tab[] = [
   { href: "/",                label: "Pulse",         group: "core" },
@@ -42,8 +58,8 @@ const TABS: Tab[] = [
   { href: "/trends",          label: "Trends",        group: "analysis" },
   { href: "/compare",         label: "Compare",       group: "analysis" },
   { href: "/reports",         label: "Reports",       group: "analysis" },
-  { href: "/shows",           label: "Shows",         group: "ops" },
-  { href: "/cross-platform",  label: "Cross-platform", group: "ops" },
+  { href: "/shows",           label: "Shows",         group: "ops", needs: "shows" },
+  { href: "/cross-platform",  label: "Cross-platform", group: "ops", needs: "crossPlatform" },
 ];
 
 const GROUP_LABELS: Record<Group, string> = {
@@ -52,7 +68,18 @@ const GROUP_LABELS: Record<Group, string> = {
   ops: "Operations",
 };
 
-export default function Header({ feed }: { feed?: FeedVerdict | null }) {
+export default function Header({
+  feed,
+  sections,
+}: {
+  feed?: FeedVerdict | null;
+  sections?: OptionalSections | null;
+}) {
+  // No section data (the read failed, or a caller that does not pass it) means
+  // show everything. Hiding a real section is the worse error.
+  const visibleTabs = TABS.filter(
+    (t) => !t.needs || !sections || sections[t.needs],
+  );
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -147,8 +174,8 @@ export default function Header({ feed }: { feed?: FeedVerdict | null }) {
 
         {/* Inline tab bar, large screens only. */}
         <div className="hidden flex-1 flex-wrap items-center gap-0.5 text-[13px] lg:flex">
-          {TABS.map((t, i) => {
-            const prev = TABS[i - 1];
+          {visibleTabs.map((t, i) => {
+            const prev = visibleTabs[i - 1];
             const divider = prev && prev.group !== t.group ? (
               <span key={`d-${t.href}`} aria-hidden className="mx-1.5 h-4 w-px bg-ink-700" />
             ) : null;
@@ -293,7 +320,7 @@ export default function Header({ feed }: { feed?: FeedVerdict | null }) {
                     {GROUP_LABELS[group]}
                   </p>
                   <div className="flex flex-col">
-                    {TABS.filter((t) => t.group === group).map((t) => (
+                    {visibleTabs.filter((t) => t.group === group).map((t) => (
                       <Link
                         key={t.href}
                         href={t.href}

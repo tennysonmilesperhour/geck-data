@@ -11,13 +11,23 @@
 // reason they cannot work yet. Re-enable one only when its query actually
 // narrows the rows AND the displayed n moves with it.
 //
+// The timeframe control is subject to the same rule and was the one that
+// escaped it, because its longest options fail silently rather than visibly.
+// price_history starts on 2026-04-22, so "6 months", "12 months" and "24
+// months" all resolve to the same 129 days of observation: three buttons,
+// one result set. Options longer than the measured span are now disabled and
+// say so. The span is read at runtime rather than hard-coded, because it
+// grows by a day every day and each option becomes real on its own schedule.
+//
 // Coverage measured on production 2026-08-29:
 //   seller_location present on 1,572 of 10,239 rows (15%)
 //   maturity present on 1,277 of 10,239 rows (12%)
 //   lineage: no populated source
 //   sources: two values exist in the data, 'scraper' and 'manual', against
 //            the eight this control offers
-import { useState } from "react";
+//   price_history spans 129 days across 35 days carrying an observation
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import type {
   Age,
   Filters,
@@ -39,6 +49,47 @@ const TIMEFRAME_LABEL: Record<Timeframe, string> = {
   "24mo": "24 months",
 };
 
+// Days each option asks for. Compared against the measured observation span
+// to decide whether the option can return anything the shorter one cannot.
+const TIMEFRAME_DAYS: Record<Timeframe, number> = {
+  "30d": 30,
+  "90d": 90,
+  "6mo": 180,
+  "12mo": 365,
+  "24mo": 730,
+};
+
+/**
+ * Calendar days between the oldest and newest price observation, or null
+ * while the read is in flight or if it fails.
+ *
+ * Failing to null is deliberate: an unknown span must not disable controls.
+ * Showing an option that turns out to be redundant is a smaller error than
+ * hiding one the archive can actually support.
+ */
+function useObservationSpanDays(): number | null {
+  const [days, setDays] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase.rpc("observation_span");
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : data;
+        const n = Number((row as { span_days?: number | string })?.span_days);
+        if (!cancelled && Number.isFinite(n)) setDays(n);
+      } catch {
+        // Leave it null; every option stays enabled.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return days;
+}
+
 const REGION_LABEL: Record<Region, string> = {
   ALL: "All regions",
   US: "US",
@@ -58,6 +109,7 @@ export default function FilterBar({
   filters: Filters;
   onChange: (f: Filters) => void;
 }) {
+  const spanDays = useObservationSpanDays();
   return (
     <div className="forest-surface-soft flex flex-wrap items-center gap-2 p-2">
       <Segmented
@@ -65,6 +117,18 @@ export default function FilterBar({
         options={TIMEFRAMES}
         labelOf={(v) => TIMEFRAME_LABEL[v]}
         onChange={(v) => onChange({ ...filters, timeframe: v })}
+        // An option is disabled once it reaches past everything we have
+        // observed, since it then returns exactly what the largest usable
+        // option returns. The currently selected option is never disabled:
+        // taking away the control that explains the current view is worse
+        // than leaving a redundant one in place.
+        disabledOf={(v) =>
+          spanDays == null ||
+          v === filters.timeframe ||
+          TIMEFRAME_DAYS[v] <= spanDays
+            ? null
+            : `Observations only go back ${spanDays} days, so this window returns the same rows as the longest enabled one.`
+        }
       />
 
       <Chip
@@ -134,25 +198,33 @@ function Segmented<T extends string>({
   options,
   onChange,
   labelOf,
+  disabledOf,
 }: {
   value: T;
   options: readonly T[];
   onChange: (v: T) => void;
   labelOf: (v: T) => string;
+  /** Reason this option cannot be used, or null when it can. */
+  disabledOf?: (v: T) => string | null;
 }) {
   return (
     <div className="inline-flex overflow-hidden rounded-lg border border-forest-700 bg-forest-950/60 text-xs">
       {options.map((opt) => {
         const active = opt === value;
+        const reason = disabledOf?.(opt) ?? null;
         return (
           <button
             key={opt}
             type="button"
+            disabled={reason != null}
+            title={reason ?? undefined}
             onClick={() => onChange(opt)}
             className={`px-3 py-1.5 transition ${
-              active
-                ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(123,191,131,0.25)]"
-                : "text-forest-300 hover:bg-forest-850 hover:text-forest-100"
+              reason != null
+                ? "cursor-not-allowed text-forest-600 line-through decoration-forest-700"
+                : active
+                  ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(123,191,131,0.25)]"
+                  : "text-forest-300 hover:bg-forest-850 hover:text-forest-100"
             }`}
           >
             {labelOf(opt)}
