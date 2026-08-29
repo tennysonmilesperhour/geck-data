@@ -481,7 +481,7 @@ function ConfidenceTag({
   const map = {
     high: { label: "High confidence", tone: "text-ready border-ready/40 bg-ready/10" },
     medium: { label: "Medium confidence", tone: "text-forest-200 border-forest-600 bg-forest-900/40" },
-    low: { label: "Low confidence", tone: "text-warn border-warn/40 bg-warn/10" },
+    low: { label: "Low confidence", tone: "text-busy border-busy/40 bg-busy/10" },
   } as const;
   const c = map[confidence];
   return (

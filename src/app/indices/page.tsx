@@ -289,7 +289,7 @@ export default async function IndicesPage({
       render: (r) => (
         <span
           className={`font-mono text-[11px] ${
-            r.is_stale ? "text-warn" : "text-ink-400"
+            r.is_stale ? "text-busy" : "text-ink-400"
           }`}
           title={
             r.is_stale

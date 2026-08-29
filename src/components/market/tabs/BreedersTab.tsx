@@ -42,7 +42,16 @@ export default function BreedersTab({
           label="Breeders tracked"
           value={data.kpis.totalBreeders.toLocaleString()}
         />
-        <KpiCard label="Top region" value={data.kpis.topRegion} tone="info" />
+        <KpiCard
+          label="Top region"
+          value={data.kpis.topRegion ?? "no data"}
+          sub={
+            data.kpis.topRegion == null
+              ? "no seller location could be mapped"
+              : `of ${data.kpis.regionMapped} of ${data.rows.length} breeders with a mappable location`
+          }
+          tone="info"
+        />
         <KpiCard
           label="Avg sold price"
           value={
@@ -115,7 +124,7 @@ export default function BreedersTab({
                     )}
                   </td>
                   <td className="px-3 py-3 align-middle font-mono text-[11px] text-forest-300">
-                    {r.region}
+                    {r.region ?? "unmapped"}
                   </td>
                   <td className="px-3 py-3 text-right align-middle font-mono tabular-nums text-forest-200">
                     {r.activeListings}

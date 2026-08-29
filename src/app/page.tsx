@@ -8,7 +8,7 @@
 // actually belongs.
 import HeroBand from "@/components/landing/HeroBand";
 import WhatsHotPanel from "@/components/landing/WhatsHotPanel";
-import OpportunitiesPanel from "@/components/landing/OpportunitiesPanel";
+import BelowCompsPanel from "@/components/landing/BelowCompsPanel";
 import TopSellersPanel from "@/components/landing/TopSellersPanel";
 import DeepDiveCta from "@/components/landing/DeepDiveCta";
 import ScrollytellingSection from "@/components/landing/ScrollytellingSection";
@@ -68,7 +68,7 @@ export default async function LandingPage() {
             <WhatsHotPanel combos={snapshot.combos} comboDaily={comboDaily} />
           </div>
           <div className="lg:col-span-2">
-            <OpportunitiesPanel opportunities={snapshot.opportunities} />
+            <BelowCompsPanel listings={snapshot.below_comps} />
           </div>
         </div>
 

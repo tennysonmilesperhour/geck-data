@@ -17,6 +17,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { looksLikeGroupLot } from "@/lib/traits";
+import { CYCLE_HOURS } from "@/lib/market/feed-verdict";
 
 export type ComboSnapshot = {
   combo_name: string;
@@ -29,16 +30,31 @@ export type ComboSnapshot = {
   confidence_score: number;
 };
 
-export type OpportunityListing = {
+/**
+ * A live ad asking less than the freshly confirmed ads it is comparable to.
+ *
+ * "Comparable" is doing real work here and is deliberately narrow: same trait
+ * pair, same maturity, both sides confirmed in the current ingest cycle, no
+ * lots and no auctions on either side. It still does not control for sex,
+ * weight, lineage, structure or pet-only grading, so this is an observation
+ * about asking prices, not a verdict on value.
+ */
+export type BelowCompsListing = {
   id: string;
   title: string | null;
   url: string | null;
   price: number;
-  combo_name: string | null;
-  combo_median_ask: number | null;
-  /** Live ads the combo median was taken over, so the panel can show its n. */
-  combo_n: number | null;
-  discount_pct: number; // positive: below combo median
+  /** Age class of the animal, and of every ad in its comparison set. */
+  maturity: string | null;
+  comp_combo: string | null;
+  /** Median ask of the matched (combo, maturity) comparison set. */
+  comp_median_ask: number | null;
+  /** Ads in that set, so the panel can show what the median rests on. */
+  comp_n: number | null;
+  /** Distinct sellers in that set. */
+  comp_sellers: number | null;
+  /** How far under the comparison median this ad sits, in percent. */
+  pct_below: number;
   seller_name: string | null;
   seller_id: string | null;
   seller_location: string | null;
@@ -120,7 +136,7 @@ export type MarketSnapshot = {
   totals: MarketTotals;
   combos: ComboSnapshot[];
   hottest_combo: ComboSnapshot | null;
-  opportunities: OpportunityListing[];
+  below_comps: BelowCompsListing[];
   top_sellers: SellerCard[];
   regional_max_median: number; // for color scaling in the heatmap
   generated_at: string;
@@ -137,16 +153,17 @@ const PRICE_SANITY_MAX = 100_000;
 // 'unknown' (unknown is overwhelmingly crested that predates the tagging),
 // so any count meant to describe that same sample has to match the filter.
 const PRICED_SPECIES: string[] = ["crested", "unknown"];
-const OPPORTUNITY_THRESHOLD = 0.25; // 25% below combo median ask
-const OPPORTUNITY_LIMIT = 12;
-// Only surface listings the ingest has re-observed within this window.
-// current_status='live' is sticky, so without a freshness gate the panel
-// advertises ads nobody has confirmed in months.
-const OPPORTUNITY_FRESHNESS_DAYS = 7;
-// A "discount" is only meaningful against a baseline with some depth. Two
-// listings can put a combo median at $3,075 and turn every ordinary ad into a
-// 90% bargain, so combos thinner than this do not get to price anything.
-const MIN_COMBO_BASELINE_N = 5;
+// How far under its comparison median an ad has to sit before the panel says
+// anything about it.
+const BELOW_COMPS_THRESHOLD = 0.25;
+const BELOW_COMPS_LIMIT = 12;
+// Depth a comparison set needs before it may price anything. Two listings can
+// put a median at $3,075 and turn every ordinary ad into a 90% bargain; the
+// seller floor stops one seller's price list from becoming the market it is
+// under. Both are enforced inside combo_maturity_baselines so a set that
+// cannot price anything is never returned in the first place.
+const MIN_COMP_N = 5;
+const MIN_COMP_SELLERS = 3;
 const TOP_SELLER_LIMIT = 6;
 const COMBO_DAILY_WINDOW_DAYS = 14;
 const DAY_MS = 86_400_000;
@@ -177,6 +194,23 @@ export function comboNameTokens(comboName: string): string[] {
     .split(/\s*×\s*|\s+x\s+/)
     .map((t) => t.trim())
     .filter(Boolean);
+}
+
+/**
+ * Key a comparison set by its combo and age class together. The two are joined
+ * with a control character rather than a visible separator because trait names
+ * legitimately contain spaces, slashes and hyphens, and a collision here would
+ * silently price a baby against a set of adults.
+ */
+const COMP_KEY_SEP = "\u0000";
+
+function compKey(combo: string, maturity: string): string {
+  return `${combo}${COMP_KEY_SEP}${maturity}`;
+}
+
+function splitCompKey(key: string): [string, string] {
+  const i = key.indexOf(COMP_KEY_SEP);
+  return i < 0 ? [key, ""] : [key.slice(0, i), key.slice(i + 1)];
 }
 
 /** Numerics arrive from PostgREST as strings; counts as numbers. Normalise. */
@@ -307,74 +341,129 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   );
   const hottest_combo = combos[0] ?? null;
 
-  // Opportunities: single animals priced more than OPPORTUNITY_THRESHOLD below
-  // their combo's median ask. Requires the combo lookup to be populated.
-  const comboBaseline = new Map<string, { median: number; n: number }>();
-  for (const c of combos) {
-    if (c.median_ask != null && c.live_count >= MIN_COMBO_BASELINE_N) {
-      comboBaseline.set(c.combo_name, { median: c.median_ask, n: c.live_count });
-    }
+  // Ads asking less than their comparables.
+  //
+  // This panel used to be called Opportunities and it was measuring the wrong
+  // thing. The baseline came from v_combo_rollups over 365 days: no freshness
+  // filter, group lots left in, auctions left in, and every age class pooled
+  // into one median. Checked against production it produced 248 "deals" at an
+  // average 50% discount, and the top of that list was not a list of deals at
+  // all. Every one of the deepest was a baby or a juvenile measured against a
+  // median that included adults. A $60 juvenile against a $350 all-ages median
+  // is a young animal priced like a young animal.
+  //
+  // combo_maturity_baselines (migration 0049) cuts the median per (combo,
+  // maturity) over freshly re-confirmed single animals, drops auctions, and
+  // returns a cell only when it carries at least MIN_COMP_N asks from
+  // MIN_COMP_SELLERS distinct sellers. 34 of 1,938 cells currently qualify.
+  // A listing with no qualifying cell for its own age class makes no claim.
+  const baselines = new Map<
+    string,
+    { median: number; n: number; sellers: number }
+  >();
+  const { data: baselineRows } = await supabase.rpc(
+    "combo_maturity_baselines",
+    {
+      fresh_hours: CYCLE_HOURS,
+      window_days: WINDOW_DAYS,
+      min_fresh: MIN_COMP_N,
+      min_sellers: MIN_COMP_SELLERS,
+    },
+  );
+  for (const r of (baselineRows ?? []) as Array<{
+    combo_id: string;
+    maturity: string | null;
+    n_fresh: number | string | null;
+    n_fresh_sellers: number | string | null;
+    median_fresh_ask: number | string | null;
+  }>) {
+    const median = num(r.median_fresh_ask);
+    if (median == null || median <= 0 || !r.maturity) continue;
+    baselines.set(compKey(r.combo_id, r.maturity), {
+      median,
+      n: num(r.n_fresh) ?? 0,
+      sellers: num(r.n_fresh_sellers) ?? 0,
+    });
   }
 
-  let opportunities: OpportunityListing[] = [];
-  if (comboBaseline.size > 0) {
-    const oppFreshSince = new Date(
-      Date.now() - OPPORTUNITY_FRESHNESS_DAYS * DAY_MS,
-    ).toISOString();
-    const oppQ = await supabase
+  let below_comps: BelowCompsListing[] = [];
+  if (baselines.size > 0) {
+    const compSince = new Date(Date.now() - CYCLE_HOURS * HOUR_MS).toISOString();
+    const candidateQ = await supabase
       .from("market_listings")
       .select(
-        "id, title, url, price_usd_equivalent, norm_traits, cached_traits, seller_id, seller_name, seller_location, first_seen_at, last_seen_at",
+        "id, title, url, price_usd_equivalent, maturity, is_auction, norm_traits, cached_traits, seller_id, seller_name, seller_location, first_seen_at, last_seen_at",
       )
       .eq("current_status", "live")
+      .in("species", PRICED_SPECIES)
       // A wholesale lot at $50 against a $500 per-animal median is not a 90%
-      // discount, it is a different unit. Lots stay out of the comparison.
+      // discount, it is a different unit. An auction's price is the current
+      // bid, which opens low by design and would otherwise fill this list.
+      // Both are excluded from the baseline too, so the two sides match.
       .eq("is_group_lot", false)
+      .not("maturity", "is", null)
       .not("price_usd_equivalent", "is", null)
       .gte("price_usd_equivalent", 50)
       .lt("price_usd_equivalent", PRICE_SANITY_MAX)
-      .gte("last_seen_at", oppFreshSince)
+      .gte("last_seen_at", compSince)
       .order("last_seen_at", { ascending: false, nullsFirst: false })
       .limit(2000);
 
-    const comboTokens: Array<{
-      name: string;
+    // Pre-tokenise once. A listing usually matches several combos, and which
+    // one it is measured against decides the number on the card, so the choice
+    // cannot be "whichever came first out of the map" the way it used to be.
+    const comps: Array<{
+      combo: string;
+      maturity: string;
       tokens: string[];
       median: number;
       n: number;
+      sellers: number;
     }> = [];
-    for (const [name, baseline] of comboBaseline) {
-      comboTokens.push({
-        name,
-        tokens: comboNameTokens(name),
-        median: baseline.median,
-        n: baseline.n,
+    for (const [key, b] of baselines) {
+      const [combo, maturity] = splitCompKey(key);
+      comps.push({
+        combo,
+        maturity,
+        tokens: comboNameTokens(combo),
+        median: b.median,
+        n: b.n,
+        sellers: b.sellers,
       });
     }
 
-    for (const row of oppQ.data ?? []) {
+    for (const row of candidateQ.data ?? []) {
+      if (row.is_auction) continue;
       if (looksLikeGroupLot(row.title)) continue;
       const traits = (row.norm_traits || row.cached_traits || "").toLowerCase();
-      if (!traits) continue;
-      let matched: { name: string; median: number; n: number } | null = null;
-      for (const ct of comboTokens) {
-        if (ct.tokens.every((t) => traits.includes(t))) {
-          matched = { name: ct.name, median: ct.median, n: ct.n };
-          break;
-        }
+      if (!traits || !row.maturity) continue;
+
+      // Of every comparison set this animal belongs to, take the one with the
+      // lowest median. That is the smallest claim the data supports: an ad
+      // that clears the threshold against its cheapest comparable set is
+      // under all of them, and picking the dearest set instead would let the
+      // page manufacture a discount by choosing its own denominator.
+      let comp: (typeof comps)[number] | null = null;
+      for (const c of comps) {
+        if (c.maturity !== row.maturity) continue;
+        if (!c.tokens.every((t) => traits.includes(t))) continue;
+        if (comp == null || c.median < comp.median) comp = c;
       }
-      if (!matched) continue;
-      const discount = (matched.median - row.price_usd_equivalent) / matched.median;
-      if (discount < OPPORTUNITY_THRESHOLD) continue;
-      opportunities.push({
+      if (comp == null) continue;
+
+      const below = (comp.median - row.price_usd_equivalent) / comp.median;
+      if (below < BELOW_COMPS_THRESHOLD) continue;
+      below_comps.push({
         id: row.id,
         title: row.title,
         url: row.url,
         price: row.price_usd_equivalent,
-        combo_name: matched.name,
-        combo_median_ask: matched.median,
-        combo_n: matched.n,
-        discount_pct: Math.round(discount * 1000) / 10,
+        maturity: row.maturity,
+        comp_combo: comp.combo,
+        comp_median_ask: comp.median,
+        comp_n: comp.n,
+        comp_sellers: comp.sellers,
+        pct_below: Math.round(below * 1000) / 10,
         seller_name: row.seller_name,
         seller_id: row.seller_id,
         seller_location: row.seller_location,
@@ -382,8 +471,8 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
         last_seen_at: row.last_seen_at,
       });
     }
-    opportunities.sort((a, b) => b.discount_pct - a.discount_pct);
-    opportunities = opportunities.slice(0, OPPORTUNITY_LIMIT);
+    below_comps.sort((a, b) => b.pct_below - a.pct_below);
+    below_comps = below_comps.slice(0, BELOW_COMPS_LIMIT);
   }
 
   const top_sellers: SellerCard[] = (sellerQ.data ?? [])
@@ -407,7 +496,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     totals,
     combos,
     hottest_combo,
-    opportunities,
+    below_comps,
     top_sellers,
     regional_max_median: Math.max(
       ...combos.map((c) => c.median_ask ?? 0),
@@ -420,7 +509,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
 /**
  * For each combo in `combos`, count how many listings arrived on each of the
  * last COMBO_DAILY_WINDOW_DAYS days. Matching uses comboNameTokens, the same
- * tokenizer the opportunities path uses: every part of the combo name must
+ * tokenizer the comparison path uses: every part of the combo name must
  * appear in the listing's norm_traits/cached_traits.
  *
  * Arrivals are dated by first_listed_at, the date MorphMarket says the animal

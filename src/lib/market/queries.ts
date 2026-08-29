@@ -864,8 +864,13 @@ function supplyColor(): (combo: string) => string {
 // BreedersData shapes locally until widget-types carries the same fields.
 export type BreederRowLive = Omit<
   BreedersData["rows"][number],
-  "avgSoldPrice" | "avgDaysToSell" | "lineageScore"
+  "avgSoldPrice" | "avgDaysToSell" | "lineageScore" | "region"
 > & {
+  /** Null when the seller's location string could not be mapped, which is
+   *  most of them: about 85% of listings carry no location at all. It used to
+   *  default to "US", which then fed the "Top region" KPI, so the dashboard
+   *  reported a US-dominated market that was really an unparsed one. */
+  region: RegionKey | null;
   /** Mean of that seller's sold prices. Null when none of their sold listings
    *  carried one: it used to fall back to `market_sellers.avg_price`, which is
    *  an average asking price printed under a "sold" heading. */
@@ -880,9 +885,17 @@ export type BreederRowLive = Omit<
 
 export type BreedersDataLive = {
   rows: BreederRowLive[];
-  kpis: Omit<BreedersData["kpis"], "avgSoldPrice" | "avgDaysToSell"> & {
+  kpis: Omit<
+    BreedersData["kpis"],
+    "avgSoldPrice" | "avgDaysToSell" | "topRegion"
+  > & {
     avgSoldPrice: number | null;
     avgDaysToSell: number | null;
+    /** Null when no seller's location could be mapped at all. */
+    topRegion: RegionKey | null;
+    /** How many of the listed breeders had a location we could map, so the
+     *  KPI can say what it is a top region OF. */
+    regionMapped: number;
   };
 };
 
@@ -974,7 +987,7 @@ export async function fetchBreeders(
         daysArr.length === 0
           ? null
           : Math.round(daysArr.reduce((a, b) => a + b, 0) / daysArr.length);
-      const region = (regionOfText(s.seller_location) ?? "US") as RegionKey;
+      const region = regionOfText(s.seller_location) as RegionKey | null;
       // The pill says lineage, but nothing in this pipeline observes lineage:
       // the inputs are listing count, average asking price and feedback count,
       // so it is a coverage weight wearing the wrong name. It is null when the
@@ -1016,10 +1029,17 @@ export async function fetchBreeders(
         },
       };
     });
+    // Only sellers whose location actually parsed get a vote. Counting the
+    // unmapped ones as US is how "Top region: US" used to be manufactured out
+    // of missing data.
     const byRegion = new Map<RegionKey, number>();
-    for (const r of built) byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + 1);
-    const topRegion = ([...byRegion.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
-      "US") as RegionKey;
+    for (const r of built) {
+      if (!r.region) continue;
+      byRegion.set(r.region, (byRegion.get(r.region) ?? 0) + 1);
+    }
+    const regionMapped = built.filter((r) => r.region != null).length;
+    const topRegion =
+      [...byRegion.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
     // Both KPI averages skip the rows that have no value instead of counting
     // them as zero, and go null when no row has one at all.
     const soldPrices = built
@@ -1044,6 +1064,7 @@ export async function fetchBreeders(
         kpis: {
           totalBreeders: rows.length,
           topRegion,
+          regionMapped,
           avgSoldPrice: avgPx,
           avgDaysToSell: avgDays,
         },

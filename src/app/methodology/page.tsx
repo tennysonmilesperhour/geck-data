@@ -135,9 +135,13 @@ export default function MethodologyPage() {
           </p>
           <p className="mt-2 text-sm text-ink-300">
             Multi-animal listings (lots, packs, pairs, trios, group sales) are
-            flagged and excluded from per-animal medians, comps and discount
-            calculations, because their price covers several animals. They stay
-            visible when browsing.
+            flagged and excluded from per-animal medians and from the
+            comparisons described under{" "}
+            <Link href="#comparables" className="text-claude-glow hover:underline">
+              asking under comparables
+            </Link>
+            , because their price covers several animals. They stay visible
+            when browsing.
           </p>
         </Panel>
       </section>
@@ -344,6 +348,52 @@ export default function MethodologyPage() {
             not account for how old the data is, which is what the coverage
             note at the top of this page is for. A high confidence chip on a
             three month old number still means a three month old number.
+          </p>
+        </Panel>
+      </section>
+
+      <section id="comparables" className="scroll-mt-16">
+        <Panel title="Asking under comparables">
+          <p className="text-sm text-ink-300">
+            The landing page lists live ads asking at least 25% below the
+            median ask of the ads they are comparable to. Comparable is defined
+            narrowly, because the loose version of this list was wrong. It
+            previously measured each ad against its trait combo&apos;s median
+            across the whole 365 day catalogue, which pooled babies with
+            adults, freshly confirmed asks with asks last seen in spring, and
+            auctions and wholesale lots with single animals. The deepest
+            &quot;discounts&quot; that produced were not discounts: they were
+            young animals priced like young animals sitting next to a median
+            that carried adults. Age is the largest single price factor in this
+            dataset, and the medians separate hard.
+          </p>
+          <p className="mt-2 text-sm text-ink-300">
+            A comparison set is now one trait pair at one maturity, built only
+            from live single animals re-confirmed in the current ingest cycle,
+            with auctions excluded on both sides because an auction price is a
+            standing bid rather than an ask. A set has to hold at least five
+            such ads from at least three distinct sellers before it may price
+            anything, so one seller&apos;s price list cannot become the market
+            everything else is under. Trait pairs that are really one trait,
+            such as Extreme Harlequin with Harlequin, are refused outright.
+          </p>
+          <p className="mt-2 text-sm text-ink-300">
+            Most ads match several trait pairs. Each is measured against the
+            <em> cheapest</em> set it belongs to, so the percentage shown is the
+            smallest one the data supports rather than the largest one we could
+            have chosen. Very few sets clear all of this at once: of roughly
+            1,900 combo-and-age cells in the catalogue, about 34 currently
+            qualify, and an ad with no qualifying set for its own age class is
+            simply not listed. An empty panel means no claim is supported, not
+            that nothing is cheap.
+          </p>
+          <p className="mt-2 text-sm text-ink-300">
+            What this does not do is tell you whether something is worth
+            buying. Sex, weight, structure, lineage, health and pet-only
+            grading all move crested gecko prices and none of them are in this
+            dataset. Both sides of the comparison are asking prices, so a gap
+            can equally mean an underpriced animal, a flaw the photos show and
+            we cannot read, or a seller who is simply more motivated.
           </p>
         </Panel>
       </section>
