@@ -44,6 +44,13 @@ type DistRow = {
   p90: number | null;
   mean_usd: number | null;
   stddev_usd: number | null;
+  // Provenance for trait-band lookups (migration 0048). Absent on the
+  // canonical-combo path, which still reads v_combo_price_distribution.
+  n_captured?: number | null;
+  n_inferred?: number | null;
+  n_sellers?: number | null;
+  newest_sold_at?: string | null;
+  oldest_sold_at?: string | null;
 };
 
 type RecentSale = {
@@ -55,8 +62,11 @@ type RecentSale = {
   source_url: string | null;
 };
 
+// "Current" was doing a lot of work in the old wording. The newest sale of any
+// kind on record is 2026-06-07, so a caller quoting this is quoting a spring
+// market. Say that instead of implying a live read.
 const DISCLAIMER =
-  "Based on current MorphMarket sales trends. Actual value varies with the buyer's perception of pattern quality, parentage, and overall condition.";
+  "Based on the last observed asking prices of MorphMarket listings that went away, not on negotiated sale prices. Check the evidence block for how many sales the band rests on and how recent they are. Actual value varies with the buyer's perception of pattern quality, parentage, and overall condition.";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,25 +126,40 @@ async function lookupDistribution(comboId: string) {
   return { admin, error: null, row: data as DistRow | null };
 }
 
-/** Free-form trait-set lookup. Uses f_price_band_for_traits (migration 0034)
- *  to support ANY combination of traits, not just the 12 canonical combos.
- *  Returns the same DistRow shape as v_combo_price_distribution. */
+/** Free-form trait-set lookup across BOTH sold pools (migration 0048).
+ *
+ *  This used to call f_price_band_for_traits, which joins only
+ *  listing_status_events: 92 sold rows, all observed across four days in May
+ *  2026. A Lilly White lookup came back with 14 comps from 12 sellers and a
+ *  band whose p50 and p75 were both $400, which is what a dozen clustered
+ *  points look like when they are presented as a market. sold_price_band adds
+ *  the 2,840 inferred sales, taking the same lookup to 255 comps from 54
+ *  sellers with an actual distribution.
+ *
+ *  The two pools are counted separately on the way out so the response can say
+ *  what the band rests on. Neither pool is a negotiated sale price: both are
+ *  the last asking price observed before the listing went away. */
 async function lookupTraitBand(traits: string[]) {
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("f_price_band_for_traits", {
+  const { data, error } = await admin.rpc("sold_price_band", {
     p_traits: traits,
     p_lookback_days: 180,
+    p_include_inferred: true,
   });
   if (error) return { admin, error: error.message, row: null };
   const arr = (data ?? []) as Array<{
     n: number;
+    n_captured: number | null;
+    n_inferred: number | null;
     p10: number | null;
     p25: number | null;
     p50: number | null;
     p75: number | null;
     p90: number | null;
     mean_usd: number | null;
-    stddev_usd: number | null;
+    newest_sold_at: string | null;
+    oldest_sold_at: string | null;
+    n_sellers: number | null;
   }>;
   const first = arr[0];
   const row: DistRow | null =
@@ -148,7 +173,15 @@ async function lookupTraitBand(traits: string[]) {
           p75: first.p75,
           p90: first.p90,
           mean_usd: first.mean_usd,
-          stddev_usd: first.stddev_usd,
+          // Dispersion is no longer reported here. It was a real stddev, but
+          // the band's percentiles already carry the spread and the pools
+          // differ in kind, so one number across both would flatter the mix.
+          stddev_usd: null,
+          n_captured: first.n_captured ?? null,
+          n_inferred: first.n_inferred ?? null,
+          n_sellers: first.n_sellers ?? null,
+          newest_sold_at: first.newest_sold_at ?? null,
+          oldest_sold_at: first.oldest_sold_at ?? null,
         }
       : null;
   return { admin, error: null, row };
@@ -214,6 +247,18 @@ async function buildResponse(opts: {
       multiplier_total: total,
       confidence: confidence(row.n),
       note: DISCLAIMER,
+      // What the band actually rests on. A caller that shows a price without
+      // showing this is repeating a number from a market that has not been
+      // observed since June.
+      evidence: {
+        n_captured_sales: row.n_captured ?? null,
+        n_inferred_sales: row.n_inferred ?? null,
+        n_sellers: row.n_sellers ?? null,
+        newest_sale: row.newest_sold_at ?? null,
+        oldest_sale: row.oldest_sold_at ?? null,
+        price_basis:
+          "last asking price observed before the listing went away, not a negotiated sale price",
+      },
       recent_sales: opts.recentSalesN > 0 ? recentSales : undefined,
     },
   };

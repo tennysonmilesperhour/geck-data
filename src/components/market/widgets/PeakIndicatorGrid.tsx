@@ -55,7 +55,7 @@ export default function PeakIndicatorGrid({
           </span>
           <div>
             <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
-              Where asking prices sit against each combo's recent range
+              Where asking prices sit against each combo&apos;s recent range
             </h2>
             <p className="mt-0.5 text-xs text-forest-400">
               Composite 0 to 100 score built from observed asking prices, not
