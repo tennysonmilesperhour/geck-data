@@ -120,13 +120,74 @@ def normalize_sex(sex: Optional[str]) -> Optional[str]:
     return "unknown"
 
 
+# Property names MorphMarket exposes alongside the real morph tags. The
+# scrapers concatenate the whole additionalProperty list, so these leak in as
+# if they were traits ("Diet: Meal Replacement" was a top-10 "combo" before
+# migration 0039 cleaned it out). Mirror of the regex in
+# public._normalize_trait_csv(); keep the two in step.
+NON_TRAIT_KEYS = (
+    "diet", "proven breeder", "sex", "maturity", "weight", "birth date",
+    "birthdate", "hatched", "origin", "pet only", "lineage", "shipping",
+    "payment", "scientific name", "category",
+)
+
+_TRAIT_SPLIT_RE = re.compile(r"\s*[|,]\s*")
+
+
+def _is_non_trait(token: str) -> bool:
+    """True for 'Diet: Meal Replacement' and the bare 'Diet' form."""
+    head = token.split(":", 1)[0].strip().lower()
+    return head in NON_TRAIT_KEYS
+
+
+def trait_tokens(raw: Any) -> list[str]:
+    """Split a raw trait string into real morph tokens.
+
+    MorphMarket delimits with pipes, older CSV rows use commas, and a single
+    string can mix both ("Diet: Meal Replacement | Extreme Harlequin, Cream").
+    Split on either, drop the non-trait property segments, de-duplicate
+    case-insensitively while preserving order.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        parts = [str(t) for t in raw]
+    else:
+        text = str(raw).strip()
+        if not text:
+            return []
+        parts = _TRAIT_SPLIT_RE.split(text)
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        token = part.strip()
+        if not token or _is_non_trait(token):
+            continue
+        key = token.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(token)
+    return out
+
+
+def cached_traits_string(
+    trait_array: Optional[list[str]], traits_csv: Optional[str]
+) -> Optional[str]:
+    """Comma-delimited morph tokens for market_listings.cached_traits.
+
+    Comma delimited because that is what the 0037 combo views tokenize on.
+    Writing MorphMarket's pipes through verbatim (the pre-0039 behaviour)
+    made the whole string read as one opaque token, so no combo was ever
+    built from scraper rows.
+    """
+    tokens = trait_tokens(trait_array) or trait_tokens(traits_csv)
+    return ", ".join(tokens) if tokens else None
+
+
 def norm_traits_string(trait_array: Optional[list[str]], traits_csv: Optional[str]) -> Optional[str]:
     """Lowercase, space-joined trait token string used by the search UI."""
-    tokens: list[str] = []
-    if trait_array:
-        tokens = [str(t).strip() for t in trait_array if t and str(t).strip()]
-    elif traits_csv:
-        tokens = [t.strip() for t in traits_csv.split(",") if t.strip()]
+    tokens = trait_tokens(trait_array) or trait_tokens(traits_csv)
     if not tokens:
         return None
     return " ".join(t.lower() for t in tokens)
@@ -178,7 +239,9 @@ def transform_listing(row: dict[str, Any]) -> Optional[dict[str, Any]]:
         "description": row.get("description") or None,
         "price": price,
         "price_usd_equivalent": price if (row.get("currency") or "USD") == "USD" else None,
-        "cached_traits": row.get("traits") or None,
+        "cached_traits": cached_traits_string(
+            row.get("trait_array"), row.get("traits")
+        ),
         "norm_traits": norm_traits_string(
             row.get("trait_array"), row.get("traits")
         ),
