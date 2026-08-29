@@ -11,7 +11,7 @@ import { fmtInt } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 function pct(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "no data";
   return `${(n * 100).toFixed(1)}%`;
 }
 
@@ -174,7 +174,7 @@ export default async function EvalsPage() {
                       <StatusBadge status={r.status} />
                     </td>
                     <td className="px-3 py-2 font-mono text-[11px] text-ink-300">
-                      {r.model ?? "—"}
+                      {r.model ?? "no data"}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {fmtInt(r.eval_set_size)}

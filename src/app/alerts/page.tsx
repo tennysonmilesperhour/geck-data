@@ -143,7 +143,7 @@ export default async function AlertsPage() {
             </div>
           );
         }
-        return "—";
+        return "no data";
       },
     },
     {

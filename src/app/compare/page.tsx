@@ -251,7 +251,7 @@ export default async function ComparePage({
       key: "loc",
       header: "Location",
       render: (row) => (
-        <span className="text-ink-400">{row.seller.seller_location ?? "—"}</span>
+        <span className="text-ink-400">{row.seller.seller_location ?? "no data"}</span>
       ),
     },
     {
@@ -259,7 +259,7 @@ export default async function ComparePage({
       header: "Tier",
       render: (row) => (
         <span className="font-mono text-[11px] text-ink-300">
-          {row.seller.membership ?? "—"}
+          {row.seller.membership ?? "no data"}
         </span>
       ),
     },
@@ -367,7 +367,7 @@ export default async function ComparePage({
                     {s.display}
                   </Link>
                   <div className="relative mt-2 font-display text-[26px] font-medium tabular-nums text-ink-50">
-                    {s.current ? fmtUsd(s.current) : "—"}
+                    {s.current ? fmtUsd(s.current) : "no data"}
                   </div>
                   <div className="relative mt-1 flex items-center gap-3 font-mono text-[11px] tabular-nums">
                     <span
@@ -379,7 +379,7 @@ export default async function ComparePage({
                             : "text-danger"
                       }
                     >
-                      7d {s.delta7 == null ? "—" : `${s.delta7 >= 0 ? "+" : ""}${s.delta7.toFixed(1)}%`}
+                      7d {s.delta7 == null ? "no data" : `${s.delta7 >= 0 ? "+" : ""}${s.delta7.toFixed(1)}%`}
                     </span>
                     <span
                       className={
@@ -390,7 +390,7 @@ export default async function ComparePage({
                             : "text-danger"
                       }
                     >
-                      30d {s.delta30 == null ? "—" : `${s.delta30 >= 0 ? "+" : ""}${s.delta30.toFixed(1)}%`}
+                      30d {s.delta30 == null ? "no data" : `${s.delta30 >= 0 ? "+" : ""}${s.delta30.toFixed(1)}%`}
                     </span>
                   </div>
                   <div className="relative mt-2 -mx-1">

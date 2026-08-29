@@ -195,7 +195,7 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     title: "Days-to-sell distribution",
     subtitle: "How long sold listings sat on the market before flipping.",
     description:
-      "Histogram of `days_to_sell` from the sold_listings_v view, clamped to 0–365 days. Median line overlaid.",
+      "Histogram of `days_to_sell` from v_sold_reconciled, clamped to 0 through 365 days, taken over whichever evidence pool the page has selected. Median line overlaid. Rows whose listing was first seen and last seen inside the same hour carry no measurable time on market and are excluded rather than plotted as a same-day sale.",
     category: "activity",
     pages: ["sold"],
     render: (ctx) => <DaysToSellHistogram days={pickDays(ctx)} />,

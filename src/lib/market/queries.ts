@@ -1020,7 +1020,7 @@ export async function fetchBreeders(
             ? Math.round(soldAgg.sumPx / soldAgg.priced)
             : null,
         avgDaysToSell: avgDays,
-        specialty: "—" as BreedersData["rows"][number]["specialty"],
+        specialty: "no data" as BreedersData["rows"][number]["specialty"],
         velocity: [],
         lineageScore,
         attribution: {

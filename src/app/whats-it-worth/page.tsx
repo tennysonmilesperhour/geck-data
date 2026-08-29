@@ -441,7 +441,7 @@ function Result({ data }: { data: ApiResponse }) {
             {data.recent_sales.map((s) => (
               <li key={s.listing_id} className="flex items-center justify-between gap-3 py-2 text-sm">
                 <span className="font-mono text-forest-100">
-                  ${s.sold_usd ? Math.round(s.sold_usd).toLocaleString() : "—"}
+                  ${s.sold_usd ? Math.round(s.sold_usd).toLocaleString() : "no data"}
                 </span>
                 <span className="flex-1 truncate text-xs text-forest-400">
                   {s.cached_traits ?? ""}

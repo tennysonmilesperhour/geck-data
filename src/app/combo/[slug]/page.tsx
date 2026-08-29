@@ -53,8 +53,13 @@ type SoldRow = {
   price_usd_equivalent: number | null;
   sold_at: string | null;
   days_to_sell: number | null;
+  seller_id: string | null;
   seller_name: string | null;
-  url: string | null;
+  // 'captured_event' means the pipeline watched the listing flip to sold.
+  // 'inferred_unseen' means the catalogue walk stopped seeing it and a sale
+  // is inferred from the absence. Different evidence, so it travels with the
+  // row rather than being flattened away into one "sold" count.
+  sold_basis: string | null;
 };
 
 type PriceRow = { observed_at: string; price_usd_equivalent: number | null; price: number | null };
@@ -149,11 +154,18 @@ export default async function ComboPage({
     liveQuery = liveQuery.ilike("cached_traits", `%${t}%`);
   }
 
+  // v_sold_reconciled (migration 0045) rather than sold_listings_v. The old
+  // view joined only listing_status_events, which holds 92 rows from four days
+  // in May, so this table was near-empty for every combo while 2,840 inferred
+  // sales from May and June sat unused. The reconciled view carries both pools
+  // and tags each row with the evidence behind it. Group lots price several
+  // animals at once and cannot sit in a per-animal comp.
   let soldQuery = supabase
-    .from("sold_listings_v")
+    .from("v_sold_reconciled")
     .select(
-      "id, title, price, price_usd_equivalent, cached_traits, sold_at, days_to_sell, seller_name, source_url",
+      "id, seller_id, title, price, price_usd_equivalent, cached_traits, sold_at, days_to_sell, sold_basis",
     )
+    .eq("is_group_lot", false)
     .order("sold_at", { ascending: false })
     .limit(200);
   for (const t of combo.traits) {
@@ -165,9 +177,34 @@ export default async function ComboPage({
   // the listing ids first, then pull price_history for those.
   const [liveRes, soldRes] = await Promise.all([liveQuery, soldQuery]);
   const liveRows = (liveRes.data ?? []) as ListingRow[];
-  const soldRows = (soldRes.data ?? []) as Array<
-    SoldRow & { cached_traits: string | null; source_url: string | null }
+  // v_sold_reconciled carries seller_id but not the display name, so names
+  // come from market_sellers in one follow-up read keyed on the ids actually
+  // present. A missing name is left null and rendered as "unknown seller"
+  // rather than being filled in with the id.
+  const soldRaw = (soldRes.data ?? []) as Array<
+    Omit<SoldRow, "seller_name"> & { cached_traits: string | null }
   >;
+  const soldSellerIds = Array.from(
+    new Set(soldRaw.map((r) => r.seller_id).filter((v): v is string => !!v)),
+  );
+  const soldSellerNames = new Map<string, string>();
+  if (soldSellerIds.length > 0) {
+    const { data: sellerRows } = await supabase
+      .from("market_sellers")
+      .select("seller_id, seller_name")
+      .in("seller_id", soldSellerIds);
+    for (const sr of (sellerRows ?? []) as Array<{
+      seller_id: string;
+      seller_name: string | null;
+    }>) {
+      if (sr.seller_name) soldSellerNames.set(sr.seller_id, sr.seller_name);
+    }
+  }
+  const soldRows: Array<SoldRow & { cached_traits: string | null }> =
+    soldRaw.map((r) => ({
+      ...r,
+      seller_name: r.seller_id ? (soldSellerNames.get(r.seller_id) ?? null) : null,
+    }));
 
   // Apply server-side canonical filters (region/age/sex/price band)
   // on the live list. We do not narrow the sold history by region;
@@ -312,7 +349,7 @@ export default async function ComboPage({
       width: "16%",
       render: (r) => (
         <span className="block truncate text-ink-300">
-          {r.seller_location ?? "—"}
+          {r.seller_location ?? "no data"}
         </span>
       ),
     },
@@ -320,13 +357,13 @@ export default async function ComboPage({
       key: "maturity",
       header: "Age",
       width: "8%",
-      render: (r) => <span className="text-ink-300 capitalize">{r.maturity ?? "—"}</span>,
+      render: (r) => <span className="text-ink-300 capitalize">{r.maturity ?? "no data"}</span>,
     },
     {
       key: "sex",
       header: "Sex",
       width: "8%",
-      render: (r) => <span className="text-ink-300 capitalize">{r.sex ?? "—"}</span>,
+      render: (r) => <span className="text-ink-300 capitalize">{r.sex ?? "no data"}</span>,
     },
     {
       key: "price",
@@ -362,28 +399,37 @@ export default async function ComboPage({
     {
       key: "title",
       header: "Listing",
-      render: (r) =>
-        r.url ? (
-          <a href={r.url} target="_blank" rel="noreferrer" className="text-ink-100 hover:text-claude-glow">
-            {r.title ?? r.id}
-          </a>
-        ) : (
-          <Link href={`/listings/${r.id}`} className="text-ink-100 hover:text-claude-glow">
-            {r.title ?? r.id}
-          </Link>
-        ),
+      render: (r) => (
+        <Link href={`/listings/${r.id}`} className="text-ink-100 hover:text-claude-glow">
+          {r.title ?? r.id}
+        </Link>
+      ),
     },
     {
       key: "seller",
       header: "Seller",
-      render: (r) => <span className="text-ink-300">{r.seller_name ?? "—"}</span>,
+      render: (r) => (
+        <span className="text-ink-300">{r.seller_name ?? "unknown seller"}</span>
+      ),
+    },
+    {
+      key: "basis",
+      header: "Evidence",
+      render: (r) =>
+        r.sold_basis === "captured_event" ? (
+          <span className="text-ink-300">observed sold</span>
+        ) : (
+          <span className="text-ink-400" title="The catalogue walk stopped seeing the listing, so a sale is inferred from its absence. The seller may simply have pulled it.">
+            inferred
+          </span>
+        ),
     },
     {
       key: "sold_at",
       header: "Sold",
       render: (r) => (
         <span className="text-ink-400">
-          {r.sold_at ? new Date(r.sold_at).toLocaleDateString() : "—"}
+          {r.sold_at ? new Date(r.sold_at).toLocaleDateString() : "no data"}
         </span>
       ),
     },
@@ -393,7 +439,7 @@ export default async function ComboPage({
       align: "right",
       render: (r) => (
         <span className="font-mono tabular-nums text-ink-300">
-          {r.days_to_sell != null ? `${r.days_to_sell}d` : "—"}
+          {r.days_to_sell != null ? `${r.days_to_sell}d` : "no data"}
         </span>
       ),
     },
@@ -404,7 +450,7 @@ export default async function ComboPage({
       render: (r) => {
         const p = priceOf(r);
         return (
-          <span className="font-mono tabular-nums">{p ? fmtUsd(p) : "—"}</span>
+          <span className="font-mono tabular-nums">{p ? fmtUsd(p) : "no data"}</span>
         );
       },
     },
@@ -467,16 +513,16 @@ export default async function ComboPage({
       />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "—"} sub={`${fmtInt(livePrices.length)} live`} />
-        <KpiCard label="Median sold" value={medianSold ? fmtUsd(medianSold) : "—"} sub={`${fmtInt(soldPrices.length)} sold (180d)`} tone="positive" />
+        <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "no data"} sub={`${fmtInt(livePrices.length)} live`} />
+        <KpiCard label="Median sold" value={medianSold ? fmtUsd(medianSold) : "no data"} sub={`${fmtInt(soldPrices.length)} sold (180d)`} tone="positive" />
         <KpiCard
           label="Ask vs sold"
-          value={spreadPct == null ? "—" : `${spreadPct >= 0 ? "+" : ""}${spreadPct}%`}
+          value={spreadPct == null ? "no data" : `${spreadPct >= 0 ? "+" : ""}${spreadPct}%`}
           tone={spreadPct != null && spreadPct > 25 ? "negative" : "default"}
           sub={spreadPct == null ? "no sold comps" : "ask above sold median"}
         />
         <KpiCard label="Live count" value={fmtInt(filteredLive.length)} sub="this combo + filters" />
-        <KpiCard label="Median days to sell" value={medianDays ? `${medianDays}d` : "—"} sub="from sold-history" />
+        <KpiCard label="Median days to sell" value={medianDays ? `${medianDays}d` : "no data"} sub="from sold-history" />
       </section>
 
       <Panel
@@ -616,7 +662,7 @@ export default async function ComboPage({
                     {code}
                   </Link>
                   <span className="font-mono tabular-nums text-ink-300">{fmtInt(arr.length)}</span>
-                  <span className="font-mono tabular-nums text-ink-400">{med ? fmtUsd(med) : "—"}</span>
+                  <span className="font-mono tabular-nums text-ink-400">{med ? fmtUsd(med) : "no data"}</span>
                 </li>
               );
             })}
@@ -625,7 +671,7 @@ export default async function ComboPage({
       </div>
 
       <SourceFootnote
-        sources={["market_listings", "sold_listings_v", "price_history"]}
+        sources={["market_listings", "v_sold_reconciled", "price_history"]}
         n={filteredLive.length + soldRows.length}
         methodologyAnchor="combo-index"
       />

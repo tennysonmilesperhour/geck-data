@@ -14,8 +14,10 @@ scraper produces) and it writes:
 
   - public.market_listings  (one upsert per listing, PK = id)
   - public.market_sellers   (one upsert per unique seller in the batch)
-  - public.price_history    (one insert per observation; idempotent within
-                             a run via (listing_id, observed_at) dedupe)
+  - public.price_history    (one row per observation, keyed on
+                             (listing_id, observed_at); duplicates are
+                             dropped inside the batch and again by the
+                             unique index in migration 0050)
 
 ID convention: market_listings.id is stored as "mm_<numeric>" to match the
 Eye in the Sky extension's convention. Legacy bare-numeric rows in
@@ -511,17 +513,36 @@ def upsert_canonical_from_listings(
                     f"market_listings upsert failed ({len(batch)} rows): {exc}"
                 )
 
-    # 3. price_history (insert-only; the table has no natural unique key,
-    #    so duplicates are merely noisy, not fatal).
-    for batch in _chunked(price_payloads, PRICE_HISTORY_BATCH):
+    # 3. price_history. Keyed on (listing_id, observed_at) since migration
+    #    0050. Two things follow from that key and both matter here.
+    #
+    #    Duplicates inside one batch have to go first: two rows with the same
+    #    key in a single ON CONFLICT statement is an error, not a merge, and
+    #    it would fail the whole batch rather than the offending row. Keeping
+    #    the last occurrence matches the loop above, which builds the payloads
+    #    in row order.
+    #
+    #    The write is then an upsert that ignores conflicts rather than an
+    #    insert. A scraper pass is a passive re-observation, so it must not
+    #    overwrite an explicit price-change event already recorded at the same
+    #    instant by the ingest API. Re-running a backfill is now a no-op here
+    #    instead of a second copy of every observation.
+    deduped_prices = {
+        (p["listing_id"], p["observed_at"]): p for p in price_payloads
+    }
+    for batch in _chunked(list(deduped_prices.values()), PRICE_HISTORY_BATCH):
         try:
-            supabase.table("price_history").insert(batch).execute()
+            supabase.table("price_history").upsert(
+                batch,
+                on_conflict="listing_id,observed_at",
+                ignore_duplicates=True,
+            ).execute()
             stats.price_history_inserted += len(batch)
         except APIError as exc:
             stats.price_history_failed += len(batch)
             if logger:
                 logger.warning(
-                    f"price_history insert failed ({len(batch)} rows): {exc}"
+                    f"price_history upsert failed ({len(batch)} rows): {exc}"
                 )
 
     # 4. price_drops — one row per listing whose price moved DOWN. Uses the

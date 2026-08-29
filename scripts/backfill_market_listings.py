@@ -9,12 +9,14 @@ closes that gap once. After it runs, every public route shows the full
 dataset.
 
 Safe to re-run: every write is an UPSERT keyed on a natural id, so re-runs
-just refresh fields without duplicating rows. price_history is insert-only
-but uses a (listing_id, observed_at) dedupe filter to avoid re-observing
-the same scrape at the same timestamp.
+just refresh fields without duplicating rows. That now includes price_history,
+which is keyed on (listing_id, observed_at) and takes the upsert as a no-op
+when the same scrape at the same timestamp is written twice. Before migration
+0050 it was a plain insert against a table with no unique key, and re-runs did
+duplicate observations.
 
 Usage:
-  # plan only — no writes
+  # plan only, no writes
   python scripts/backfill_market_listings.py --dry-run
 
   # write the first 50 rows so you can eyeball the result before committing
@@ -26,7 +28,7 @@ Usage:
   # only rows scraped after a date (smaller delta)
   python scripts/backfill_market_listings.py --since 2026-05-01
 
-  # skip the price_history insert (run only the listings + sellers upsert)
+  # skip the price_history write (run only the listings + sellers upsert)
   python scripts/backfill_market_listings.py --skip-price-history
 """
 from __future__ import annotations
@@ -88,7 +90,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--skip-price-history",
         action="store_true",
-        help="Skip the price_history insert.",
+        help="Skip the price_history write.",
     )
     return p.parse_args()
 

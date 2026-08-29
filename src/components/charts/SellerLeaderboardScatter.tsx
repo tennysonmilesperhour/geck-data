@@ -207,7 +207,7 @@ export default function SellerLeaderboardScatter({ data }: { data: Seller[] }) {
           `${d.seller_name ?? d.seller_id}\n${d.seller_location ?? ""}\n` +
           `feedback: ${d.feedback_count ?? d.seller_rating_score} · ` +
           `listings: ${d.total_listings} · avg $${d3.format(",.0f")(d.avg_price!)}\n` +
-          `membership: ${d.membership ?? "—"}`,
+          `membership: ${d.membership ?? "no data"}`,
       );
 
     // Label the top sellers by current inventory so the chart reads

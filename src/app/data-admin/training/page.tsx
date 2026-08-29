@@ -298,7 +298,7 @@ export default async function MorphIdTrainingPage() {
                   <td className="px-3 py-2 text-ink-100">{t.canonical_name}</td>
                   <td className="px-3 py-2 text-ink-300">{t.category}</td>
                   <td className="px-3 py-2 text-xs text-ink-400">
-                    {(t.synonyms ?? []).join(", ") || "—"}
+                    {(t.synonyms ?? []).join(", ") || "no data"}
                   </td>
                 </tr>
               ))}

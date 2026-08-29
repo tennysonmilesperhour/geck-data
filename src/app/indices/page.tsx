@@ -224,7 +224,7 @@ export default async function IndicesPage({
       align: "right",
       render: (r) => (
         <span className="font-mono tabular-nums">
-          {r.current_value ? fmtUsd(Number(r.current_value)) : "—"}
+          {r.current_value ? fmtUsd(Number(r.current_value)) : "no data"}
         </span>
       ),
     },
@@ -352,7 +352,7 @@ export default async function IndicesPage({
                     {a.name}
                   </div>
                   <div className="relative mt-1 font-display text-[22px] font-medium tabular-nums text-ink-50">
-                    {a.median ? fmtUsd(a.median) : "—"}
+                    {a.median ? fmtUsd(a.median) : "no data"}
                   </div>
                   <div className="relative mt-0.5 font-mono text-[11px] text-ink-400">
                     {fmtInt(a.n)} listings · median

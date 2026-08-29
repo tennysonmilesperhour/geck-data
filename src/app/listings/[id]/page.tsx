@@ -136,7 +136,7 @@ export default async function ListingDetailPage({
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="font-mono text-[11px] uppercase tracking-wider text-ink-400">
-            {listing.species ?? "unknown"} · {listing.current_status ?? "—"}
+            {listing.species ?? "unknown"} · {listing.current_status ?? "no data"}
           </div>
           <h1 className="font-display text-2xl text-ink-50">
             {listing.title ?? listing.id}
@@ -155,7 +155,7 @@ export default async function ListingDetailPage({
               ? `$${Math.round(listing.price_usd_equivalent).toLocaleString()}`
               : listing.price
                 ? `${listing.price}`
-                : "—"}
+                : "no data"}
           </div>
           {listing.url && (
             <a
@@ -243,7 +243,7 @@ export default async function ListingDetailPage({
                       conf{" "}
                       {s.inference_confidence != null
                         ? s.inference_confidence.toFixed(2)
-                        : "—"}
+                        : "no data"}
                     </span>
                   </li>
                 ))
@@ -260,12 +260,12 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   return (
     <>
       <dt className="text-ink-400">{label}</dt>
-      <dd className="font-mono text-ink-200">{value ?? "—"}</dd>
+      <dd className="font-mono text-ink-200">{value ?? "no data"}</dd>
     </>
   );
 }
 
 function fmtDate(v: string | null | undefined): string {
-  if (!v) return "—";
+  if (!v) return "no data";
   return new Date(v).toLocaleString();
 }

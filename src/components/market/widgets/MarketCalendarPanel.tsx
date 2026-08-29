@@ -75,7 +75,7 @@ function Dot({ kind }: { kind: CalendarEntry["kind"] }) {
 
 function labelDate(iso: string): string {
   const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "—";
+  if (Number.isNaN(t)) return "no data";
   const now = Date.now();
   const diffDays = Math.round((t - now) / 86_400_000);
   if (diffDays < 0 && diffDays >= -60) return `${-diffDays}d ago`;

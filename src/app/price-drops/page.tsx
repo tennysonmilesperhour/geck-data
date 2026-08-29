@@ -121,7 +121,7 @@ export default async function PriceDropsPage() {
     // Seller column removed: market_listings rows created via priceDrop
     // events arrive as stubs (id only) without seller info, and the
     // ingest stream rarely backfills seller_id for these specific rows.
-    // The result was a column of "—" placeholders that read as a layout
+    // The result was a column of "no data" placeholders that read as a layout
     // bug. Restore once handlePriceDrop hydrates seller info — see
     // src/lib/ingest/events.ts handlePriceDrop, around the
     // ensureListingStub call: it could pull the parent listing's seller
@@ -165,7 +165,7 @@ export default async function PriceDropsPage() {
         <KpiCard label="Average discount" value={fmtPct(avgPct)} />
         <KpiCard
           label="Biggest drop"
-          value={biggest ? fmtPct(biggest.pct_change) : "—"}
+          value={biggest ? fmtPct(biggest.pct_change) : "no data"}
           sub={biggest?.market_listings?.title ?? biggest?.listing_id ?? undefined}
           tone="negative"
         />

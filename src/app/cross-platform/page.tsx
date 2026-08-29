@@ -105,14 +105,14 @@ export default async function CrossPlatformPage() {
               (r.title ?? "(untitled)")
             )}
           </div>
-          <div className="text-xs text-ink-400">{r.seller_name ?? "—"}</div>
+          <div className="text-xs text-ink-400">{r.seller_name ?? "no data"}</div>
         </div>
       ),
     },
     {
       key: "location",
       header: "Location",
-      render: (r) => r.seller_location ?? "—",
+      render: (r) => r.seller_location ?? "no data",
     },
     {
       key: "price",
@@ -162,12 +162,12 @@ export default async function CrossPlatformPage() {
         <KpiCard label="Platforms" value={platforms.length} />
         <KpiCard
           label="Top platform"
-          value={platforms[0] ? PLATFORM_LABELS[platforms[0].platform] ?? platforms[0].platform : "—"}
+          value={platforms[0] ? PLATFORM_LABELS[platforms[0].platform] ?? platforms[0].platform : "no data"}
           sub={platforms[0] ? `${platforms[0].count} listings` : undefined}
         />
         <KpiCard
           label="Latest"
-          value={rows.length > 0 ? fmtRelative(rows[0].last_seen_at) : "—"}
+          value={rows.length > 0 ? fmtRelative(rows[0].last_seen_at) : "no data"}
         />
       </div>
 

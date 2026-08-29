@@ -60,7 +60,7 @@ export default function FeaturedSellerCard({
         />
         <Stat
           label="Rating"
-          value={rating != null ? rating.toFixed(2) : "—"}
+          value={rating != null ? rating.toFixed(2) : "no data"}
         />
       </div>
 

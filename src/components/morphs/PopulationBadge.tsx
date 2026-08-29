@@ -41,8 +41,8 @@ export default function PopulationBadge({
   tone?: "ink" | "forest";
   className?: string;
 }) {
-  const liveN = typeof live === "number" ? fmtInt(live) : "—";
-  const soldN = typeof sold === "number" ? fmtInt(sold) : "—";
+  const liveN = typeof live === "number" ? fmtInt(live) : "no data";
+  const soldN = typeof sold === "number" ? fmtInt(sold) : "no data";
   const muted = tone === "forest" ? "text-forest-500" : "text-ink-500";
   const accent = tone === "forest" ? "text-forest-100" : "text-ink-100";
   return (

@@ -251,13 +251,13 @@ function ComboCell({
           <div className="flex justify-between gap-3">
             <dt className="text-ink-400">Median sold</dt>
             <dd className="text-ink-200">
-              {row.median_sold != null ? fmtUsd(row.median_sold) : "—"}
+              {row.median_sold != null ? fmtUsd(row.median_sold) : "no data"}
             </dd>
           </div>
           <div className="flex justify-between gap-3">
             <dt className="text-ink-400">Median ask</dt>
             <dd className="text-ink-200">
-              {row.median_ask != null ? fmtUsd(row.median_ask) : "—"}
+              {row.median_ask != null ? fmtUsd(row.median_ask) : "no data"}
             </dd>
           </div>
           <div className="flex justify-between gap-3">

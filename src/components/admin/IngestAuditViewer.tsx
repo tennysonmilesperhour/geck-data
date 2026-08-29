@@ -231,7 +231,7 @@ export default function IngestAuditViewer() {
                       </span>
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-xs text-ink-300">
-                      {r.duration_ms != null ? `${r.duration_ms} ms` : "—"}
+                      {r.duration_ms != null ? `${r.duration_ms} ms` : "no data"}
                     </td>
                     <td className="px-3 py-1.5 text-xs">
                       {r.error_summary ? (

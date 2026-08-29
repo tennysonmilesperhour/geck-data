@@ -142,7 +142,8 @@ export function activeUsersInWindow(
 // Cols: W+1..W+4 follow-up weeks. A user is "retained in W+N" iff they
 // produced any user_events row during that week.
 //
-// Incomplete weeks are returned as `null` so the renderer can draw "—".
+// Incomplete weeks are returned as `null` so the renderer can label them
+// "incomplete" rather than plotting a partial number as a real one.
 // ----------------------------------------------------------------------------
 export type CohortCell = {
   active: number;

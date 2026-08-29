@@ -97,7 +97,7 @@ export default async function AnchorIndicesStrip() {
                 {t.trait}
               </div>
               <div className="relative mt-1 font-display text-[20px] font-medium tabular-nums text-ink-50">
-                {median ? `$${median.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
+                {median ? `$${median.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "no data"}
               </div>
               <div className="relative mt-0.5 font-mono text-[10px] text-ink-500">
                 {n.toLocaleString()} listings · median

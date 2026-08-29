@@ -172,7 +172,7 @@ async function sendTo(
             description: p.reason,
             fields: [
               { name: "Listing", value: p.listing_id, inline: true },
-              { name: "Price (USD)", value: p.price_usd != null ? `$${p.price_usd}` : "—", inline: true },
+              { name: "Price (USD)", value: p.price_usd != null ? `$${p.price_usd}` : "no data", inline: true },
               { name: "Trigger", value: p.trigger, inline: true },
             ],
           },

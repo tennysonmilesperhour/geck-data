@@ -1,6 +1,6 @@
 "use client";
 // Retention tab — weekly signup cohort × W+1..W+4 follow-up activity.
-// Incomplete weeks render "—" so a half-elapsed week can't be misread as a
+// Incomplete weeks render "incomplete" so a half-elapsed week can't be misread as a
 // retention cliff. Cell color saturates at 60% (the source app's pragmatic
 // ceiling — few SaaS products hit 100% weekly retention).
 import { useMemo } from "react";
@@ -41,7 +41,7 @@ export default function RetentionTab({ data }: { data: DataBundle | null }) {
   return (
     <Panel
       title="Weekly retention"
-      subtitle="Rows are signup weeks (Monday-aligned). Columns are W+1..W+4. Incomplete weeks render as —; color saturates at 60%."
+      subtitle="Rows are signup weeks (Monday-aligned). Columns are W+1 through W+4. A week still in progress is labelled incomplete rather than plotted, so a half-elapsed week cannot read as a retention cliff. Color saturates at 60%."
     >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -72,7 +72,7 @@ export default function RetentionTab({ data }: { data: DataBundle | null }) {
                         key={i}
                         className="px-3 py-2 text-center font-mono text-xs text-ink-500"
                       >
-                        —
+                        incomplete
                       </td>
                     );
                   }

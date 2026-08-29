@@ -301,7 +301,7 @@ export default async function DailyLogPage() {
                           </div>
                         </div>
                         <div className="w-28 text-right font-mono text-[12px] tabular-nums">
-                          {active ? fmtInt(b!.count) : "—"}
+                          {active ? fmtInt(b!.count) : "no data"}
                         </div>
                         <div className="w-28 text-right font-mono text-[11px] text-ink-500">
                           {active ? fmtRelative(b!.latest) : "no activity"}

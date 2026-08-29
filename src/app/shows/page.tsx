@@ -112,7 +112,7 @@ export default async function ShowsPage() {
       key: "context",
       header: "Context",
       render: (r) => (
-        <span className="line-clamp-2 text-ink-200">{r.context ?? "—"}</span>
+        <span className="line-clamp-2 text-ink-200">{r.context ?? "no data"}</span>
       ),
     },
     {
@@ -129,7 +129,7 @@ export default async function ShowsPage() {
             open ↗
           </a>
         ) : (
-          "—"
+          "no data"
         ),
     },
     { key: "when", header: "Seen", render: (r) => fmtRelative(r.observed_at) },
@@ -148,12 +148,12 @@ export default async function ShowsPage() {
         <KpiCard label="Total mentions" value={rows.length} />
         <KpiCard
           label="Top show"
-          value={shows[0]?.show_name ?? "—"}
+          value={shows[0]?.show_name ?? "no data"}
           sub={shows[0] ? `${shows[0].mentions} mentions` : undefined}
         />
         <KpiCard
           label="Most recent"
-          value={shows.length > 0 ? fmtRelative(shows[0].last_seen) : "—"}
+          value={shows.length > 0 ? fmtRelative(shows[0].last_seen) : "no data"}
         />
       </div>
 

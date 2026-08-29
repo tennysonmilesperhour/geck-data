@@ -217,7 +217,7 @@ export default async function MonthlyReport({ params }: { params: Params }) {
         <KpiCard label="Sold events" value={fmtInt(soldCount)} sub="this month" tone="positive" />
         <KpiCard
           label="Supply / demand"
-          value={supplyDemand != null ? `${supplyDemand.toFixed(1)}:1` : "—"}
+          value={supplyDemand != null ? `${supplyDemand.toFixed(1)}:1` : "no data"}
           sub="added vs sold"
           tone={supplyDemand != null && supplyDemand > 5 ? "negative" : "default"}
         />

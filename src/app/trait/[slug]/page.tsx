@@ -239,7 +239,7 @@ export default async function TraitPage({
       width: "18%",
       render: (r) => (
         <span className="block truncate text-ink-300">
-          {r.seller_location ?? "—"}
+          {r.seller_location ?? "no data"}
         </span>
       ),
     },
@@ -248,7 +248,7 @@ export default async function TraitPage({
       header: "Age",
       width: "10%",
       render: (r) => (
-        <span className="text-ink-300 capitalize">{r.maturity ?? "—"}</span>
+        <span className="text-ink-300 capitalize">{r.maturity ?? "no data"}</span>
       ),
     },
     {
@@ -258,7 +258,7 @@ export default async function TraitPage({
       width: "12%",
       render: (r) => {
         const p = priceOf(r);
-        return <span className="font-mono tabular-nums text-ink-100">{p ? fmtUsd(p) : "—"}</span>;
+        return <span className="font-mono tabular-nums text-ink-100">{p ? fmtUsd(p) : "no data"}</span>;
       },
     },
   ];
@@ -287,7 +287,7 @@ export default async function TraitPage({
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Live listings" value={fmtInt(liveFiltered.length)} sub="active, matches trait" />
-        <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "—"} sub="from filtered set" />
+        <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "no data"} sub="from filtered set" />
         <KpiCard
           label="Recorded sales"
           value={fmtInt(soldRows.length)}
@@ -372,7 +372,7 @@ export default async function TraitPage({
       )}
 
       <SourceFootnote
-        sources={["market_listings (trait substring match)", "sold_listings_v"]}
+        sources={["market_listings (trait substring match)", "v_sold_reconciled"]}
         n={liveFiltered.length + soldRows.length}
         methodologyAnchor="sub-index"
       />

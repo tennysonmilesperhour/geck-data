@@ -307,10 +307,10 @@ export default async function StatusPage() {
                     <div className="mt-0.5 text-xs text-ink-400">{r.stream.note}</div>
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-ink-200">
-                    {r.last7d == null ? "—" : fmtInt(r.last7d)}
+                    {r.last7d == null ? "no data" : fmtInt(r.last7d)}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-ink-300">
-                    {r.total == null ? "—" : fmtInt(r.total)}
+                    {r.total == null ? "no data" : fmtInt(r.total)}
                   </td>
                   <td className="px-4 py-3 font-mono text-[12px] text-ink-300">
                     {r.error ? (

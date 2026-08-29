@@ -62,16 +62,6 @@ type ListingRow = {
   current_status: string | null;
 };
 
-type SoldRow = {
-  id: string;
-  price: number | null;
-  price_usd_equivalent: number | null;
-  cached_traits: string | null;
-  sold_at: string | null;
-  days_to_sell: number | null;
-  seller_name: string | null;
-};
-
 function priceOf(r: { price: number | null; price_usd_equivalent: number | null }): number | null {
   const p = r.price_usd_equivalent ?? r.price;
   return p && p > 0 && p < 100_000 ? p : null;
@@ -104,7 +94,15 @@ export default async function RegionPage({
   const filters = parseFilters(searchParams);
 
   const supabase = createClient();
-  const [liveRes, soldRes, sellersRes] = await Promise.all([
+  // No sold pool is read here. There was one, against sold_listings_v, pulling
+  // 3,000 rows on every region page load: it was filtered with a predicate that
+  // returned true for every row and then never referenced again, so the page
+  // paid for the fetch and displayed nothing from it. A genuinely regional sold
+  // figure needs seller_location, which the sold views reach only through
+  // seller_id, and just 395 of 2,932 reconciled sold rows carry one. That is
+  // too thin to put a regional number on, so the page shows none rather than
+  // relabelling a global total as regional.
+  const [liveRes, sellersRes] = await Promise.all([
     supabase
       .from("market_listings")
       .select(
@@ -112,13 +110,6 @@ export default async function RegionPage({
       )
       .eq("current_status", "live")
       .limit(8000),
-    supabase
-      .from("sold_listings_v")
-      .select(
-        "id, price, price_usd_equivalent, cached_traits, sold_at, days_to_sell, seller_name",
-      )
-      .order("sold_at", { ascending: false })
-      .limit(3000),
     supabase
       .from("market_sellers")
       .select(
@@ -128,7 +119,6 @@ export default async function RegionPage({
   ]);
 
   const liveAll = (liveRes.data ?? []) as ListingRow[];
-  const soldAll = (soldRes.data ?? []) as SoldRow[];
   const sellersAll = (sellersRes.data ?? []) as Array<{
     seller_id: string;
     seller_name: string | null;
@@ -139,12 +129,6 @@ export default async function RegionPage({
   }>;
 
   const live = liveAll.filter((r) => locMatches(code, r.seller_location));
-  const sold = soldAll.filter((r) => {
-    // We do not have seller_location on sold_listings_v directly; we
-    // approximate via the sellers table later when ranking sellers,
-    // but the sold totals here are global until we wire the join.
-    return true;
-  });
   const sellers = sellersAll.filter((s) => locMatches(code, s.seller_location));
 
   // Top combos in this region by live count. Combos are auto-discovered
@@ -231,7 +215,7 @@ export default async function RegionPage({
       align: "right",
       render: (row) => {
         const m = median(row.prices) ?? null;
-        return <span className="font-mono tabular-nums">{m ? fmtUsd(m) : "—"}</span>;
+        return <span className="font-mono tabular-nums">{m ? fmtUsd(m) : "no data"}</span>;
       },
     },
   ];
@@ -247,7 +231,7 @@ export default async function RegionPage({
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label="Live listings" value={fmtInt(live.length)} sub={`of ${fmtInt(liveAll.length)} global`} />
-        <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "—"} sub="USD" />
+        <KpiCard label="Median ask" value={medianAsk ? fmtUsd(medianAsk) : "no data"} sub="USD" />
         <KpiCard label="Sellers" value={fmtInt(sellers.length)} sub={`of ${fmtInt(sellersAll.length)} known`} />
         <KpiCard label="Distinct combos" value={fmtInt(comboCount.size)} sub="trait pairs observed here" tone="info" />
       </section>
@@ -284,7 +268,7 @@ export default async function RegionPage({
                 </Link>
                 <span className="text-xs text-ink-400">{s.seller_location ?? ""}</span>
                 <span className="font-mono tabular-nums text-ink-300">{fmtInt(s.total_listings)}</span>
-                <span className="font-mono tabular-nums text-ink-400">{s.avg_price ? fmtUsd(s.avg_price) : "—"}</span>
+                <span className="font-mono tabular-nums text-ink-400">{s.avg_price ? fmtUsd(s.avg_price) : "no data"}</span>
               </li>
             ))
           )}

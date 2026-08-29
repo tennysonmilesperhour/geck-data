@@ -55,6 +55,11 @@ type SoldRow = {
   price: number | null;
   sold_at: string | null;
   days_to_sell: number | null;
+  // 'captured_event' means the pipeline watched the listing flip to sold.
+  // 'inferred_unseen' means the catalogue walk stopped seeing it. A seller
+  // pulling a listing looks identical to a sale from the outside, so the
+  // distinction is shown rather than averaged away.
+  sold_basis: string | null;
 };
 
 export default async function SellerDetailPage({
@@ -94,10 +99,16 @@ export default async function SellerDetailPage({
       .eq("seller_id", sellerId)
       .order("observed_at", { ascending: true })
       .limit(500),
+    // v_sold_reconciled (migration 0045), not sold_listings_v. The old view
+    // joined only listing_status_events: 92 rows from four days in May across
+    // the whole marketplace, so most sellers showed an empty sold table while
+    // their inferred sales went unreported. Lots are excluded because their
+    // price covers several animals and would distort the sold price column.
     supabase
-      .from("sold_listings_v")
-      .select("id, title, price_usd_equivalent, price, sold_at, days_to_sell")
+      .from("v_sold_reconciled")
+      .select("id, title, price_usd_equivalent, price, sold_at, days_to_sell, sold_basis")
       .eq("seller_id", sellerId)
+      .eq("is_group_lot", false)
       .order("sold_at", { ascending: false })
       .limit(100),
     // Reference distributions for the percentile + time-on-market
@@ -110,9 +121,12 @@ export default async function SellerDetailPage({
       .gt("avg_price", 0)
       .lt("avg_price", 10000)
       .limit(5000),
+    // Market-wide time-on-market reference for the percentile bar. Same view
+    // swap, and the same reason: 92 rows is not a distribution.
     supabase
-      .from("sold_listings_v")
+      .from("v_sold_reconciled")
       .select("days_to_sell")
+      .eq("is_group_lot", false)
       .gte("days_to_sell", 0)
       .limit(5000),
   ]);
@@ -246,14 +260,14 @@ export default async function SellerDetailPage({
         </div>
       ),
     },
-    { key: "maturity", header: "Maturity", render: (r) => r.maturity ?? "—" },
-    { key: "sex", header: "Sex", render: (r) => r.sex ?? "—" },
+    { key: "maturity", header: "Maturity", render: (r) => r.maturity ?? "no data" },
+    { key: "sex", header: "Sex", render: (r) => r.sex ?? "no data" },
     {
       key: "status",
       header: "Status",
       render: (r) => (
         <span className="inline-flex items-center rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-200">
-          {r.current_status ?? "—"}
+          {r.current_status ?? "no data"}
         </span>
       ),
     },
@@ -289,6 +303,21 @@ export default async function SellerDetailPage({
       render: (r) => fmtInt(r.days_to_sell),
     },
     { key: "when", header: "Sold", render: (r) => fmtDate(r.sold_at) },
+    {
+      key: "basis",
+      header: "Evidence",
+      render: (r) =>
+        r.sold_basis === "captured_event" ? (
+          <span className="text-ink-300">observed sold</span>
+        ) : (
+          <span
+            className="text-ink-400"
+            title="The catalogue walk stopped seeing the listing, so a sale is inferred from its absence. The seller may simply have pulled it."
+          >
+            inferred
+          </span>
+        ),
+    },
   ];
 
   return (
@@ -327,7 +356,7 @@ export default async function SellerDetailPage({
         </div>
         <p className="mt-1 text-sm text-ink-400">
           {[seller.seller_location, seller.membership].filter(Boolean).join(" · ") ||
-            "—"}
+            "no data"}
         </p>
         {seller.morph_specialization ? (
           <p className="mt-1 text-xs text-ink-500">
@@ -370,7 +399,7 @@ export default async function SellerDetailPage({
         <KpiCard label="Sold tracked" value={soldCount} />
         <KpiCard
           label="Median days-to-sell"
-          value={medianDays != null ? `${Math.round(medianDays)} d` : "—"}
+          value={medianDays != null ? `${Math.round(medianDays)} d` : "no data"}
         />
         <KpiCard label="Feedback" value={fmtInt(seller.feedback_count)} />
       </div>

@@ -130,7 +130,7 @@ export default async function SellersPage({
         </Link>
       ),
     },
-    { key: "loc", header: "Location", render: (s) => s.seller_location ?? "—" },
+    { key: "loc", header: "Location", render: (s) => s.seller_location ?? "no data" },
     {
       key: "activity",
       header: "30d",
@@ -146,7 +146,7 @@ export default async function SellersPage({
         );
       },
     },
-    { key: "mem", header: "Plan", render: (s) => s.membership ?? "—" },
+    { key: "mem", header: "Plan", render: (s) => s.membership ?? "no data" },
     {
       key: "listings",
       header: "Listings",
@@ -207,7 +207,7 @@ export default async function SellersPage({
         <KpiCard label="Market avg price" value={fmtUsd(avgPriceAll)} />
         <KpiCard
           label="Top seller"
-          value={rows[0]?.seller_name ?? "—"}
+          value={rows[0]?.seller_name ?? "no data"}
           sub={rows[0] ? `${fmtInt(rows[0].total_listings)} listings` : undefined}
         />
       </div>

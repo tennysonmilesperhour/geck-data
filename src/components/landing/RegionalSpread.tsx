@@ -2,7 +2,7 @@
 // Simple regional median-ask comparison. For each region with data, shows
 // the median ask price for the top-3 combos in that region as a horizontal
 // bar. Lightweight and honest — when a region has thin data the bars
-// degrade to "—" rather than faking it.
+// degrade to "no data" rather than faking it.
 import { useMemo } from "react";
 import type { RegionalCell } from "@/lib/landing/scrollytelling";
 import { fmtUsd } from "@/lib/format";

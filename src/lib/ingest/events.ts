@@ -273,7 +273,17 @@ async function handleListingSeen(
     source: env.source ?? "extension",
   };
   if (priceRow.price != null || priceRow.price_usd_equivalent != null) {
-    await admin.from("price_history").insert(priceRow);
+    // price_history is unique on (listing_id, observed_at) since migration
+    // 0050, so a replayed batch is a no-op here rather than a second row.
+    // ignoreDuplicates, not merge: a listingSeen is a passive observation and
+    // must not overwrite a priceDropped event that already recorded an
+    // explicit change at the same instant.
+    await admin
+      .from("price_history")
+      .upsert(priceRow, {
+        onConflict: "listing_id,observed_at",
+        ignoreDuplicates: true,
+      });
   }
 
   await admin.from("listing_status_events").upsert(
@@ -391,14 +401,20 @@ async function handlePriceDrop(
   if (error) return { type: env.type, ok: false, detail: error.message };
 
   if (newPrice != null) {
-    await admin.from("price_history").insert({
-      listing_id: listingId,
-      price: newPrice,
-      price_usd_equivalent: num(env.payload.new_price_usd),
-      currency: str(env.payload.currency),
-      observed_at: observed,
-      source: env.source ?? "extension",
-    });
+    // The opposite side of the rule above: an explicit price-change event is
+    // the authoritative reading for its instant, so this one merges and wins
+    // over any passive observation already recorded at the same observed_at.
+    await admin.from("price_history").upsert(
+      {
+        listing_id: listingId,
+        price: newPrice,
+        price_usd_equivalent: num(env.payload.new_price_usd),
+        currency: str(env.payload.currency),
+        observed_at: observed,
+        source: env.source ?? "extension",
+      },
+      { onConflict: "listing_id,observed_at" },
+    );
     await admin
       .from("market_listings")
       .update({

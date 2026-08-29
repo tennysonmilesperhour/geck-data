@@ -5,7 +5,7 @@
 //     grid's own [lo, hi] range — so weak supply regions aren't washed out
 //     by one hot outlier.
 //   - Opacity encodes confidence (0.25..1.0) so sparse cells fade back.
-//   - Null cells render as "—" with a muted background so the reader can
+//   - Null cells render as "no data" with a muted background so the reader can
 //     tell "we have no data" from "price is low".
 import type {
   HeatmapMetric,
