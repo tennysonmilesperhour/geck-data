@@ -1,9 +1,12 @@
 # Geck Intellect presentation and timeline audit
 
-Written 2026-08-29 against production (`geck-data.vercel.app`,
+Written 2026-08-29 and reconciled from multiple independent audit passes against
+production (`geck-data.vercel.app`,
 Supabase project `dhotmtgryuovkmsncdby`, `tennysonmilesperhour/geck-data`
 on `main`). Numbers below were queried live today, not copied from older
-docs.
+docs. Production was changing during the audit: scrape run 695 and a later
+combo-index refresh completed between observations. Where a value changed,
+the later value and the cache discrepancy are called out explicitly.
 
 Companion reading: `STATE_OF_GECK_INTELLECT.md` (2026-07-16) and
 `ROADMAP.md`. This file is a now-cast of how the site reads to a visitor
@@ -48,8 +51,8 @@ monthly reports. Underneath:
 
 Useful pieces that do exist: `/whats-it-worth` as a valuation
 skeleton, `/methodology` and `/status` as trust surfaces, 2,849
-May-June sold comps (frozen), 1,154 listings with real
-`cached_traits` (512 from this week's ingest), and the new API path
+May-June sold comps (frozen), 1,197 listings with real
+`cached_traits` (555 from this week's ingest), and the new API path
 that can keep the next 7 days honest if weekly ingest keeps running.
 `first_listed_at` exists (oldest 2023-02-25) but is filled on only
 **1,670 / 10,239 rows**. The other 8,569 have no MorphMarket listing
@@ -76,7 +79,7 @@ presentation layer that outran the feed.
 | `listings.sold_at` | 2,849 (through 06-07) | 2,849, still frozen 06-07 |
 | `first_listed_at` populated | not called out | 1,670 / 10,239 (16%) |
 | Currency | 9,152 USD / 202 CAD | listings: 9,591 USD / 205 CAD / 104 EUR / 19 GBP |
-| `cached_traits` populated | thin (norm_traits was 642) | 1,154 (512 from this week) |
+| `cached_traits` populated | thin (norm_traits was 642) | 1,197 (555 from this week, after run 695 enrichment) |
 | Decodo listings scrape | 429, hourly paused | still dead; hourly + weekly-resync workflows removed 2026-08-29 |
 | New feed | none | MorphMarket JSON API, scrape_runs 694 (84) and 695 (556) |
 
@@ -215,12 +218,19 @@ What that does **today**:
 6. **Maturity bar chart is not windowed.** Comment in the page:
    "Not window-scoped, reflects the current live catalog." That
    catalog is 91% stale live. Maturity medians are June asks.
-7. **`limit(30000)`** on listings, sold events, and price ticks.
-   Fine at today's size. Not a current bug.
-8. **Market-date coverage chip** is the most honest widget on the
-   page. It says what fraction of in-window rows have
-   `first_listed_at`. Keep it. It should also say how many weeks
-   in the window have zero observations.
+7. **`limit(30000)` does not bypass the Supabase response cap.** The
+   live page received about 1,000 rows: 995 valid price ticks and 993
+   maturity rows, despite production holding 45,632 ticks and 10,239
+   listings. Because neither query paginates or orders the source set,
+   the 90-day price delta and the current-catalog maturity distribution
+   are computed from an arbitrary truncated slice. This is a current,
+   visitor-visible bug, not a future scale concern.
+8. **The market-date coverage chip has the wrong denominator for the
+   implied claim.** It showed 100% because all 565 rows returned by the
+   in-window filter had `first_listed_at`; only 1,670 / 10,239 catalog
+   rows (16.3%) have that field. Keep the chip, but label it “565 / 565
+   arrivals in this selected window” and show catalog coverage plus
+   observed-day coverage separately.
 
 ### Homepage combo sparklines (14-day)
 
@@ -293,7 +303,7 @@ not been walking those listings daily.
 | `StaleDataBanner` (48h) | `max(last_seen_at)` | No banner today | 91% of live rows are 10+ weeks stale |
 | Opportunity "seen 2h ago" | `last_seen_at` < 7d | These ads are live | True for this strip only |
 | `DataFreshness` on /trends | newest tick in the pulled window | "data as of [today]" | Newest tick is today; the window is mostly empty |
-| Market-date coverage chip | % with `first_listed_at` | Calendar quality | Useful; does not mention the gap |
+| Market-date coverage chip | % of already-selected in-window rows with `first_listed_at` | Looks like catalog calendar quality | 100% for 565 recent rows; only 16.3% catalog-wide, and it does not mention the gap |
 | `/status` | ingest health | Operator view | Right place; not the front door |
 
 **Recommended freshness rule (not implemented):** treat a listing
@@ -310,8 +320,8 @@ must not clear a site-wide stale warning.
 
 ## Trait, combo, and species presentation
 
-- `cached_traits` / `norm_traits`: 1,154 / 10,239 (11%). This
-  week's ingest: 512 / 565 (91%). The live catalog's trait
+- `cached_traits` / `norm_traits`: 1,197 / 10,239 (12%). This
+  week's ingest: 555 / 565 (98%). The live catalog's trait
   economics are still mostly the old pipe-delimited HTML scrape
   plus a week of real MorphMarket tags. Combo matching that
   `includes()` tokens will keep promoting pseudo-traits and
@@ -379,7 +389,7 @@ inactive sweep exists, public "live" counts stay wrong.
 | Opportunity strip | Medium (fresh last_seen), matching is sloppy | n/a |
 | Top sellers | Low (stock from May-June) | Medium as a directory |
 | `/trends` 90d / 180d charts | Low | Low until the gap is labeled or excluded |
-| `/trends` market-date chip | High | High |
+| `/trends` market-date chip | Medium if read as window-only | Low as catalog coverage |
 | `/reports` month menu | Low (12 months implied) | Low |
 | `/reports/[month]` for May-Jun 2026 | Medium if labeled as scrape months | Medium |
 | `/reports/[month]` for other months | Empty-as-dead-market | None |
@@ -476,7 +486,9 @@ temperature **50 warm** and four index cards (Lilly White 889,
 Harlequin 1,000, Axanthic 618, Cappuccino 1,400) with unlabeled
 deltas. Top movers: the **same two combos** as both appreciators and
 depreciators at ±0.0%. Peak Indicator says "Sell into strength" on
-n as small as 2.
+Lilly White × Cappuccino at low confidence (43) with only three captured
+sold comps; the same action panel still renders recommendations for rows
+with total `n` as small as 2.
 
 **`/indices`.** "80 of 671 known combos." Every visible 7d/30d/90d
 delta is **+0.0%**. The advertised 90d spark column is **—** on
@@ -519,6 +531,274 @@ Looks like a -42% collapse ($795 to $463) across a window the
 ingest just created.
 
 ---
+
+## Final reconciliation pass: additional critical findings
+
+This pass was researched independently before reading the shared report,
+then checked against Audit 1 above and the later Audit 2 contribution below.
+It agrees with the central diagnosis, corrects one causal overreach in Audit
+2, and adds the following issues. These are not stylistic preferences; each
+one changes what a current visitor can reasonably infer from the page.
+
+| Priority | Finding | Visitor impact |
+|---|---|---|
+| P0 | `/trends` queries are silently capped at about 1,000 rows | The displayed medians, maturity mix, and deltas are an arbitrary slice, not the requested population |
+| P0 | Region, age, lineage, and source controls on `/market` do not filter the queries | The dashboard looks interactive while returning the same population under different labels |
+| P0 | Market temperature returns neutral **50 / Warm** when its component data are absent | “No demand data” becomes a positive-looking market condition |
+| P0 | Sold history has two unreconciled definitions | “92 sold all time” omits 2,849 inferred `listings.sold_at` records; neither pool is current enough for demand claims |
+| P1 | Combo indices cover only five calendar dates | Lines and 7/30/90d deltas imply continuous history that does not exist |
+| P1 | Index cutoff math turns stale data into `+0.0%` | “Unchanged” is displayed where the correct result is “unavailable / stale” |
+| P1 | Repeated scrape ticks are treated as independent price observations | Frequently re-seen listings receive more weight than listings seen once |
+| P1 | Auto-discovered trait pairs include parent/child synonyms | “Extreme Harlequin × Harlequin” and “Dalmatian × Super Dalmatian” are presented as economic combos |
+| P1 | Header says `Ready` while `/status` says `Lagging`, `Down`, and `Stale` | The most visible status signal contradicts the diagnostic truth |
+| P2 | Action language survives very-low confidence | “Sell into strength,” “arbitrage,” and “opportunity” invite decisions the evidence does not support |
+
+### 1. The 1,000-row ceiling changes the answer
+
+`src/app/trends/page.tsx` asks Supabase for 30,000 rows, but the live
+response is capped by the project API limit. The rendered page exposed
+the cap directly:
+
+- 995 usable price ticks, although `price_history` contains 45,632 rows;
+- 993 usable maturity rows, although `market_listings` contains 10,239;
+- exactly 565 recent arrivals because that filtered result happens to
+  fit below the cap.
+
+There is no pagination and no deterministic source ordering on the price
+or maturity queries. The page therefore cannot claim that its $250 median,
+-100% delta, or maturity distribution describes the market. The fix is a
+database-side aggregate/RPC for each chart, or paginated reads with explicit
+ordering. Merely increasing `.limit()` is ineffective.
+
+The same risk exists on other routes that request 1,500-30,000 rows from
+PostgREST and then calculate in JavaScript. Every public metric should be
+audited for **requested rows versus returned rows**, not just for a large
+TypeScript limit.
+
+### 2. `/market` filters are presentation-only
+
+`src/lib/market/queries.ts` uses `filters.timeframe` to choose
+`window_days`. It does not use `filters.region`, `filters.age`, or
+`filters.lineage` in the market-index, rollup, mover, peak, regional, or
+breeder queries. `filters.sources` changes the attribution label, not the
+rows being analyzed.
+
+That means a visitor can select `EU`, `adult`, a lineage, or a source and
+still receive the same market result, potentially with a new source badge.
+This is worse than a disabled control because the UI confirms a filter that
+was never applied. Until every control changes the query and sample size,
+remove or visibly disable it. Add contract tests that assert both the result
+set and displayed `n` change for a known filter fixture.
+
+### 3. “50 / Warm” is the empty-data default
+
+`src/app/api/market/temperature/route.ts` zero-fills missing sold price,
+sell-through, and days-to-sell values across the 52-week baseline.
+`rescale()` returns `0.5` whenever `p90 <= p10`. With a flat or empty
+baseline, all four normalized components become neutral and the weighted
+composite becomes 50. The live page then says:
+
+> Market temperature 50 · Warm · 0
+
+That is not a measured temperature. It is the mathematical fallback for no
+variation/no evidence. The API should return `score: null` unless minimum
+coverage gates are met, and the card should say “Unavailable — sold stream
+last observed 2026-05-14.” Never classify a fallback as Warm.
+
+### 4. Sold history is stale, internally split, and cannot measure velocity
+
+The public sold page uses `sold_listings_v`, which joins only
+`listing_status_events`. Production had 92 sold events, all from
+2026-05-11 through 2026-05-14 and all source `scraper`. Of those, **84 / 92
+have `days_since_first_seen = 0`**. The rendered median “0 d” is therefore
+an import-coincidence artifact, not market velocity.
+
+A different table, `listings`, holds 2,849 inferred `sold_at` values from
+2026-05-17 through 2026-06-07. Those records are omitted from `/sold` and
+from demand charts. They should not simply be unioned in: the inference
+method, sale-price semantics, duplicates, and active/sold conflicts first
+need reconciliation. Until then:
+
+- rename 92 to “captured sold events,” not “sold all time”;
+- suppress time-to-sell when first-seen and sold dates were backfilled in
+  the same run;
+- show both pools and their definitions on the coverage panel;
+- hide demand/velocity actions when the newest valid sale is stale.
+
+### 5. The indices are sparse observations, not continuous indices
+
+The combo materialized view refreshed during this audit. Before refresh,
+the live page showed 671 combos, two dates, `+0.0%`, and no sparklines.
+After refresh, production contained:
+
+| Day | Combo rows | Underlying observation count |
+|---|---:|---:|
+| 2026-05-09 | 200 | 257 |
+| 2026-05-11 | 604 | 1,369 |
+| 2026-08-27 | 166 | 265 |
+| 2026-08-28 | 95 | 110 |
+| 2026-08-29 | 699 | 2,398 |
+
+That is 1,013 combo IDs across **five days**, not 90 days of daily history.
+The page cache and refreshed database also disagreed within the same audit,
+yet the UI had no “index refreshed at” timestamp.
+
+`v_combo_index_summary` selects 7/30/90-day priors using
+`current_date - N`, not `latest_day - N`. For 314 combos whose latest row is
+still May 9 or May 11, their own latest row also qualifies as the prior, so
+all deltas become 0%. A stale series is thereby rendered as measured
+stability. Cutoffs must be relative to each combo's latest day, require two
+distinct sufficiently separated observations, and return null when the
+latest observation itself is stale.
+
+The four anchor sub-indices are similarly based on only three observed
+weeks: 2026-05-04, 2026-05-11, and 2026-08-24. Connecting those points with
+a normal line makes a 15-week gap look like a smooth market move. Use points
+or broken segments, label `observed weeks: 3`, and expose weekly unique
+listing counts.
+
+### 6. Price-history `n` is observation frequency, not market breadth
+
+Production held 45,632 price ticks but only 36,439 unique
+`(listing_id, observed_day)` pairs. There were 2,750 listing-days with more
+than one tick and a maximum of 14 ticks for one listing-day. Current weekly
+medians and combo indices feed all raw ticks into `percentile_cont`, so a
+listing scraped repeatedly can influence a period more than an otherwise
+identical listing scraped once.
+
+For cross-sectional market prices, reduce to one canonical observation per
+listing per bucket (normally the last valid USD-equivalent ask), then take
+the median across unique listings. Keep raw ticks only for within-listing
+change detection. Report these separately:
+
+- `n listings` — economic sample breadth;
+- `n observations` — collection density;
+- `n observed days / expected days` — temporal coverage.
+
+`/trends` also selects raw `price` rather than
+`price_usd_equivalent`. With USD, CAD, EUR, and GBP now present, its headline
+median can mix nominal currencies. Production already had 1,015
+`price_history` rows without a USD equivalent. A global price chart must use
+USD-equivalent rows or split by currency and disclose exclusions.
+
+### 7. Combo identity needs an ontology, not every trait pair
+
+Migration `0037_observed_combos_and_traits.sql` explodes every pair in a
+listing's comma-delimited traits. The live top pairs include:
+
+- `Extreme Harlequin x Harlequin`;
+- `Dalmatian x Super Dalmatian`;
+- `Red x Red Base`.
+
+Those are often expression levels or overlapping labels, not independent
+genetic combinations. Pair co-occurrence also does not prove that the pair
+drives price. Add a governed trait ontology with canonical IDs, aliases,
+parent/child relationships, het/possible-het state, and exclusion rules.
+Require a minimum number of unique listings and sellers before promoting a
+pair to an index.
+
+The combo detail route compounds this by building its weekly history from
+the first 200 **currently live** matching listing IDs, then mixing their
+price ticks with sold-event asks. Historical membership is therefore
+conditioned on what is live now. The live Cappuccino × Lilly White page
+showed only three weeks, “Earliest $200 / Latest $500,” while its current
+table included a 2-pack, a 10-pack, and a wholesale 5/10 lot. Group and
+auction listings must be separated from individual-animal comps before any
+median, deal, or trend label is emitted.
+
+### 8. Status and regional claims need coverage-aware gating
+
+The global header displayed `Ready`; `/status` simultaneously reported the
+site as `Lagging`, listing-detail and seller jobs `Down`, price drops and
+status events `Stale`, and several streams with no activity. `Ready` is a
+hardcoded design treatment, not an operational state. Replace it with one
+computed, linked status summary such as “Partial coverage · listings 2h ·
+sales 106d.”
+
+Only 1,572 / 10,239 listings had a non-empty seller location. The production
+`region_of()` mapping returned 1,339 US, 102 CA, and 8,798 unmapped rows—no
+EU/UK/AU/JP buckets despite the UI offering them. Regional pricing and
+arbitrage must be unavailable until each compared region clears minimum
+unique-listing and seller counts. Never infer an arbitrage opportunity from
+one populated region or default an unknown breeder region to US.
+
+---
+
+## Design direction: use the Market Analytics preview as the shell, not as evidence
+
+Reference: [Geck Inspect Marketplace Sales Stats](https://geckinspect.com/MarketplaceSalesStats),
+Business Tools → Market Analytics preview.
+
+The reference succeeds as information architecture: a compact navy/slate
+surface, five KPI cards, a persistent timeframe/filter toolbar, clear
+sub-tabs, a live-data strip, dense modular cards, and restrained sans-serif
+type. Geck Intellect currently has a polished editorial identity, but the
+large serif hero, generous vertical spacing, twelve top-level destinations,
+and scrollytelling place atmosphere ahead of decision context.
+
+Copy the preview's **density and hierarchy**, not its numbers. The preview
+itself showed a market index and extreme movers that the underlying app
+could not support during this audit. A visually credible shell must not make
+thin data look more certain.
+
+Recommended desktop composition:
+
+```text
+┌ Data coverage: PARTIAL · asks 2h · sold 106d · 5/90 observed days ──────┐
+├ Fresh live ads ─ Median fresh ask ─ Valid sold comps ─ Sellers ─ Coverage┤
+├ 30d  90d  180d  [region] [age] [trait] [source]   Saved views           ┤
+├ NOW | PRICES | DEMAND | COMBOS | REGIONAL | COVERAGE & METHOD            ┤
+├──────────────────────────────────────┬───────────────────────────────────┤
+│ Main chart with broken outage spans │ Movers / comps with n + as-of     │
+│ ask vs sold toggle; unique-listing n│ no action label below quality gate│
+├──────────────────────────────────────┴───────────────────────────────────┤
+│ Coverage calendar · source mix · exclusions · methodology version       │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+Specific presentation changes:
+
+1. **Trust ribbon first.** Make feed health, last complete catalog pass,
+   newest valid sold event, observed days, and stale-live share visible
+   before market KPIs.
+2. **Use honest KPI nouns.** “Fresh live ads,” “median current ask,” and
+   “captured sold events” are auditable. Avoid “market value,” “all time,”
+   and “demand” until the supporting definitions pass gates.
+3. **Disable unsupported horizons.** A 90d/12mo/24mo button should be
+   disabled with “5 observed dates” rather than drawing a line through
+   missing months.
+4. **Encode missingness in the chart.** Use a broken line and shaded outage
+   band, not zero-fill. Tooltips must include date, price semantics, unique
+   listings, observations, sellers, and coverage.
+5. **Keep filters beside their population.** Every applied filter should
+   update the query, URL, `n`, and coverage. If it cannot, render it disabled.
+6. **Replace action verbs with evidence verbs.** “Observed asking-price
+   increase” is defensible; “Sell into strength,” “accumulate,” “deal,” and
+   “arbitrage” are not at low confidence.
+7. **Consolidate navigation.** Keep Now, Valuation, Market History, Entities,
+   and Methodology in the primary nav. Put empty Shows/Cross-platform and
+   experimental tools behind an Explore or Labs area.
+8. **Reserve green for verified freshness.** The current forest palette can
+   remain as brand color, but green status dots must mean a passed data gate,
+   not simply that the page rendered.
+
+### Release gates for any timeline or recommendation card
+
+| Gate | Minimum behavior before display |
+|---|---|
+| Freshness | Latest observation inside the product's declared SLA |
+| Temporal coverage | Show observed / expected buckets; break at gaps; no delta across an outage |
+| Sample breadth | Minimum unique listings and sellers, not raw ticks |
+| Comparable windows | Non-overlapping windows with adequate data in both |
+| Date semantics | `first_listed_at`, `first_seen_at`, `observed_at`, and `sold_at` never silently mixed |
+| Price semantics | Ask, inferred final ask, confirmed sale, auction close, and currency normalization explicitly separated |
+| Filter integrity | Query result, displayed `n`, URL, and attribution all reflect every active filter |
+| Action language | Suppressed when confidence is low or any upstream gate fails |
+
+If those gates are implemented, the Market Analytics preview design becomes
+a strong fit: compact, comparative, and useful at a glance. Without them,
+the same design would make the current data-quality problems more persuasive,
+not less dangerous.
 
 ---
 
@@ -574,9 +854,9 @@ Fabricated or biased numbers still in code:
     only reads `?window=90|180`. Dead param.
 
 Closest honest longitudinal UI: `/trends`, if the 78-day hole is
-labeled. Closest daily series: `combo_index_daily` on `/indices`,
-if that materialized view is actually refreshed (not re-checked
-in SQL this pass).
+labeled and its row-cap bug is fixed. `combo_index_daily` was refreshed
+during the reconciliation pass, but it contained only five observed dates;
+it is not yet a daily timeline.
 
 ---
 
@@ -591,8 +871,8 @@ market_listings                 10,239
   live last_seen older than 48h 9,274
   last_seen before 2026-06-15   9,355
   first_listed last 7 days      565
-  cached_traits non-empty       1,154
-  of which last_seen >= 08-22   512 / 565
+  cached_traits non-empty       1,197
+  of which last_seen >= 08-22   555 / 565
 
 first_listed_at range           2023-02-25  -> 2026-08-29
 first_seen_at range             2026-05-09  -> 2026-08-29
@@ -664,7 +944,7 @@ headless fetch; their data contracts were read from source.
 
 **Sections:** [Overview](#overview-what-a-visitor-is-served-today) ·
 [Peak findings](#peak-findings-grid) ·
-[Index stack](#1-the-index-stack-was-frozen-and-the-nightly-refresh-never-ran-here) ·
+[Index stack](#1-the-index-stack-was-frozen-the-refresh-target-remains-unverified) ·
 [Two islands](#2-trait-history-is-two-islands-not-a-timeline) ·
 [Invented numbers](#3-numbers-that-are-invented-not-measured) ·
 [Sold ledgers](#4-three-sold-ledgers-and-the-public-page-reads-the-worst-one) ·
@@ -716,46 +996,53 @@ score = more damage to a visitor's decisions right now.
 
 | # | Finding | Score | Tier | Action |
 |---|---|---|---|---|
-| 1 | Nightly index refresh has never refreshed this database; 53 green runs, MV frozen at May 11 until this audit manually refreshed it | 95 | Critical | Fix now |
+| 1 | The latest eligible nightly index refresh did not advance this production MV; 53 green runs lack a postcondition check, and a manual refresh advanced it | 95 | Critical | Verify target + fail on stale output |
 | 2 | May-June observation era is invisible to every trait/combo timeline (ticks join to canonical rows with empty `cached_traits`) | 92 | Critical | Backfill now |
 | 3 | 7d/30d/90d deltas on `/indices` all compare against the same May 9-11 island; today all three columns print the same number per combo | 88 | Critical | Fix now |
-| 4 | No process can ever mark a listing sold again (writer removed, mapping misses the API's `sold` state) | 85 | Critical | Fix this week |
+| 4 | No current scheduled writer maps the API's `sold` state into the canonical sold ledger | 85 | Critical | Fix this week |
 | 5 | `/market` rows render invented values: stddev = 15% of median, days-to-sell defaults to 30 when unknown (today: every combo, since 90d sold_count = 0 everywhere) | 78 | High | Replace with honest empties |
 | 6 | Movers and peak scores compare a window to a superset of itself, shrinking every delta toward zero | 70 | High | Fix soon |
 | 7 | Weekly ingest cadence breaks the 48h stale banner, the 7-day opportunity gate, and 14-day sparklines by design | 66 | High | Re-tune thresholds |
-| 8 | Two ingest writers are about to race (repo workflow starts Monday; an external `geck-check` runner already ingests); 104 duplicate ticks exist today | 60 | Medium | Pick one writer |
+| 8 | A possible second `geck-check` writer is unresolved, while 104 exact duplicate ticks prove the table lacks deduplication | 60 | Medium | Identify writer + add uniqueness |
 | 9 | `/methodology` describes a pipeline that no longer exists (daily scrape, a 14-day sold rule that was never in the code) | 55 | Medium | Rewrite |
 | 10 | geck-inspect's `market.json` gets a better sold feed than geck-data's own `/sold` page | 45 | Medium | Unify ledgers |
 
 ---
 
-## 1. The index stack was frozen, and the nightly refresh never ran here
+## 1. The index stack was frozen; the refresh target remains unverified
 
 **What I found.** `combo_index_daily` is the materialized view behind
 `/indices`, the 60-day sparklines on `/market`, and the gainers/losers
 in `/reports`. At 2026-08-29 ~15:30 UTC its newest day was
 **2026-05-11**. The repo has a Nightly Index Refresh workflow, and
 GitHub Actions shows **53 runs, effectively all green, ~10 seconds
-each** (checked via the Actions API). Green for seven weeks, and the
-view never moved past May 11: if any one of those runs had actually
-refreshed this database, June's 28,000+ ticks would have been in it.
+each** (checked via the Actions API). The older green runs do not prove
+failure: 39,038 price ticks from May 12-June 9 join to zero canonical
+rows with `cached_traits`, so a correct refresh would still have stopped
+at May 11. Run 694 finished on 2026-08-28 at 22:52 UTC, however, before
+the 08:30 UTC nightly job on Aug 29 and with newly trait-eligible rows.
+The materialized view still did not advance. That makes the latest run a
+real no-op against this production view, but it does not by itself prove
+what target the job used.
 
 **The proof.** One manual call from this audit
 (`select refresh_combo_index_daily()`, ~16:45 UTC) advanced the view
 from May 11 to Aug 29 in seconds. The function works. The database
-works. The nightly workflow's HTTP 200s are therefore landing
-somewhere that is not this project's `combo_index_daily`, and the most
-likely cause is the workflow's `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`
-secrets pointing at a different Supabase project (this org has seven;
-this repo's `package.json` is even named `geck-inspect`). That check
-requires the GitHub secrets screen, which only Tennyson can open.
+works, and the pre-refresh state was stale. A wrong Supabase project in
+`SUPABASE_URL` / `SUPABASE_SERVICE_KEY` is one plausible explanation,
+but the evidence does not establish it as fact. Other possibilities are
+an unexpected RPC/search-path target or data visibility/timing around the
+eligible rows. Inspect the resolved project reference in the workflow and
+add a postcondition (`max(day)` and row count before/after); secrets alone
+cannot be inferred from an HTTP 200.
 
 **Why it matters for "accurate over time."** Audit 1's screenshots
 caught the frozen state: every `/indices` delta printed **+0.0%**
 (latest day and every "prior" day were the same May 11 row) and every
 90d spark column was empty. Audit 1 explicitly left the refresh
-question open ("not re-checked in SQL this pass"). Answered: it was
-never refreshed, from the view's creation until today.
+question open ("not re-checked in SQL this pass"). Answered more
+narrowly: the production view had not incorporated the latest eligible
+rows, and the workflow's green status did not detect that failure.
 
 **And after the refresh it is still wrong, differently.** The summary
 view computes `delta_30d` as "latest value vs the newest row at least
@@ -970,22 +1257,23 @@ Actions API):
   something called **`geck-check-morphmarket-api`** (Aug 28, 84
   records) and **`geck-check-morphmarket-api-weekly`** (Aug 29, 556
   records). The string "geck-check" appears nowhere in this
-  repository. An external runner, presumably another of Tennyson's
-  systems, is writing to the same tables through the same helper
-  functions.
+  repository. That label may indicate an external runner, a one-off
+  manual audit invocation, or another system; `triggered_by` alone does
+  not prove that a persistent second schedule exists.
 - Overlap is already visible: **104 (listing, timestamp) pairs are
   duplicated** in `price_history`, which is insert-only with no
-  unique key. Two writers walking overlapping 168h windows will grow
-  that number every week and quietly double-weight Monday medians.
-- The two writers also stamp time differently: the Aug 28 run's ticks
+  unique key. This proves a deduplication gap, not which writer caused it.
+  If two writers walk overlapping 168h windows, they will grow that number
+  and quietly double-weight Monday medians.
+- The two observed runs stamp time differently: the Aug 28 run's ticks
   landed backdated to the listings' real listing dates (Aug 27/28),
   while the Aug 29 run's 610 ticks all carry the ingest timestamp
   itself. Same table, two clock conventions, and the daily index
   inherits whichever ran last.
 
-Nothing here is fatal, but Monday is the deadline: either disable the
-repo workflow, or retire the external runner, or add a uniqueness
-guard on `price_history` before both fire within the same hour.
+Nothing here is fatal, but before Monday determine whether `geck-check` is
+a persistent writer. If it is, choose one schedule. In either case, add a
+uniqueness/upsert rule so repeated observations cannot be counted twice.
 
 ---
 
@@ -1004,12 +1292,13 @@ passes started from opposite ends (they went page-first, I went
 pipeline-first) and met at the same verdict, which is itself a useful
 signal that the verdict is right.
 
-**Their open question, now closed.** Audit 1's UI pass ends with:
+**Their open question, narrowed.** Audit 1's UI pass ends with:
 closest daily series is `combo_index_daily` "if that materialized view
-is actually refreshed (not re-checked in SQL this pass)." It had never
-been refreshed; the nightly workflow's 53 green runs never touched
-this database; one manual refresh during this audit advanced it 110
-days in seconds. See section 1, including why their screenshotted
+is actually refreshed (not re-checked in SQL this pass)." It had not
+incorporated the newest eligible rows before the screenshot; one manual
+refresh advanced it 110 days in seconds. The workflow target remains
+unverified, and the older no-op runs are inconclusive because the dense
+May-June era had no canonical traits. See section 1, including why their screenshotted
 "+0.0% everywhere" has now become "identical large deltas in all three
 columns," which is the same bug wearing louder clothes.
 
@@ -1033,17 +1322,20 @@ columns," which is the same bug wearing louder clothes.
   fires falsely from midweek onward (section 5). The fix is the same
   coverage-based rule they proposed; I would add explicit copy for
   "weekly pulse" mode.
-- Their trait count (1,154 with `cached_traits`) is the symptom; the
+- Their earlier trait count (1,154 with `cached_traits`, later 1,197 as
+  run 695 completed) is the symptom; the
   consequence is that trait/combo timelines contain five days of
   history total, and 5,461 of the missing rows are recoverable from
   the scraper table today without any new scraping (section 2).
 
-**Where I would push back, gently:** nothing material. Their fix list
-item 3 ("draw the hole as an outage, not zeros") I would extend to the
+**Where I would push back:** their fix list item 3 ("draw the hole as
+an outage, not zeros") should extend to the
 delta layer: it is not enough to draw the gap, the 7/30/90d
 comparators must refuse to reach across it (a max-age bound on the
 baseline row), otherwise the charts become honest while the printed
-percentages stay wrong.
+percentages stay wrong. The final reconciliation also narrows this
+audit's original "wrong database" claim: it is a strong hypothesis from
+the most recent eligible run, not a demonstrated secret value.
 
 ---
 
@@ -1052,10 +1344,11 @@ percentages stay wrong.
 Audit 1's items 1-10 stand. These are the additional fixes my pass
 surfaced, in leverage order:
 
-11. **Re-point the nightly refresh at the right database.** Verify the
-    Actions secrets target `dhotmtgryuovkmsncdby`, then make the job
-    fail loudly when `max(day)` does not advance after a refresh (a
-    no-op green run was the failure mode for seven straight weeks).
+11. **Verify the nightly refresh target and add a postcondition.** Confirm
+    the resolved project is `dhotmtgryuovkmsncdby`; record `max(day)` and
+    row count before/after; fail loudly when eligible source rows exist but
+    the view does not advance. Do not re-point secrets until the target is
+    actually inspected.
 12. **Backfill canonical traits from the scraper table.** 5,461 rows,
     pipe-to-comma normalization on 3,591, one MV refresh after. This
     single migration resurrects May-June for every trait and combo
@@ -1065,7 +1358,7 @@ surfaced, in leverage order:
     chip when the comparison row is older than the labeled horizon by
     more than a tolerance, instead of silently comparing to May.
 14. **Bridge the 2,849 scraper solds into canonical, labeled
-    inferred, with their real May-June dates.** `/sold` becomes an
+    inferred, with their May-June inference timestamps.** `/sold` becomes an
     honest frozen archive ("last observed sale June 7") instead of a
     92-row curiosity, and `/whats-it-worth` gets its comps pool back.
 15. **Replace invented values with honest empties**: the 30-day
@@ -1078,10 +1371,10 @@ surfaced, in leverage order:
 17. **One tokenizer.** Unify the landing page's two combo-name
     splitters on the whitespace-safe variant, then move both to the
     shared parser the vocabulary cleanup lands.
-18. **Resolve the two-writer race before Monday** (repo workflow vs
-    geck-check runner) and add a unique index or upsert key on
-    `price_history (listing_id, observed_at)` so overlapping walks
-    cannot double-count.
+18. **Resolve whether a two-writer race exists before Monday** (repo
+    workflow vs the `geck-check` trigger) and add a unique index or upsert
+    key on `price_history (listing_id, observed_at)` so overlapping walks
+    cannot double-count regardless of the source.
 19. **Unify the sold read path** on the same three-ledger union
     `market.json` already uses, and stop backfilling missing sold
     dates with listing dates in that feed.
