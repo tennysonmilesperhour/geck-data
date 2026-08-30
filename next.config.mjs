@@ -15,6 +15,15 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: buildId,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "d2bjn9a420fiq0.cloudfront.net",
+        pathname: "/media/raw_images/**",
+      },
+    ],
+  },
   // sql.js ships a .wasm file; we load it from its CDN at runtime (see
   // src/lib/ingest/parseSqlite.ts) so we don't need Webpack asset plumbing.
   webpack: (config) => {
