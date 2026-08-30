@@ -1,5 +1,6 @@
 import Image from "next/image";
 import DesignLabShell from "@/components/design-lab/DesignLabShell";
+import NocturneVariantNav from "@/components/design-lab/NocturneVariantNav";
 import TrendLine from "@/components/design-lab/TrendLine";
 import {
   DESIGN_LAB_IMAGES,
@@ -33,6 +34,7 @@ export default function NocturnePage() {
 
   return (
     <DesignLabShell active="nocturne" className={styles.nocturne}>
+      <NocturneVariantNav active="base" />
       <article className={styles.nocturnePage}>
         <section className={styles.nocturneHero}>
           <Image
@@ -44,25 +46,25 @@ export default function NocturnePage() {
           />
           <div className={styles.nocturneShade} />
           <header className={styles.nocturneMasthead}>
-            <span>GECK INTELLECT / EXHIBITION 08</span>
+            <span>GECK INTELLECT / MARKET DATA</span>
             <span>UNITED STATES · ASK MARKET</span>
-            <span>AUG 30 2026</span>
+            <span>{snapshot.observedWindow}</span>
           </header>
           <div className={styles.nocturneTitle}>
-            <p>A STUDY OF VISIBLE VALUE</p>
-            <h1>NOCTURNE<br />FOR A MARKET</h1>
+            <p>CURRENT ASKING-PRICE SNAPSHOT</p>
+            <h1>MARKET<br />EVIDENCE</h1>
           </div>
           <div className={styles.nocturneCaption}>
-            <span>PLATE 01 / DALMATIAN</span>
-            <p>Observed in the current listing window. Seller ask is evidence of supply, not a completed transaction.</p>
+            <span>DALMATIAN / RECENT LISTING</span>
+            <p>Observed in the current listing window. Asking price is not a completed sale.</p>
           </div>
           <div className={styles.nocturneCounter}>01 / 03</div>
         </section>
 
         <section className={styles.nocturneStatement}>
-          <p className={styles.nocturneEyebrow}>CURATORIAL NOTE</p>
+          <p className={styles.nocturneEyebrow}>DATA SCOPE</p>
           <h2>
-            Make the animal the subject.<br />Make uncertainty part of the label.
+            Current asks and historical sales<br />are shown separately.
           </h2>
           <div className={styles.nocturneStatementGrid}>
             <p>
@@ -71,7 +73,7 @@ export default function NocturnePage() {
             </p>
             <p>
               The completed-sale archive contains {snapshot.soldRecords.toLocaleString()} price-known records,
-              but its newest observation is June 7. In this direction, the time boundary is treated like provenance.
+              but its newest observation is June 7. That boundary remains visible wherever the archive is used.
             </p>
           </div>
         </section>
@@ -94,10 +96,10 @@ export default function NocturnePage() {
 
         <section className={styles.nocturneEvidence}>
           <div>
-            <p className={styles.nocturneEyebrow}>OBSERVATION RHYTHM / AUG 22–29</p>
-            <h2>The gaps are evidence too.</h2>
+            <p className={styles.nocturneEyebrow}>CAPTURE VOLUME / AUG 22–29</p>
+            <h2>Daily observation counts.</h2>
             <p>
-              Capture volume varies by day, so the line is shown as collection rhythm instead of being narrated as demand.
+              Capture volume varies by day. This line describes collection coverage, not demand.
             </p>
           </div>
           <TrendLine

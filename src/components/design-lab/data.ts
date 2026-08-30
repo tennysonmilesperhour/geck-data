@@ -46,7 +46,7 @@ export const DESIGN_DIRECTIONS = [
     slug: "nocturne",
     number: "03",
     name: "Nocturne",
-    thesis: "A photographic exhibition catalogue with quiet controls and gallery-scale subjects.",
+    thesis: "A black, photographic market brief with quiet controls and evidence at gallery scale.",
   },
   {
     slug: "poster-wall",

@@ -79,8 +79,8 @@ const DIRECTION_LOGIC = [
   {
     number: "03",
     name: "Nocturne",
-    references: "Temper restraint + Revelatio cinematic immersion",
-    choice: "Let one animal command the viewport, then reveal evidence slowly like an exhibition catalogue with provenance labels.",
+    references: "Datawrapper + Observable Plot + The Pudding + Our World in Data",
+    choice: "Keep the full-bleed photography and black field, then branch into four evidence systems: ledger, notebook, scroll story, and atlas.",
   },
   {
     number: "04",
