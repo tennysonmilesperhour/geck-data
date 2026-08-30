@@ -1,6 +1,7 @@
 import Image from "next/image";
 import DesignLabShell from "@/components/design-lab/DesignLabShell";
 import NocturneVariantNav from "@/components/design-lab/NocturneVariantNav";
+import AtlasExperimentNav from "@/components/design-lab/AtlasExperimentNav";
 import {
   DESIGN_LAB_IMAGES,
   DESIGN_LAB_SNAPSHOT,
@@ -31,6 +32,7 @@ export default function NocturneAtlasPage() {
   return (
     <DesignLabShell active="nocturne" className={styles.atlasPage}>
       <NocturneVariantNav active="atlas" />
+      <AtlasExperimentNav active="atlas" />
       <main>
         <header className={styles.atlasHeader}>
           <div>
