@@ -31,11 +31,14 @@ export default function PriceHistogram({ data }: { data: Listing[] }) {
   }, [data, maturity, sex]);
 
   useEffect(() => {
-    const svg = d3.select(svgRef.current);
+    const node = svgRef.current;
+    if (!node) return;
+    const svg = d3.select(node);
+    const draw = () => {
     svg.selectAll("*").remove();
-    if (!svgRef.current || prices.length === 0) return;
+    if (prices.length === 0) return;
 
-    const W = svgRef.current.clientWidth;
+    const W = node.clientWidth || node.parentElement?.clientWidth || 640;
     const H = 320;
     const margin = { top: 16, right: 16, bottom: 36, left: 44 };
     const w = W - margin.left - margin.right;
@@ -103,6 +106,11 @@ export default function PriceHistogram({ data }: { data: Listing[] }) {
         .attr("fill", chartTheme.secondary)
         .text(`median $${d3.format(",.0f")(median)}`);
     }
+    };
+    draw();
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(node);
+    return () => ro.disconnect();
   }, [prices]);
 
   return (

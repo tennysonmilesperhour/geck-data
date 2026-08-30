@@ -1,40 +1,35 @@
 "use client";
-// "The market right now" — five narrated panels that fade in as the user
-// scrolls. Pure server-data + IntersectionObserver fade; no scroll-driven
-// timeline library needed. Each panel reuses an existing D3 chart from
-// src/components/charts/ so we don't reinvent visualization layers.
-import dynamic from "next/dynamic";
+// "The market right now": five narrated panels that fade in as the user
+// scrolls. Charts are client D3; the first paint (and no-JS) still gets a
+// numeric caption so the panel is not stuck on "Loading chart…".
+import PriceHistogram from "@/components/charts/PriceHistogram";
+import RidgePlot from "@/components/charts/RidgePlot";
+import DaysToSellHistogram from "@/components/charts/DaysToSellHistogram";
+import CalendarHeatmap from "@/components/charts/CalendarHeatmap";
 import ScrollyPanel from "./ScrollyPanel";
 import RegionalSpread from "./RegionalSpread";
 import type {
   ScrollytellingData,
   ScrollyListing,
-} from "@/lib/landing/scrollytelling";
+} from "@/lib/landing/scrolly-types";
+import { MIN_REGION_LISTINGS } from "@/lib/landing/scrolly-types";
+import { fmtUsd } from "@/lib/format";
 
-// Charts are SSR-disabled because they mount D3 against a live DOM ref.
-const PriceHistogram = dynamic(
-  () => import("@/components/charts/PriceHistogram"),
-  { ssr: false, loading: () => <ChartSkeleton /> },
-);
-const RidgePlot = dynamic(() => import("@/components/charts/RidgePlot"), {
-  ssr: false,
-  loading: () => <ChartSkeleton />,
-});
-const DaysToSellHistogram = dynamic(
-  () => import("@/components/charts/DaysToSellHistogram"),
-  { ssr: false, loading: () => <ChartSkeleton /> },
-);
-const CalendarHeatmap = dynamic(
-  () => import("@/components/charts/CalendarHeatmap"),
-  { ssr: false, loading: () => <ChartSkeleton /> },
-);
-
-function ChartSkeleton() {
+function chartCaption(text: string) {
   return (
-    <div className="flex h-72 items-center justify-center rounded-lg bg-ink-900/40 text-xs text-ink-500">
-      Loading chart…
-    </div>
+    <p className="mt-2 text-[11px] leading-4 text-ink-500">
+      {text} The figure draws in the browser.
+    </p>
   );
+}
+
+function medianOf(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]!
+    : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 export default function ScrollytellingSection({
@@ -49,6 +44,10 @@ export default function ScrollytellingSection({
     maturity: l.maturity,
     sex: l.sex,
   }));
+  const histPrices = histogramData
+    .map((d) => d.price_usd_equivalent ?? d.price)
+    .filter((p): p is number => p != null && p > 0 && p < 5000);
+  const histMedian = medianOf(histPrices);
 
   const ridgeData = data.listings.map((l) => ({
     cached_traits: l.cached_traits,
@@ -57,19 +56,21 @@ export default function ScrollytellingSection({
     price_usd_equivalent: l.price_usd_equivalent,
   }));
 
-  // Bucketed on first_listed_at, the date MorphMarket says the animal went up,
-  // and never on first_seen_at. The panel claims to show when breeders choose
-  // to list, and first_seen_at is when our scraper ran: across 10,011 priced
-  // listings it takes 11 distinct values, so the old chart drew eleven solid
-  // columns and captioned them a seasonal rhythm. first_listed_at is present
-  // on fewer rows but spreads over 199 days, which is a cadence. There is
-  // deliberately no fallback to first_seen_at, since one scraper day mixed in
-  // puts a spike back into the picture the panel is trying to show.
   const calendarData = data.listings
     .filter((l): l is ScrollyListing & { first_listed_at: string } =>
       Boolean(l.first_listed_at),
     )
     .map((l) => ({ listed_on: l.first_listed_at }));
+
+  const shownRegions = data.region_coverage.filter(
+    (r) => r.n_listings >= MIN_REGION_LISTINGS && r.region !== "AU" && r.region !== "JP",
+  );
+  const regionSummary =
+    shownRegions.length > 0
+      ? shownRegions
+          .map((r) => `${r.region} n=${r.n_listings.toLocaleString()}`)
+          .join(", ")
+      : "no region currently clears the minimum unique-listing floor";
 
   return (
     <div className="space-y-16">
@@ -87,13 +88,24 @@ export default function ScrollytellingSection({
         title="Where the market clusters."
         description={
           <>
-            Crested gecko prices form a sharply right-skewed distribution —
+            Crested gecko prices form a sharply right-skewed distribution:
             most listings sit between the 25th and 75th percentile, with a
             long tail of high-trait specimens above. Filter by maturity and
             sex to see how the shape changes.
           </>
         }
-        viz={<PriceHistogram data={histogramData} />}
+        viz={
+          <div>
+            <PriceHistogram data={histogramData} />
+            {chartCaption(
+              histPrices.length > 0
+                ? `${histPrices.length.toLocaleString()} priced ads in this sample, median ${
+                    histMedian != null ? fmtUsd(histMedian) : "n/a"
+                  }.`
+                : "No priced ads in this sample.",
+            )}
+          </div>
+        }
       />
 
       <ScrollyPanel
@@ -108,21 +120,34 @@ export default function ScrollytellingSection({
             signal a settled market.
           </>
         }
-        viz={<RidgePlot data={ridgeData} />}
+        viz={
+          <div>
+            <RidgePlot data={ridgeData} />
+            {chartCaption(
+              `${data.listings.length.toLocaleString()} priced ads feed the ridges.`,
+            )}
+          </div>
+        }
       />
 
       <ScrollyPanel
         eyebrow="Geography"
-        title="The market is not flat."
+        title="Coverage is not a world market."
         description={
           <>
-            Median ask prices vary materially by region. US and EU sellers
-            tend to anchor the price floor; Australia and Japan carry
-            premiums tied to import scarcity. Numbers thicken as more sold
-            events accumulate.
+            Priced ads in this catalogue are almost all USD. Regions need at
+            least {MIN_REGION_LISTINGS} unique listings before a median is
+            shown; CA volume can be a single ad. We do not publish Australia
+            or Japan premiums on this coverage. Shown: {regionSummary}.
           </>
         }
-        viz={<RegionalSpread cells={data.regional} />}
+        viz={
+          <RegionalSpread
+            cells={data.regional}
+            minListings={MIN_REGION_LISTINGS}
+            hideRegions={["AU", "JP"]}
+          />
+        }
       />
 
       <ScrollyPanel
@@ -131,18 +156,22 @@ export default function ScrollytellingSection({
         title="How fast a listing moves."
         description={
           <>
-            Days from first listing to sold, across all listings the scraper
-            has watched transition. Bumps near 14 and 30 days reflect when
-            most listings either close or churn.
+            Days from first listing to sold. This panel stays dark while the
+            sold stream is frozen (last inferred sale 2026-06-07) so a stale
+            histogram cannot be read as current demand.
           </>
         }
         viz={
-          data.days_to_sell.length > 0 ? (
+          data.sold_stream_usable && data.days_to_sell.length > 0 ? (
             <DaysToSellHistogram days={data.days_to_sell} />
           ) : (
             <ThinDataNote
               what="Sold-event timing"
-              detail="Needs a few weeks of accumulated sold events. The scraper started tracking transitions on May 2026."
+              detail={
+                data.newest_sold_at
+                  ? `Newest recorded sale is ${data.newest_sold_at.slice(0, 10)}. Demand and days-to-sell stay hidden until a catalog recrawl produces new sold inferences.`
+                  : "No sold event is on record. Demand and days-to-sell stay hidden."
+              }
             />
           )
         }
@@ -161,7 +190,12 @@ export default function ScrollytellingSection({
         }
         viz={
           calendarData.length > 0 ? (
-            <CalendarHeatmap data={calendarData} weeks={26} />
+            <div>
+              <CalendarHeatmap data={calendarData} weeks={26} />
+              {chartCaption(
+                `${calendarData.length.toLocaleString()} listings with a MorphMarket list date.`,
+              )}
+            </div>
           ) : (
             <ThinDataNote
               what="First-seen cadence"

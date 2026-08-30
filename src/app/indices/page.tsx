@@ -20,6 +20,10 @@ import { colorForTrait } from "@/lib/market/anchors";
 import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
 import SourceFootnote from "@/components/ui/SourceFootnote";
 import { comboSlugFromId } from "@/lib/market/combo-slug";
+import {
+  isRedundantComboName,
+  redundantComboKeys,
+} from "@/lib/market/combo-redundancy";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +128,7 @@ export default async function IndicesPage({
   const sparkRows = (sparkRes.data ?? []) as ComboDailyRow[];
   const breadthRows = (breadthRes.data ?? []) as ComboBreadth[];
   const breadthByCombo = new Map(breadthRows.map((b) => [b.combo_id, b]));
+  const redundantKeys = redundantComboKeys(breadthRows);
 
   // Anchor tiles: top 8 traits by sample size.
   const anchors = traitRows.slice(0, 8).map((t) => ({
@@ -149,8 +154,8 @@ export default async function IndicesPage({
   // and the three largest of them, Extreme Harlequin x Harlequin at 209
   // listings, Red x Red Base and Dalmatian x Super Dalmatian at 136 each,
   // were ranking at the top of this table.
-  const redundantHidden = comboRows.filter(
-    (r) => breadthByCombo.get(r.combo_id)?.is_redundant_pair === true,
+  const redundantHidden = comboRows.filter((r) =>
+    isRedundantComboName(r.combo_id, redundantKeys),
   ).length;
   const thinHidden = comboRows.filter((r) => {
     const b = breadthByCombo.get(r.combo_id);
@@ -160,8 +165,8 @@ export default async function IndicesPage({
   const filtered = comboRows
     .filter((r) => Number(r.total_n ?? r.latest_n ?? 0) >= minN)
     .filter((r) => {
+      if (isRedundantComboName(r.combo_id, redundantKeys)) return false;
       const b = breadthByCombo.get(r.combo_id);
-      if (b?.is_redundant_pair === true) return false;
       return Number(b?.n_sellers ?? 0) >= MIN_SELLERS;
     })
     .map((r) => {

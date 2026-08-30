@@ -26,6 +26,10 @@ import DataTable, { type Column } from "@/components/ui/DataTable";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import WatchButton from "@/components/alerts/WatchButton";
 import SourceFootnote from "@/components/ui/SourceFootnote";
+import {
+  isRedundantComboName,
+  redundantComboKeys,
+} from "@/lib/market/combo-redundancy";
 
 export const dynamic = "force-dynamic";
 
@@ -156,17 +160,29 @@ export default async function TraitPage({
   // Find every observed combo that includes this trait, ranked by
   // sample size. Pulls from v_observed_combos (auto-discovered, ~350
   // combos) instead of the legacy 12-row HIGH_VALUE_COMBOS list.
-  const { data: comboRowsRaw } = await supabase
-    .from("v_observed_combos")
-    .select("combo_name, n, median_price")
-    .ilike("combo_name", `%${traitName}%`)
-    .order("n", { ascending: false })
-    .limit(20);
-  const matchingCombos = (comboRowsRaw ?? []) as Array<{
-    combo_name: string;
-    n: number | string;
-    median_price: number | string | null;
-  }>;
+  const [{ data: comboRowsRaw }, { data: breadthRows }] = await Promise.all([
+    supabase
+      .from("v_observed_combos")
+      .select("combo_name, n, median_price")
+      .ilike("combo_name", `%${traitName}%`)
+      .order("n", { ascending: false })
+      .limit(40),
+    supabase
+      .from("v_combo_breadth")
+      .select("combo_id, is_redundant_pair")
+      .eq("is_redundant_pair", true)
+      .limit(2000),
+  ]);
+  const redundantKeys = redundantComboKeys(breadthRows ?? []);
+  const matchingCombos = (
+    (comboRowsRaw ?? []) as Array<{
+      combo_name: string;
+      n: number | string;
+      median_price: number | string | null;
+    }>
+  )
+    .filter((c) => !isRedundantComboName(c.combo_name, redundantKeys))
+    .slice(0, 20);
 
   // Top sellers in this trait.
   const sellerMap = new Map<string, { id: string; name: string; loc: string | null; n: number }>();

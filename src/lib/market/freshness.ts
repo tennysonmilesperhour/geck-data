@@ -6,6 +6,7 @@ import {
   CYCLE_HOURS,
   FRESH_HOURS,
   marketFeedVerdict,
+  sectionVisibleFromCount,
   type FeedVerdict,
   type MarketCoverage,
 } from "./feed-verdict";
@@ -17,6 +18,7 @@ export {
   CYCLE_HOURS,
   FRESH_HOURS,
   marketFeedVerdict,
+  sectionVisibleFromCount,
 } from "./feed-verdict";
 export type {
   FeedLevel,
@@ -136,28 +138,39 @@ export const getLatestMarketSeenAt = unstable_cache(
 export type OptionalSections = {
   shows: boolean;
   crossPlatform: boolean;
+  /** Recent price_drops rows. The stream has been dead since June 2026. */
+  priceDrops: boolean;
 };
+
+const PRICE_DROPS_LIVE_DAYS = 14;
 
 async function fetchOptionalSections(): Promise<OptionalSections> {
   const supabase = createPublicClient();
-  const [showsQ, crossQ] = await Promise.all([
+  const dropsSince = new Date(
+    Date.now() - PRICE_DROPS_LIVE_DAYS * 86_400_000,
+  ).toISOString();
+  const [showsQ, crossQ, dropsQ] = await Promise.all([
     supabase
       .from("show_mentions")
       .select("id", { count: "exact", head: true }),
     supabase
       .from("cross_platform_listings")
       .select("id", { count: "exact", head: true }),
+    supabase
+      .from("price_drops")
+      .select("id", { count: "exact", head: true })
+      .gte("observed_at", dropsSince),
   ]);
   return {
-    // Fail open: a failed count must not hide a section that has data.
-    shows: showsQ.error ? true : (showsQ.count ?? 0) > 0,
-    crossPlatform: crossQ.error ? true : (crossQ.count ?? 0) > 0,
+    shows: sectionVisibleFromCount(showsQ.count, Boolean(showsQ.error)),
+    crossPlatform: sectionVisibleFromCount(crossQ.count, Boolean(crossQ.error)),
+    priceDrops: sectionVisibleFromCount(dropsQ.count, Boolean(dropsQ.error)),
   };
 }
 
 export const getOptionalSections = unstable_cache(
   fetchOptionalSections,
-  ["optional-sections-v1"],
+  ["optional-sections-v2"],
   { revalidate: 300, tags: ["market-freshness"] },
 );
 

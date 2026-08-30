@@ -18,10 +18,18 @@
 import { createClient } from "@/lib/supabase/server";
 import { looksLikeGroupLot } from "@/lib/traits";
 import { CYCLE_HOURS } from "@/lib/market/feed-verdict";
+import {
+  isRedundantComboName,
+  redundantComboKeys,
+} from "@/lib/market/combo-redundancy";
 
 export type ComboSnapshot = {
   combo_name: string;
+  /** Catalogue-wide live flag count over the rollup window. Not "now". */
   live_count: number;
+  /** Live ads re-confirmed inside FRESH_HOURS. This is the "now" count. */
+  fresh_live_count: number;
+  fresh_median_ask: number | null;
   sold_count: number;
   median_ask: number | null;
   median_sold: number | null;
@@ -220,6 +228,15 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function medianOf(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]!
+    : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
 type PriceSummaryRow = {
   fresh_listings: number | string | null;
   stale_listings: number | string | null;
@@ -241,7 +258,16 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   // seconds of clock skew does not move a 48 hour boundary.
   const freshSince = new Date(Date.now() - FRESH_HOURS * HOUR_MS).toISOString();
 
-  const [summaryQ, freshPricedQ, freshSellerQ, newestStaleQ, comboQ, sellerQ] =
+  const [
+    summaryQ,
+    freshPricedQ,
+    freshSellerQ,
+    newestStaleQ,
+    comboQ,
+    breadthQ,
+    freshComboListingsQ,
+    sellerQ,
+  ] =
     await Promise.all([
       // One server-side pass for the hero. The old path pulled up to 10,000
       // live prices and took the median in JS, which was row-capped (so the
@@ -277,6 +303,24 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
         .limit(1)
         .maybeSingle(),
       supabase.rpc("v_combo_rollups", { window_days: WINDOW_DAYS }),
+      supabase
+        .from("v_combo_breadth")
+        .select("combo_id, is_redundant_pair")
+        .eq("is_redundant_pair", true)
+        .limit(2000),
+      supabase
+        .from("market_listings")
+        .select(
+          "price_usd_equivalent, norm_traits, cached_traits, title, is_group_lot, is_auction",
+        )
+        .eq("current_status", "live")
+        .in("species", PRICED_SPECIES)
+        .eq("is_group_lot", false)
+        .gte("last_seen_at", freshSince)
+        .not("price_usd_equivalent", "is", null)
+        .gt("price_usd_equivalent", 0)
+        .lt("price_usd_equivalent", PRICE_SANITY_MAX)
+        .limit(4000),
       supabase
         .from("market_sellers")
         .select(
@@ -324,20 +368,55 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     p75_price: freshP75,
   };
 
-  const combos: ComboSnapshot[] = (comboQ.data ?? []).map((r: ComboSnapshot) => ({
-    combo_name: r.combo_name,
-    live_count: r.live_count ?? 0,
-    sold_count: r.sold_count ?? 0,
-    median_ask: r.median_ask != null ? Number(r.median_ask) : null,
-    median_sold: r.median_sold != null ? Number(r.median_sold) : null,
-    spread_pct: r.spread_pct != null ? Number(r.spread_pct) : null,
-    avg_days_to_sell:
-      r.avg_days_to_sell != null ? Number(r.avg_days_to_sell) : null,
-    confidence_score: r.confidence_score ?? 0,
-  }));
-  combos.sort(
-    (a, b) =>
-      b.live_count + b.sold_count - (a.live_count + a.sold_count),
+  const redundantKeys = redundantComboKeys(
+    (breadthQ.data ?? []) as Array<{
+      combo_id: string;
+      is_redundant_pair: boolean | null;
+    }>,
+  );
+  const freshComboRows = (freshComboListingsQ.data ?? []) as Array<{
+    price_usd_equivalent: number | null;
+    norm_traits: string | null;
+    cached_traits: string | null;
+    title: string | null;
+    is_group_lot: boolean | null;
+    is_auction: boolean | null;
+  }>;
+
+  const combos: ComboSnapshot[] = (comboQ.data ?? [])
+    .map((r: ComboSnapshot) => {
+      const tokens = comboNameTokens(r.combo_name);
+      const prices: number[] = [];
+      for (const row of freshComboRows) {
+        if (row.is_auction || row.is_group_lot) continue;
+        if (looksLikeGroupLot(row.title)) continue;
+        const traits = (row.norm_traits || row.cached_traits || "").toLowerCase();
+        if (!traits || !tokens.every((t) => traits.includes(t))) continue;
+        const price = num(row.price_usd_equivalent);
+        if (price == null || price <= 0) continue;
+        prices.push(price);
+      }
+      return {
+        combo_name: r.combo_name,
+        live_count: r.live_count ?? 0,
+        fresh_live_count: prices.length,
+        fresh_median_ask: medianOf(prices),
+        sold_count: r.sold_count ?? 0,
+        median_ask: r.median_ask != null ? Number(r.median_ask) : null,
+        median_sold: r.median_sold != null ? Number(r.median_sold) : null,
+        spread_pct: r.spread_pct != null ? Number(r.spread_pct) : null,
+        avg_days_to_sell:
+          r.avg_days_to_sell != null ? Number(r.avg_days_to_sell) : null,
+        confidence_score: r.confidence_score ?? 0,
+      };
+    })
+    .filter((c: ComboSnapshot) => !isRedundantComboName(c.combo_name, redundantKeys));
+  const anyFresh = combos.some((c) => c.fresh_live_count > 0);
+  combos.sort((a, b) =>
+    anyFresh
+      ? b.fresh_live_count - a.fresh_live_count ||
+        (b.fresh_median_ask ?? 0) - (a.fresh_median_ask ?? 0)
+      : b.live_count + b.sold_count - (a.live_count + a.sold_count),
   );
   const hottest_combo = combos[0] ?? null;
 

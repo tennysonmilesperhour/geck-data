@@ -29,15 +29,24 @@ export type ScraperHealth = {
 };
 
 // How long each scrape_type may go without a healthy run before it
-// reports down. Listings runs hourly (36h = lots of slack); the others
-// run weekly (8.5 days = one missed week plus slack).
+// reports down. Listings is a weekday catalog recrawl plus a Monday
+// 7-day pulse (96h covers Friday to Monday). Details and sellers are
+// paused Decodo jobs and stay weekly so they report Down honestly.
+// Images remains the weekly downloader.
+export const LISTINGS_SCRAPER = {
+  scrapeType: "listings",
+  label: "Listings API catalog recrawl",
+  cadence: "weekday catalog + weekly 7-day pulse",
+  thresholdHours: 96,
+} as const;
+
 const EXPECTED: Array<{
   scrapeType: string;
   label: string;
   cadence: string;
   thresholdHours: number;
 }> = [
-  { scrapeType: "listings", label: "Listings grid walk", cadence: "hourly", thresholdHours: 36 },
+  LISTINGS_SCRAPER,
   { scrapeType: "details", label: "Listing detail re-scrape", cadence: "weekly", thresholdHours: 204 },
   { scrapeType: "sellers", label: "Seller store pages", cadence: "weekly", thresholdHours: 204 },
   { scrapeType: "images", label: "Primary image download", cadence: "weekly", thresholdHours: 204 },
@@ -62,8 +71,7 @@ function isHealthyRun(r: RunRow): boolean {
 export async function fetchScraperHealth(
   admin: SupabaseClient,
 ): Promise<ScraperHealth[]> {
-  // 400 recent rows comfortably covers a week of hourly listings runs
-  // plus the weekly jobs, which is all the freshness math needs.
+  // 400 recent rows covers weekday catalog runs plus the weekly jobs.
   const { data, error } = await admin
     .from("scrape_runs")
     .select(
