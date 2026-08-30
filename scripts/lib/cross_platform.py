@@ -45,6 +45,20 @@ SHOP_GROUP_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Feedle pack language. pair / trio / quad / group are morph tokens there
+# (Quad stripe, Pair, Trio) so they are not matched unless a numeric or
+# pack context is present (group of 3, 5-pack, x2).
+FEEDLE_PACK_RE = re.compile(
+    r"mystery\s*box|mystery\s*group|wholesale|"
+    r"\b(lots?|packs?|bundle|colony)\b|"
+    r"\blot\s+of\b|"
+    r"\bgroup\s+of\s+[0-9]+\b|"
+    r"\b(x\s*[2-9]|[2-9]\s*x)\b|"
+    r"\b[0-9]+\s*[-]?\s*packs?\b|"
+    r"\b(two|three|four|five|six)\s+(pack|lot|group|of)\b",
+    re.IGNORECASE,
+)
+
 EXCLUDE_COMBO_RE = re.compile(
     r"gift card|hand-picked hatchling|hand picked hatchling|"
     r"generic hatchling",
@@ -97,6 +111,27 @@ def is_group_lot_text(*parts: Any) -> bool:
     if looks_like_group_lot(blob):
         return True
     return bool(SHOP_GROUP_RE.search(blob))
+
+
+def is_feedle_group_lot(
+    *,
+    title: Any = None,
+    size: Any = None,
+    sale: Any = None,
+    traits: Any = None,
+) -> bool:
+    """Pack flag for Feedle listings.
+
+    Trait strings are ignored. Quad, Pair, Trio, and Group are morph
+    tokens on Feedle, not multi-animal packs. Only title / size / sale
+    fields are scanned, and only for pack language (mystery box,
+    wholesale, group of N, x2, colony, bundle, lot of).
+    """
+    del traits
+    blob = " ".join(str(p) for p in (title, size, sale) if p)
+    if not blob.strip():
+        return False
+    return bool(FEEDLE_PACK_RE.search(blob))
 
 
 def exclude_from_combo_arb(*parts: Any) -> bool:

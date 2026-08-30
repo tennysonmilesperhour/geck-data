@@ -50,6 +50,7 @@ from lib.cross_platform import (
     exclude_from_combo_arb,
     feedle_air_usd,
     is_crested_text,
+    is_feedle_group_lot,
     is_group_lot_text,
     is_merch_text,
     krw_to_usd,
@@ -312,9 +313,19 @@ def build_feedle_rows(
     sale_status = str(pet.get("sale_status") or "")
     title_bits = [t for t in traits if t] or [species_name or "Crested Gecko"]
     title = " ".join(str(t) for t in title_bits)
-    group_lot = is_group_lot_text(title, species_name)
     sex = pet.get("sex")
     size = pet.get("size")
+    # Title is joined trait_names_en. Quad / Pair / Trio are morphs there,
+    # so do not run the MorphMarket group-lot regex against that string.
+    listing_name = pet.get("name") or pet.get("name_en") or pet.get("title")
+    if isinstance(listing_name, str) and listing_name.strip() == title.strip():
+        listing_name = None
+    group_lot = is_feedle_group_lot(
+        title=listing_name,
+        size=size,
+        sale=sale_status,
+        traits=traits,
+    )
     seller = feedle_seller_name(pet)
     url = f"{FEEDLE_ORIGIN}/pet/{external_id}"
     image = feedle_image_url(pet)

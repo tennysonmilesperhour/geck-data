@@ -15,6 +15,7 @@ from lib.cross_platform import (  # noqa: E402
     exclude_from_combo_arb,
     feedle_air_usd,
     is_crested_text,
+    is_feedle_group_lot,
     is_group_lot_text,
     is_merch_text,
     krw_to_usd,
@@ -41,6 +42,18 @@ class CrestedFilters(unittest.TestCase):
         self.assertTrue(is_group_lot_text("Wholesale Baby Crested Geckos"))
         self.assertTrue(is_group_lot_text("Cappuccino Crested Gecko Special"))
         self.assertFalse(is_group_lot_text("Axanthic Lilly White Crested Gecko"))
+
+    def test_feedle_group_lot_ignores_morph_tokens(self) -> None:
+        self.assertFalse(
+            is_feedle_group_lot(traits=["Full Pinstripe", "Quad", "Drippy"])
+        )
+        self.assertTrue(is_feedle_group_lot(title="Mystery box 5-pack"))
+        # Joined trait titles must not trip pair/trio/quad/group as packs.
+        self.assertFalse(is_feedle_group_lot(title="Full Pinstripe Quad Drippy"))
+        self.assertFalse(is_feedle_group_lot(title="Pair Lilly White"))
+        self.assertFalse(is_feedle_group_lot(title="Trio Extreme Harlequin"))
+        self.assertTrue(is_feedle_group_lot(title="group of 3"))
+        self.assertTrue(is_feedle_group_lot(size="x2"))
 
     def test_exclude_combo(self) -> None:
         self.assertTrue(exclude_from_combo_arb("$79 Hand-Picked Hatchling"))
