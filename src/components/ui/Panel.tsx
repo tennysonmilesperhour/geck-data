@@ -19,12 +19,12 @@ export function Panel({
 }) {
   const base = tone === "soft" ? "surface-soft" : "surface";
   return (
-    <section className={`${base} shadow-panel`}>
+    <section className={`${base} overflow-hidden shadow-panel`}>
       {(title || right) && (
-        <header className="flex items-start justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+        <header className="flex min-h-[58px] items-start justify-between gap-3 border-b border-ink-700/80 bg-ink-900/35 px-4 py-3.5">
           <div>
             {title ? (
-              <h2 className="text-[13px] font-semibold tracking-tight text-ink-50">
+              <h2 className="text-[14px] font-semibold tracking-[-0.015em] text-ink-50">
                 {title}
               </h2>
             ) : null}
@@ -52,18 +52,18 @@ export function SectionHeader({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-6 grid grid-cols-1 items-end gap-4 border-b border-ink-700/80 pb-5 md:grid-cols-[minmax(0,1fr)_auto]">
       <div>
         {eyebrow ? (
-          <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400">
+          <div className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-clay-300">
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="font-display text-[28px] leading-[1.1] font-medium tracking-[-0.01em] text-ink-50">
+        <h1 className="font-display text-[34px] font-semibold leading-[1.05] tracking-[-0.035em] text-ink-50 md:text-[42px]">
           {title}
         </h1>
         {description ? (
-          <p className="mt-1 max-w-2xl text-sm text-ink-400">{description}</p>
+          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-ink-400">{description}</p>
         ) : null}
       </div>
       {right ? <div className="text-xs text-ink-400">{right}</div> : null}

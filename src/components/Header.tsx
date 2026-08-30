@@ -160,63 +160,19 @@ export default function Header({
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-ink-700/70 bg-ink-900/80 backdrop-blur">
-      <nav className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:gap-6 sm:px-6">
+    <header className="sticky top-0 z-30 border-b border-ink-700 bg-ink-950/95 backdrop-blur-xl">
+      <div className="mx-auto flex min-h-[58px] w-full max-w-[1600px] items-center gap-3 px-4 sm:gap-6 sm:px-6 lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2 text-ink-50">
           <Logo size={28} />
-          <span className="font-display text-[15px] font-medium tracking-tight">
+          <span className="font-display text-[16px] font-semibold tracking-[-0.02em]">
             Geck Inspect
           </span>
-          <span className="ml-1 hidden rounded border border-ink-700 bg-ink-800 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-ink-400 sm:inline">
-            market
+          <span className="ml-2 hidden border-l border-ink-700 pl-3 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-500 sm:inline">
+            market intelligence
           </span>
         </Link>
 
-        {/* Inline tab bar, large screens only. */}
-        <div className="hidden flex-1 flex-wrap items-center gap-0.5 text-[13px] lg:flex">
-          {visibleTabs.map((t, i) => {
-            const prev = visibleTabs[i - 1];
-            const divider = prev && prev.group !== t.group ? (
-              <span key={`d-${t.href}`} aria-hidden className="mx-1.5 h-4 w-px bg-ink-700" />
-            ) : null;
-            return (
-              <span key={t.href} className="flex items-center">
-                {divider}
-                <Link
-                  href={t.href}
-                  className={`rounded-md px-2.5 py-1.5 transition ${
-                    isActive(t.href)
-                      ? "bg-ink-800 text-ink-50 shadow-panel"
-                      : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
-                  }`}
-                >
-                  {t.label}
-                </Link>
-              </span>
-            );
-          })}
-          {sessionTabs.length > 0 ? (
-            <>
-              <span aria-hidden className="mx-1.5 h-4 w-px bg-ink-700" />
-              {sessionTabs.map((t) => (
-                <Link
-                  key={t.href}
-                  href={t.href}
-                  className={`rounded-md px-2.5 py-1.5 ${
-                    isActive(t.href)
-                      ? "bg-ink-800 text-ink-50 shadow-panel"
-                      : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
-                  }`}
-                >
-                  {t.label}
-                </Link>
-              ))}
-            </>
-          ) : null}
-        </div>
-
-        {/* Spacer so the right cluster stays pinned right below lg. */}
-        <div className="flex-1 lg:hidden" />
+        <div className="flex-1" />
 
         <div className="flex items-center gap-2 text-[13px] sm:gap-3">
           <Link
@@ -250,7 +206,7 @@ export default function Header({
           ) : loaded ? (
             <Link
               href="/login"
-              className="rounded-md bg-claude px-3 py-1.5 text-ink-50 shadow-glow hover:bg-claude-glow"
+            className="border border-claude bg-claude px-3 py-1.5 font-medium text-ink-950 hover:bg-claude-glow"
             >
               Log in
             </Link>
@@ -262,7 +218,7 @@ export default function Header({
             onClick={() => setMenuOpen(true)}
             aria-label="Open navigation menu"
             aria-expanded={menuOpen}
-            className="rounded-md border border-ink-700 bg-ink-850 p-1.5 text-ink-300 hover:border-ink-600 hover:text-ink-50 lg:hidden"
+            className="border border-ink-700 bg-ink-850 p-1.5 text-ink-300 hover:border-ink-600 hover:text-ink-50 lg:hidden"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -280,6 +236,46 @@ export default function Header({
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
+        </div>
+      </div>
+
+      <nav className="hidden border-t border-ink-700/80 lg:block" aria-label="Primary navigation">
+        <div className="mx-auto flex min-h-[44px] w-full max-w-[1600px] items-stretch overflow-x-auto px-8">
+          <span className="flex min-w-[150px] items-center border-x border-ink-700/80 px-4 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-500">
+            Market workspace
+          </span>
+          {visibleTabs.map((t, index) => {
+            const prev = visibleTabs[index - 1];
+            const startsGroup = !prev || prev.group !== t.group;
+            return (
+              <Link
+                key={t.href}
+                href={t.href}
+                className={`relative flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-medium transition ${
+                  startsGroup ? "border-l border-l-ink-600" : ""
+                } ${
+                  isActive(t.href)
+                    ? "bg-ink-800 text-ink-50 shadow-[inset_0_-2px_0_#10b981]"
+                    : "text-ink-400 hover:bg-ink-850 hover:text-ink-100"
+                }`}
+              >
+                {t.label}
+              </Link>
+            );
+          })}
+          {sessionTabs.map((t) => (
+            <Link
+              key={t.href}
+              href={t.href}
+              className={`flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-medium ${
+                isActive(t.href)
+                  ? "bg-ink-800 text-ink-50 shadow-[inset_0_-2px_0_#10b981]"
+                  : "text-ink-400 hover:bg-ink-850 hover:text-ink-100"
+              }`}
+            >
+              {t.label}
+            </Link>
+          ))}
         </div>
       </nav>
 

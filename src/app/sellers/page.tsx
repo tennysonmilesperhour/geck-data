@@ -192,7 +192,7 @@ export default async function SellersPage({
     <div className="page-rise space-y-10">
       <SectionHeader
         eyebrow="Directory"
-        title="Every breeder, ranked"
+        title="Seller directory"
         description={
           filterSummary
             ? `${filterSummary}. ${fmtInt(rows.length)} sellers match.`

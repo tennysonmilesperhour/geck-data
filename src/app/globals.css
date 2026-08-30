@@ -4,6 +4,7 @@
 
 :root {
   color-scheme: dark;
+  --font-display: var(--font-sans);
   /* Slate + emerald tokens, matched to the Geck Inspect "Market Analytics"
      preview so GeckIntellect reads as the same product. Values mirror
      tailwind.config.ts: ink.* for surfaces and text, claude/clay for
@@ -30,6 +31,26 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.28);
+  color: rgb(var(--fg));
+}
+
+:focus-visible {
+  outline: 2px solid rgb(var(--accent-glow));
+  outline-offset: 3px;
+}
+
 /* Atmospheric wash. The preview is a near-flat slate ground with a single
    faint emerald bloom at the top; the paper grain and warm clay corner of
    the old theme are gone. */
@@ -40,7 +61,10 @@ body::before {
   pointer-events: none;
   z-index: -1;
   background-image:
-    radial-gradient(circle at 50% -10%, rgba(16,185,129,0.06), transparent 55%);
+    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px),
+    radial-gradient(circle at 50% -10%, rgba(16,185,129,0.07), transparent 55%);
+  background-size: 56px 56px, 56px 56px, auto;
 }
 
 /* D3 axis text — slate. */
@@ -59,7 +83,7 @@ body::before {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgb(30 41 59); border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(30 41 59); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgb(51 65 85); }
 
 /* Status dot */
@@ -80,25 +104,23 @@ body::before {
 .surface {
   background: rgb(var(--card));
   border: 1px solid rgb(var(--border));
-  border-radius: 12px;
+  border-radius: 2px;
 }
 .surface-soft {
   background: rgba(15,23,42,0.6);   /* slate-900/60 */
   border: 1px solid rgb(var(--border));
-  border-radius: 12px;
+  border-radius: 2px;
 }
 
 /* Elevated card — the "this matters" tier. A clean emerald edge and a faint
    emerald top wash, no clay. */
 .surface-elevated {
-  background:
-    linear-gradient(180deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0) 55%),
-    rgb(var(--card));
+  background: rgb(var(--card));
   border: 1px solid rgba(16,185,129,0.25);
-  border-radius: 14px;
+  border-radius: 2px;
   box-shadow:
-    0 0 0 1px rgba(16,185,129,0.10),
-    0 22px 60px -40px rgba(2,6,23,0.9);
+    inset 0 2px 0 rgba(16,185,129,0.22),
+    0 18px 46px -40px rgba(2,6,23,0.9);
 }
 
 /* Motion primitives. Same shapes; slate/emerald colouring. */
@@ -110,7 +132,7 @@ body::before {
   will-change: transform;
 }
 .hover-lift:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow:
     0 0 0 1px rgba(16,185,129,0.28),
     0 24px 60px -36px rgba(2,6,23,0.9);
@@ -141,7 +163,39 @@ body::before {
   to   { opacity: 1; transform: translateY(0); }
 }
 .page-rise {
-  animation: pageRise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: pageRise 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Atlas geometry across the product. Preserve fully rounded chips and status
+   dots, but flatten page panels, controls, and cards into a consistent
+   evidence-grid system. */
+.rounded-2xl,
+.rounded-xl,
+.rounded-lg,
+.rounded-md,
+.rounded {
+  border-radius: 2px;
+}
+
+.geck-app > main {
+  min-height: calc(100vh - 104px);
+}
+
+.geck-app table {
+  border-collapse: collapse;
+}
+
+.geck-app thead {
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.geck-app th {
+  color: rgb(var(--muted));
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -205,7 +259,7 @@ body::before {
   inset: -24px -24px 0 -24px;
   pointer-events: none;
   z-index: -1;
-  border-radius: 16px;
+  border-radius: 2px;
   background:
     radial-gradient(circle at 50% 0%, rgba(16,185,129,0.06), transparent 55%),
     #020617;
@@ -214,12 +268,12 @@ body::before {
 .market-theme .forest-surface {
   background: rgba(15,23,42,0.6);   /* slate-900/60 */
   border: 1px solid rgb(30,41,59);  /* slate-800 */
-  border-radius: 12px;
+  border-radius: 2px;
 }
 .market-theme .forest-surface-soft {
   background: rgba(15,23,42,0.5);
   border: 1px solid rgb(30,41,59);
-  border-radius: 12px;
+  border-radius: 2px;
 }
 
 .market-theme .tick text { fill: #94a3b8; }

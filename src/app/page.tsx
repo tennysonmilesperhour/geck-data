@@ -6,7 +6,6 @@
 // The operator's "Sessions in last 7 days" view that used to live here has
 // moved to /status (ingest health and freshness), which is where it
 // actually belongs.
-import HeroBand from "@/components/landing/HeroBand";
 import WhatsHotPanel from "@/components/landing/WhatsHotPanel";
 import BelowCompsPanel from "@/components/landing/BelowCompsPanel";
 import TopSellersPanel from "@/components/landing/TopSellersPanel";
@@ -16,9 +15,9 @@ import { LandingFiltersProvider } from "@/components/landing/LandingFilters";
 import FilterChips from "@/components/landing/FilterChips";
 import PriceBandSlider from "@/components/landing/PriceBandSlider";
 import ComboFilter from "@/components/landing/ComboFilter";
-import SectionOrnament from "@/components/ui/SectionOrnament";
 import AnchorIndicesStrip from "@/components/landing/AnchorIndicesStrip";
 import BrowseStrip from "@/components/landing/BrowseStrip";
+import PulseWorkspace from "@/components/landing/PulseWorkspace";
 import {
   getComboDailyAppearances,
   getMarketSnapshot,
@@ -46,44 +45,35 @@ export default async function LandingPage() {
 
   return (
     <LandingFiltersProvider>
-      <div className="page-rise space-y-12">
-        <HeroBand snapshot={snapshot} />
-
-        <BrowseStrip />
-
-        <AnchorIndicesStrip />
-
-        <FilterChips />
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <ComboFilter allCombos={snapshot.combos.map((c) => c.combo_name)} />
-          <PriceBandSlider
-            maxPrice={Math.max(
-              snapshot.totals.p75_price ? snapshot.totals.p75_price * 4 : 2500,
-              2500,
-            )}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
-          <div className="lg:col-span-3">
-            <WhatsHotPanel combos={snapshot.combos} comboDaily={comboDaily} />
-          </div>
-          <div className="lg:col-span-2">
-            <BelowCompsPanel listings={snapshot.below_comps} />
-          </div>
-        </div>
-
-        <TopSellersPanel sellers={snapshot.top_sellers} />
-
-        <SectionOrnament variant="leaf" />
-
-        <ScrollytellingSection data={scrolly} />
-
-        <SectionOrnament variant="diamond" />
-
-        <DeepDiveCta />
-      </div>
+      <PulseWorkspace
+        snapshot={{
+          totals: snapshot.totals,
+          hottest_combo: snapshot.hottest_combo,
+          generated_at: snapshot.generated_at,
+        }}
+        sections={{
+          controls: (
+            <div className="space-y-3">
+              <FilterChips />
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <ComboFilter allCombos={snapshot.combos.map((c) => c.combo_name)} />
+                <PriceBandSlider
+                  maxPrice={Math.max(
+                    snapshot.totals.p75_price ? snapshot.totals.p75_price * 4 : 2500,
+                    2500,
+                  )}
+                />
+              </div>
+            </div>
+          ),
+          signals: <WhatsHotPanel combos={snapshot.combos} comboDaily={comboDaily} />,
+          opportunities: <BelowCompsPanel listings={snapshot.below_comps} />,
+          indices: <AnchorIndicesStrip />,
+          sellers: <TopSellersPanel sellers={snapshot.top_sellers} />,
+          story: <ScrollytellingSection data={scrolly} />,
+          explore: <div className="space-y-5"><BrowseStrip /><DeepDiveCta /></div>,
+        }}
+      />
     </LandingFiltersProvider>
   );
 }
