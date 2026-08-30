@@ -17,6 +17,7 @@
 // down every page, and never silently downgrades a real warning to silence.
 
 import Link from "next/link";
+import FreshnessBannerView from "@/components/FreshnessBannerView";
 import {
   getMarketCoverage,
   marketFeedVerdict,
@@ -26,6 +27,7 @@ import {
 const TONE = {
   stale: "border-danger/30 bg-danger/10 text-danger",
   partial: "border-busy/30 bg-busy/10 text-busy",
+  limited: "border-busy/30 bg-busy/10 text-busy",
 } as const;
 
 export default async function StaleDataBanner() {
@@ -38,7 +40,11 @@ export default async function StaleDataBanner() {
   if (!coverage) return null;
 
   const verdict = marketFeedVerdict(coverage);
-  if (verdict.level !== "stale" && verdict.level !== "partial") return null;
+  if (
+    verdict.level !== "stale" &&
+    verdict.level !== "partial" &&
+    verdict.level !== "limited"
+  ) return null;
 
   // Observed days say something coverage percentages cannot: how many
   // distinct days in the window produced any observation at all.
@@ -48,19 +54,20 @@ export default async function StaleDataBanner() {
       : `${coverage.observedDays30} of the last 30 days produced observations.`;
 
   return (
-    <div
+    <FreshnessBannerView
       className={`border-b px-4 py-2 text-center text-sm ${TONE[verdict.level]}`}
-      role="status"
     >
       <span className="font-medium">{verdict.headline}.</span>{" "}
       <span className="opacity-90">
-        The market feed is a weekly pulse, not a daily refresh. {verdict.detail}{" "}
-        {observed ? `${observed} ` : ""}
-        Prices and trends below describe what was last observed, not today.
+        {verdict.level === "limited"
+          ? "A fresh listing batch landed, but it did not revisit the whole catalogue. "
+          : "The market feed is a weekly pulse, not a daily refresh. "}
+        {verdict.detail} {observed ? `${observed} ` : ""}
+        Current asking-price views use recent observations; broader catalogue views may include older records.
       </span>{" "}
       <Link href="/status" className="underline decoration-dotted hover:opacity-80">
         Pipeline status
       </Link>
-    </div>
+    </FreshnessBannerView>
   );
 }

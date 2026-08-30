@@ -31,12 +31,12 @@ function coverage(over: Partial<MarketCoverage> = {}): MarketCoverage {
   };
 }
 
-test("production shape today reads stale, because coverage is 5.6% not because the pass is old", () => {
+test("a recent narrow production batch reads limited rather than stale", () => {
   const v = marketFeedVerdict(coverage(), NOW);
-  assert.equal(v.level, "stale");
-  assert.equal(v.headline, "Coverage stale");
+  assert.equal(v.level, "limited");
+  assert.equal(v.headline, "Limited catalog coverage");
   assert.match(v.detail, /5\.6% of 10,158/);
-  assert.match(v.detail, /Newest recorded sale/);
+  assert.doesNotMatch(v.detail, /recorded sale/i);
 });
 
 test("a fresh batch on top of an unobserved catalogue does not read as healthy", () => {
@@ -73,6 +73,12 @@ test("partial coverage is its own level, between current and stale", () => {
   const v = marketFeedVerdict(coverage({ cycleCoveragePct: 55 }), NOW);
   assert.equal(v.level, "partial");
   assert.equal(v.headline, "Partial coverage");
+});
+
+test("limited coverage is distinct from an overdue pass", () => {
+  const v = marketFeedVerdict(coverage({ cycleCoveragePct: 12 }), NOW);
+  assert.equal(v.level, "limited");
+  assert.equal(v.headline, "Limited catalog coverage");
 });
 
 test("a pass older than one cycle is stale whatever it covered", () => {

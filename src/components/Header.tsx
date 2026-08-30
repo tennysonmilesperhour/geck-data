@@ -28,6 +28,7 @@ import type {
 const STATUS_DOT: Record<FeedLevel, string> = {
   ok: "",
   partial: "busy",
+  limited: "busy",
   stale: "idle",
   unknown: "info",
 };
