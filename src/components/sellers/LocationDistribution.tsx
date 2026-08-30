@@ -1,94 +1,149 @@
-// Compact "where are the breeders?" panel. Counts seller_location
-// occurrences, takes the top N, renders proportional bars. Server
-// component — pure data in, JSX out, no client hydration needed.
+// Compact seller geography panel. Country and state are intentionally shown
+// as separate distributions so parent and child geographies never compete in
+// one ranking. Server component: pure data in, JSX out.
 import { fmtInt } from "@/lib/format";
+import {
+  summarizeSellerLocations,
+  type LocationCount,
+} from "@/lib/sellers/location";
 
 type SellerLocationRow = { seller_location: string | null };
 
+function RankedBars({
+  rows,
+  denominator,
+  limit,
+}: {
+  rows: LocationCount[];
+  denominator: number;
+  limit: number;
+}) {
+  const ranked = rows.slice(0, limit);
+  if (ranked.length === 0) return null;
+  const maxCount = ranked[0]!.count;
+
+  return (
+    <ul className="space-y-2">
+      {ranked.map(({ label, count }) => {
+        const widthPct = (count / maxCount) * 100;
+        const sharePct = denominator > 0 ? (count / denominator) * 100 : 0;
+        return (
+          <li
+            key={label}
+            aria-label={`${label}: ${fmtInt(count)} sellers, ${sharePct.toFixed(1)} percent`}
+          >
+            <div className="mb-1 flex items-baseline justify-between gap-3">
+              <span className="truncate text-[13px] text-ink-100">{label}</span>
+              <span className="flex items-baseline gap-2 font-mono text-[10px] tabular-nums">
+                <span className="text-ink-500">{sharePct.toFixed(1)}%</span>
+                <span className="text-ink-200">{fmtInt(count)}</span>
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-ink-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-claude-soft to-claude-glow"
+                style={{ width: `${widthPct}%` }}
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function DistributionSection({
+  title,
+  coverage,
+  rows,
+  denominator,
+  limit,
+}: {
+  title: string;
+  coverage: string;
+  rows: LocationCount[];
+  denominator: number;
+  limit: number;
+}) {
+  const hidden = rows.slice(limit).reduce((sum, row) => sum + row.count, 0);
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-300">
+          {title}
+        </h3>
+        <span className="text-right text-[10px] text-ink-500">{coverage}</span>
+      </div>
+      <RankedBars rows={rows} denominator={denominator} limit={limit} />
+      {hidden > 0 ? (
+        <p className="mt-2 text-[10px] text-ink-500">
+          {fmtInt(hidden)} sellers across {fmtInt(rows.length - limit)} other{" "}
+          {title === "Country" ? "countries" : "states"}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function LocationDistribution({
   rows,
-  topN = 8,
+  topN = 5,
 }: {
   rows: SellerLocationRow[];
   topN?: number;
 }) {
-  // Normalise: strip leading/trailing whitespace, fold case for grouping.
-  // Many sellers leave location blank; those collapse into "Unspecified".
-  const counts = new Map<string, number>();
-  for (const r of rows) {
-    const raw = (r.seller_location ?? "").trim();
-    const key = raw.length === 0 ? "Unspecified" : raw;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const allKnown = Array.from(counts.entries()).filter(
-    ([k]) => k !== "Unspecified",
-  );
-  const totalKnown = allKnown.reduce((a, [, c]) => a + c, 0);
-  const ranked = allKnown
-    .slice()
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topN);
-  const unspec = counts.get("Unspecified") ?? 0;
-  if (ranked.length === 0) {
-    return null;
-  }
-  const maxCount = ranked[0]![1];
-  const topShare = ranked.reduce((a, [, c]) => a + c, 0);
-  const longTail = totalKnown - topShare;
-  const longTailCities = allKnown.length - ranked.length;
+  const summary = summarizeSellerLocations(rows);
+  if (summary.countryKnown === 0) return null;
 
   return (
     <section className="surface p-5">
-      <header className="mb-4 flex items-baseline justify-between">
-        <div>
+      <header className="mb-4 border-b border-ink-700/60 pb-3">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="font-display text-[18px] font-medium tracking-tight text-ink-50">
-            Where they ship from
+            Seller locations
           </h2>
-          <p className="mt-0.5 text-[11px] text-ink-400">
-            {fmtInt(totalKnown)} sellers across {fmtInt(allKnown.length)}{" "}
-            location strings
-          </p>
+          <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-500">
+            profile reported
+          </span>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-500">
-          top {ranked.length}
-        </span>
+        <p className="mt-1 text-[11px] leading-4 text-ink-400">
+          Country and US state are separated so every row is compared at the
+          same geographic level.
+        </p>
       </header>
 
-      <ul className="space-y-2.5">
-        {ranked.map(([location, count]) => {
-          const widthPct = (count / maxCount) * 100;
-          const sharePct = totalKnown > 0 ? (count / totalKnown) * 100 : 0;
-          return (
-            <li key={location} className="group">
-              <div className="mb-1 flex items-baseline justify-between gap-3">
-                <span className="truncate text-sm text-ink-100">{location}</span>
-                <span className="flex items-baseline gap-2 font-mono text-[11px] tabular-nums">
-                  <span className="text-ink-500">{sharePct.toFixed(1)}%</span>
-                  <span className="text-ink-200">{fmtInt(count)}</span>
-                </span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-ink-800">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-claude-soft to-claude-glow transition-all"
-                  style={{ width: `${widthPct}%` }}
-                />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="space-y-5">
+        <DistributionSection
+          title="Country"
+          coverage={`${fmtInt(summary.countryKnown)} of ${fmtInt(summary.total)} mapped`}
+          rows={summary.countries}
+          denominator={summary.countryKnown}
+          limit={topN}
+        />
+
+        {summary.usStateKnown > 0 ? (
+          <DistributionSection
+            title="US state"
+            coverage={`${fmtInt(summary.usStateKnown)} of ${fmtInt(summary.usSellerCount)} US sellers identified`}
+            rows={summary.usStates}
+            denominator={summary.usStateKnown}
+            limit={topN}
+          />
+        ) : null}
+      </div>
 
       <footer className="mt-4 space-y-1 border-t border-ink-700/60 pt-3 text-[11px] text-ink-500">
-        {longTail > 0 ? (
+        {summary.missing > 0 ? (
           <div>
-            {fmtInt(longTail)} more sellers across {fmtInt(longTailCities)}{" "}
-            other cities (long tail).
+            {fmtInt(summary.missing)}{" "}
+            {summary.missing === 1 ? "seller has" : "sellers have"} no
+            location on file.
           </div>
         ) : null}
-        {unspec > 0 ? (
+        {summary.unclassified > 0 ? (
           <div>
-            {fmtInt(unspec)} {unspec === 1 ? "seller has" : "sellers have"} no
-            location on file.
+            {fmtInt(summary.unclassified)} reported locations could not be
+            classified.
           </div>
         ) : null}
       </footer>

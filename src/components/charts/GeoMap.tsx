@@ -2,44 +2,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import { chartTheme } from "./theme";
+import { parseSellerLocation } from "@/lib/sellers/location";
 
 export type GeoSeller = {
   seller_id: string;
   seller_location: string | null;
   total_listings: number | null;
 };
-
-const US_STATES: ReadonlyArray<readonly [string, string]> = [
-  ["Alabama", "AL"], ["Alaska", "AK"], ["Arizona", "AZ"], ["Arkansas", "AR"],
-  ["California", "CA"], ["Colorado", "CO"], ["Connecticut", "CT"], ["Delaware", "DE"],
-  ["Florida", "FL"], ["Georgia", "GA"], ["Hawaii", "HI"], ["Idaho", "ID"],
-  ["Illinois", "IL"], ["Indiana", "IN"], ["Iowa", "IA"], ["Kansas", "KS"],
-  ["Kentucky", "KY"], ["Louisiana", "LA"], ["Maine", "ME"], ["Maryland", "MD"],
-  ["Massachusetts", "MA"], ["Michigan", "MI"], ["Minnesota", "MN"], ["Mississippi", "MS"],
-  ["Missouri", "MO"], ["Montana", "MT"], ["Nebraska", "NE"], ["Nevada", "NV"],
-  ["New Hampshire", "NH"], ["New Jersey", "NJ"], ["New Mexico", "NM"], ["New York", "NY"],
-  ["North Carolina", "NC"], ["North Dakota", "ND"], ["Ohio", "OH"], ["Oklahoma", "OK"],
-  ["Oregon", "OR"], ["Pennsylvania", "PA"], ["Rhode Island", "RI"], ["South Carolina", "SC"],
-  ["South Dakota", "SD"], ["Tennessee", "TN"], ["Texas", "TX"], ["Utah", "UT"],
-  ["Vermont", "VT"], ["Virginia", "VA"], ["Washington", "WA"], ["West Virginia", "WV"],
-  ["Wisconsin", "WI"], ["Wyoming", "WY"], ["District of Columbia", "DC"],
-];
-// Match longer names first so "Virginia" doesn't swallow "West Virginia".
-const STATES_BY_LEN = [...US_STATES].sort((a, b) => b[0].length - a[0].length);
-const ABBR_TO_NAME: Record<string, string> = Object.fromEntries(
-  US_STATES.map(([n, a]) => [a, n]),
-);
-
-function parseState(loc: string | null): string | null {
-  if (!loc) return null;
-  const lower = loc.toLowerCase();
-  for (const [name] of STATES_BY_LEN) {
-    if (lower.includes(name.toLowerCase())) return name;
-  }
-  const m = loc.match(/\b([A-Z]{2})\b/);
-  if (m && ABBR_TO_NAME[m[1]]) return ABBR_TO_NAME[m[1]];
-  return null;
-}
 
 type FeatureLike = {
   type: "Feature";
@@ -57,7 +26,7 @@ export default function GeoMap({ data }: { data: GeoSeller[] }) {
     let mp = 0;
     let um = 0;
     for (const d of data) {
-      const state = parseState(d.seller_location);
+      const state = parseSellerLocation(d.seller_location).usState;
       if (!state) {
         um++;
         continue;
