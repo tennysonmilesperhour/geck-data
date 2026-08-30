@@ -54,8 +54,8 @@ export default function MarketIndexCard({
               Geck Inspect Market Index
             </h2>
             <p className="mt-0.5 text-xs text-forest-400">
-              Weighted basket of high-value trait combinations — 1,000 at
-              period start
+              Asking-price basket of the anchor morphs (Lilly White,
+              Axanthic, Harlequin, Cappuccino), 1,000 at period start
             </p>
           </div>
         </div>

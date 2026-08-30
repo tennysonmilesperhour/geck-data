@@ -102,6 +102,24 @@ function confidenceSources(filters: Filters): SourceId[] {
     : Array.from(filters.sources);
 }
 
+// How many days of price history the warehouse actually holds, via the
+// observation_span() RPC (migration 0052). Used to keep lookbacks from
+// reaching past the data we have. Returns null on any failure so callers
+// fall back to their own default rather than erroring.
+async function observationSpanDays(
+  supabase: ReturnType<typeof createClient>,
+): Promise<number | null> {
+  try {
+    const { data, error } = await supabase.rpc("observation_span");
+    if (error) return null;
+    const row = Array.isArray(data) ? data[0] : data;
+    const n = Number((row as { span_days?: number | string })?.span_days);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 // Postgres numerics arrive as strings through PostgREST, and any of them can
 // be null. Parsing is centralised so no call site reaches for `?? 0`: a price
 // we never observed is not zero dollars, and a duration we never observed is
@@ -173,11 +191,15 @@ export async function fetchMarketIndex(
         deltaPct,
         series,
         attribution: {
-          sources: confidenceSources(filters),
+          // The index is an asking-price basket (migration 0055), so it is
+          // attributed to the listings feed rather than the generic
+          // sold+listings pair. Saying gi_sales here would imply the hero is
+          // built on sold prices, which it is not.
+          sources: ["gi_listings"],
           confidence: { score: sampleConfidence(n) },
         },
       },
-      `v_market_index(${windowDays(filters)}d, ${rows.length} weeks)`,
+      `v_market_index(${windowDays(filters)}d, ${rows.length} weeks): asking-price anchor basket`,
     );
   } catch (e) {
     return empty(null, `fetchMarketIndex error: ${errMsg(e)}`);
@@ -455,8 +477,20 @@ export async function fetchTopMovers(
   try {
     const supabase = createClient();
     const w = windowDays(filters);
+    // A mover needs a baseline index day roughly `lookback` days before the
+    // latest one. The observed history is far shorter than the default 12mo
+    // window (about four months at time of writing), so a 365-day lookback
+    // finds no baseline and the panel goes empty even though the daily index
+    // is full. Cap the lookback to the span we actually have so the longest
+    // honest move still shows; the note and each row carry the real from/to
+    // days, so a capped window never reads as the requested one.
+    const spanDays = await observationSpanDays(supabase);
+    const lookback =
+      spanDays != null
+        ? Math.max(21, Math.min(w, spanDays - 30))
+        : Math.min(w, 90);
     const { data, error } = await supabase.rpc("combo_index_movers", {
-      lookback_days: w,
+      lookback_days: lookback,
       min_n: MOVER_MIN_N,
       // Both directions come out of one ordered-by-magnitude call, so ask for
       // more than either column shows and split locally.
@@ -467,7 +501,7 @@ export async function fetchTopMovers(
     if (rows.length === 0) {
       return empty(
         null,
-        `no combo has ${MOVER_MIN_N}+ listings on both an index day and a day ${w}d earlier`,
+        `no combo has ${MOVER_MIN_N}+ listings on both an index day and a day ${lookback}d earlier`,
       );
     }
 
@@ -515,7 +549,7 @@ export async function fetchTopMovers(
     const span = num(rows[0]?.span_days);
     return ok(
       { appreciating, depreciating },
-      `combo_index_movers(${w}d, min n=${MOVER_MIN_N}): asking-price index, ${
+      `combo_index_movers(${lookback}d, min n=${MOVER_MIN_N}): asking-price index, ${
         rows[0]?.from_day ?? "unknown"
       } to ${rows[0]?.to_day ?? "unknown"}${span != null ? `, ${span}d apart` : ""}`,
     );
