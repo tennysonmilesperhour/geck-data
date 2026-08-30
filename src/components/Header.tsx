@@ -51,7 +51,6 @@ const TABS: Tab[] = [
   { href: "/",                label: "Pulse",         group: "core" },
   { href: "/whats-it-worth",  label: "What's it worth?", group: "core" },
   { href: "/sold",            label: "Sold",          group: "core" },
-  { href: "/price-drops",     label: "Drops",         group: "core" },
   { href: "/sellers",         label: "Sellers",       group: "core" },
   { href: "/market",          label: "Market",        group: "analysis" },
   { href: "/indices",         label: "Indices",       group: "analysis" },
@@ -60,6 +59,7 @@ const TABS: Tab[] = [
   { href: "/reports",         label: "Reports",       group: "analysis" },
   { href: "/shows",           label: "Shows",         group: "ops", needs: "shows" },
   { href: "/cross-platform",  label: "Cross-platform", group: "ops", needs: "crossPlatform" },
+  { href: "/price-drops",     label: "Drops",         group: "ops", needs: "priceDrops" },
 ];
 
 const GROUP_LABELS: Record<Group, string> = {

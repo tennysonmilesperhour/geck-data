@@ -348,9 +348,17 @@ def upsert_listings(supabase, run_id: int, rows: list[dict[str, Any]]) -> int:
     succeeded = 0
     for i in range(0, len(rows), UPSERT_BATCH_SIZE):
         chunk = rows[i : i + UPSERT_BATCH_SIZE]
+        # Never send first_seen_at on upsert. PostgREST ON CONFLICT
+        # overwrites every supplied column; omitting it keeps the insert
+        # default (now()) for new rows and leaves the existing stamp
+        # alone on a recrawl.
+        listings_payload = [
+            {k: v for k, v in row.items() if k != "first_seen_at"}
+            for row in chunk
+        ]
         try:
             supabase.table("listings").upsert(
-                chunk, on_conflict="listing_id"
+                listings_payload, on_conflict="listing_id"
             ).execute()
         except Exception as exc:  # noqa: BLE001
             log(f"WARN: upsert failed for chunk of {len(chunk)}: {exc}")

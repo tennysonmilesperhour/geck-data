@@ -30,6 +30,9 @@ export default function PopulationBadge({
    *  "all time" if not specified — keeps the component honest about
    *  what the number means. */
   soldWindow = "all time",
+  /** What the left-hand count is. Default "live" is the warehouse flag.
+   *  "48h fresh" / "catalogue" keep a 365-day rollup from reading as now. */
+  liveWindow = "live",
   size = "sm",
   tone = "ink",
   className = "",
@@ -37,6 +40,7 @@ export default function PopulationBadge({
   live: number | null | undefined;
   sold: number | null | undefined;
   soldWindow?: string;
+  liveWindow?: string;
   size?: Size;
   tone?: "ink" | "forest";
   className?: string;
@@ -48,10 +52,10 @@ export default function PopulationBadge({
   return (
     <span
       className={`inline-flex items-baseline ${SIZE_GAP[size]} font-mono tabular-nums ${SIZE_TYPE[size]} uppercase tracking-[0.12em] ${muted} ${className}`}
-      aria-label={`${liveN} live, ${soldN} sold (${soldWindow})`}
+      aria-label={`${liveN} ${liveWindow}, ${soldN} sold (${soldWindow})`}
     >
       <span>
-        <span className={accent}>{liveN}</span> live
+        <span className={accent}>{liveN}</span> {liveWindow}
       </span>
       <span aria-hidden className="opacity-50">
         ·

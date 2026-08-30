@@ -2,47 +2,28 @@
 // Five panels share one trip to the DB so the page paint stays single-pass.
 
 import { createClient } from "@/lib/supabase/server";
-
-export type ScrollyListing = {
-  id: string;
-  price: number | null;
-  price_usd_equivalent: number | null;
-  maturity: string | null;
-  sex: string | null;
-  cached_traits: string | null;
-  norm_traits: string | null;
-  /** When our ingest first saw the row. This is a scraper date, not a market
-   * one: across 10,011 priced listings it takes only 11 distinct values. */
-  first_seen_at: string | null;
-  /** When MorphMarket says the animal went up for sale. Present on 1,664 of
-   * those rows, but spread over 199 distinct days, so it is the only field
-   * here that can describe listing cadence. */
-  first_listed_at: string | null;
-};
-
-export type RegionalCell = {
-  combo_name: string;
-  region: string;
-  n: number;
-  median_sold: number | null;
-  median_ask: number | null;
-  confidence_score: number;
-};
-
-export type ScrollytellingData = {
-  listings: ScrollyListing[];
-  days_to_sell: number[];
-  regional: RegionalCell[];
-  total_listings_returned: number;
-};
+import type {
+  RegionalCell,
+  ScrollyListing,
+  ScrollytellingData,
+} from "./scrolly-types";
+export type {
+  CurrencyShare,
+  RegionCoverage,
+  RegionalCell,
+  ScrollyListing,
+  ScrollytellingData,
+} from "./scrolly-types";
+export { MIN_REGION_LISTINGS } from "./scrolly-types";
 
 const LIST_LIMIT = 5000;
 const WINDOW_DAYS = 365;
+const SOLD_FRESH_DAYS = 30;
 
 export async function getScrollytellingData(): Promise<ScrollytellingData> {
   const supabase = createClient();
 
-  const [listingsQ, regionalQ, soldEventsQ] = await Promise.all([
+  const [listingsQ, regionalQ, soldEventsQ, newestSoldQ] = await Promise.all([
     supabase
       .from("market_listings")
       .select(
@@ -57,6 +38,13 @@ export async function getScrollytellingData(): Promise<ScrollytellingData> {
       .eq("status", "sold")
       .not("days_since_first_seen", "is", null)
       .limit(2000),
+    supabase
+      .from("listing_status_events")
+      .select("observed_at")
+      .eq("status", "sold")
+      .order("observed_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const listings = (listingsQ.data ?? []) as ScrollyListing[];
@@ -89,10 +77,36 @@ export async function getScrollytellingData(): Promise<ScrollytellingData> {
     .map((r) => r.days_since_first_seen as number | null)
     .filter((d): d is number => typeof d === "number" && d >= 0 && d < 365);
 
+  const newest_sold_at =
+    (newestSoldQ.data as { observed_at: string | null } | null)?.observed_at ??
+    null;
+  const soldAgeDays = newest_sold_at
+    ? (Date.now() - Date.parse(newest_sold_at)) / 86_400_000
+    : Infinity;
+  const sold_stream_usable =
+    Number.isFinite(soldAgeDays) && soldAgeDays <= SOLD_FRESH_DAYS;
+
+  // Currency mix lives on public.listings, which the anon landing client
+  // cannot read. The public heatmap is still ~USD; copy states that
+  // without inventing a percentage we cannot fetch on this path.
+  const currency: ScrollytellingData["currency"] = [];
+
+  const regionN = new Map<string, number>();
+  for (const cell of regional) {
+    regionN.set(cell.region, (regionN.get(cell.region) ?? 0) + cell.n);
+  }
+  const region_coverage = [...regionN.entries()]
+    .map(([region, n_listings]) => ({ region, n_listings }))
+    .sort((a, b) => b.n_listings - a.n_listings);
+
   return {
     listings,
     days_to_sell,
     regional,
     total_listings_returned: listings.length,
+    currency,
+    region_coverage,
+    newest_sold_at,
+    sold_stream_usable,
   };
 }

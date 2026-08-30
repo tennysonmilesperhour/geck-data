@@ -77,13 +77,11 @@ export default async function RootLayout({
   // means the pip, the stale banner and /status cannot disagree. Failing
   // closed to null keeps a Supabase hiccup from taking down every page.
   //
-  // The section gate beside it decides whether the Shows and Cross-platform
-  // tabs render at all. Both point at tables that have never been written to,
-  // and a nav item that leads to a permanently empty page is a promise the
-  // site cannot keep. Resolved here for the same reason: the header is the
-  // one component every page passes through. Both fail to null, which shows
-  // every tab, because hiding a section that does have data is the worse
-  // error.
+  // The section gate beside it decides whether Shows, Cross-platform, and
+  // Drops render at all. The first two point at empty tables; price_drops
+  // still has historical rows but the stream has been dead since June, so
+  // that tab is gated on recent row count. Fail to null shows every tab,
+  // because hiding a section that does have data is the worse error.
   const [feed, sections] = await Promise.all([
     getMarketFeedVerdict().catch(() => null),
     getOptionalSections().catch(() => null),

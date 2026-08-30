@@ -269,7 +269,7 @@ def transform_listing(row: dict[str, Any]) -> Optional[dict[str, Any]]:
     except (TypeError, ValueError):
         price = None
 
-    return {
+    payload = {
         "id": canonical_id(listing_id),
         "morphmarket_key": _safe_int(listing_id),
         "url": row.get("listing_url") or None,
@@ -312,10 +312,29 @@ def transform_listing(row: dict[str, Any]) -> Optional[dict[str, Any]]:
         "min_shipping": min_ship,
         "max_shipping": max_ship,
         "source": "scraper",
-        "first_seen_at": row.get("first_seen_at"),
+        # first_seen_at is intentionally omitted. An upsert that sends it
+        # overwrites the original discovery stamp on every recrawl.
         "last_seen_at": row.get("last_seen_at"),
         "imported_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
+    species = infer_species(row)
+    if species:
+        payload["species"] = species
+    return payload
+
+
+def infer_species(row: dict[str, Any]) -> Optional[str]:
+    """Stamp crested when the source proves it. Never write 'unknown'."""
+    raw = str(row.get("species") or "").strip().lower()
+    if raw in ("crested", "crested-gecko", "crested gecko"):
+        return "crested"
+    blob = " ".join(
+        str(row.get(k) or "")
+        for k in ("scientific_name", "category", "name")
+    ).lower()
+    if "correlophus ciliatus" in blob or "crested gecko" in blob:
+        return "crested"
+    return None
 
 
 def transform_seller(row: dict[str, Any]) -> Optional[dict[str, Any]]:

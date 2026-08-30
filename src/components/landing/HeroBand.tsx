@@ -148,11 +148,17 @@ export default function HeroBand({ snapshot }: Props) {
           value={hottest_combo?.combo_name ?? "No combos in window"}
           sub={
             hottest_combo
-              ? `${fmtInt(hottest_combo.live_count)} in the 365 day catalogue · ${
-                  hottest_combo.median_ask != null
-                    ? `${fmtUsd(hottest_combo.median_ask)} median ask`
-                    : "no median ask"
-                }`
+              ? hottest_combo.fresh_live_count > 0
+                ? `${fmtInt(hottest_combo.fresh_live_count)} fresh live · ${
+                    hottest_combo.fresh_median_ask != null
+                      ? `${fmtUsd(hottest_combo.fresh_median_ask)} median`
+                      : "no fresh median"
+                  }`
+                : `${fmtInt(hottest_combo.live_count)} in the 365 day catalogue · ${
+                    hottest_combo.median_ask != null
+                      ? `${fmtUsd(hottest_combo.median_ask)} catalogue median`
+                      : "no median ask"
+                  }`
               : "No combos in window"
           }
           accent
@@ -170,7 +176,9 @@ export default function HeroBand({ snapshot }: Props) {
         {totals.group_lots_excluded > 0
           ? `${fmtInt(totals.group_lots_excluded)} multi-animal lots are held out of every price above, since a lot prices a group rather than an animal. `
           : ""}
-        Combo counts are 365 day catalogue totals, fresh and stale together.
+        Combo tiles use ads re-confirmed in the last {totals.fresh_hours} hours
+        when any exist. The 365 day catalogue count is labelled as catalogue,
+        not as live.
       </p>
     </section>
   );

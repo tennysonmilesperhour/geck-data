@@ -12,6 +12,15 @@
 
 export const FRESH_HOURS = 48;
 
+/** Fail open when the count cannot be read. Hiding a live section is worse. */
+export function sectionVisibleFromCount(
+  count: number | null | undefined,
+  error: boolean,
+): boolean {
+  if (error) return true;
+  return (count ?? 0) > 0;
+}
+
 // One weekly pulse plus a day of slack. Coverage measured over 48h collapses
 // to ~0% by Wednesday even when the Monday pass was perfect, so the verdict
 // judges the catalogue over a whole cycle and keeps the 48h number for the

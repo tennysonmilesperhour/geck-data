@@ -1,8 +1,7 @@
 "use client";
-// What's Hot: top combos ranked by catalogue depth over the rollup window,
-// live plus sold. "Live" here is a catalogue count and includes rows we have
-// not re-confirmed lately, so the copy calls it a catalogue rather than
-// implying every one of those ads is on sale this morning.
+// What's Hot: top combos ranked by freshly confirmed live ads (last_seen
+// inside 48h). Catalogue-wide 365d counts stay on the card only as a
+// secondary label, never as "157 live".
 // Visual rank bars proportional to total volume. Click a row to pin it as
 // an active filter; the Opportunities panel listens to the same context.
 // Hovering a row writes hoveredCombo into the shared filter state for
@@ -30,8 +29,11 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
     useLandingFilters();
 
   const rows = combos.slice(0, limit);
+  const useFresh = rows.some((c) => c.fresh_live_count > 0);
   const maxVolume = Math.max(
-    ...rows.map((c) => c.live_count + c.sold_count),
+    ...rows.map((c) =>
+      useFresh ? c.fresh_live_count : c.live_count + c.sold_count,
+    ),
     1,
   );
 
@@ -49,7 +51,8 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
             What&apos;s hot
           </h2>
           <p className="mt-1.5 text-xs text-ink-400">
-            Top combos by catalogue depth, live plus sold, over 365 days.{" "}
+            Ranked by ads re-confirmed in the last 48 hours, with that
+            window&apos;s median. Catalogue totals are labelled as catalogue.{" "}
             <span className="text-ink-300">Click</span> to filter the page.
           </p>
         </div>
@@ -68,7 +71,9 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
           </li>
         ) : (
           rows.map((combo, idx) => {
-            const total = combo.live_count + combo.sold_count;
+            const total = useFresh
+              ? combo.fresh_live_count
+              : combo.live_count + combo.sold_count;
             const widthPct = Math.max(4, (total / maxVolume) * 100);
             const isSelected = selectedCombos.has(combo.combo_name);
             const isHovered = hoveredCombo === combo.combo_name;
@@ -145,12 +150,21 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                       ) : null}
                       <span className="hidden md:inline">
                         <PopulationBadge
-                          live={combo.live_count}
+                          live={
+                            useFresh ? combo.fresh_live_count : combo.live_count
+                          }
+                          liveWindow={useFresh ? "48h fresh" : "catalogue"}
                           sold={combo.sold_count}
                         />
                       </span>
                       <span className="text-ink-100">
-                        {combo.median_ask ? fmtUsd(combo.median_ask) : "n/a"}
+                        {useFresh
+                          ? combo.fresh_median_ask
+                            ? fmtUsd(combo.fresh_median_ask)
+                            : "n/a"
+                          : combo.median_ask
+                            ? fmtUsd(combo.median_ask)
+                            : "n/a"}
                       </span>
                       <ConfidenceBadge score={combo.confidence_score} />
                     </div>

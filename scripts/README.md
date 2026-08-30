@@ -85,6 +85,25 @@ Cost per run:
   fires; typically 1–3 credits.
 - Weekly full sweep: ~270 credits (~90 min wall).
 
+### scrape_listings_api.py
+
+MorphMarket JSON API ingest. No Decodo. Two modes:
+
+- **`--mode=windowed`** (default, Monday weekly workflow): crested geckos
+  first-listed in the last `WINDOW_HOURS` (168). New-ad enrichment.
+  Does **not** call `mark_unseen_listings_inactive`.
+- **`--mode=catalog`** (weekday 8:35am America/Denver workflow): recrawl
+  every animal MorphMarket currently lists, keep Crested Gecko /
+  Correlophus ciliatus / `/crested-geckos/` rows. After a complete
+  walk, call `mark_unseen` and flip matching `market_listings` off
+  live. A truncated page cap or an abort skips that sweep.
+
+`category=crested-geckos` is not a valid list filter. Traits come from
+`cached_traits` names only. Photos are `images[].image` originals.
+
+Freshness and inactive flags depend on the weekday catalog recrawl.
+The weekly 7-day job is new-ad enrichment.
+
 ### scrape_details.py
 
 Reads `listings_needing_detail_scrape(stale_after_days=7)` to get the

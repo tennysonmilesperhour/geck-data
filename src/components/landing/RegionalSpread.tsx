@@ -4,17 +4,32 @@
 // bar. Lightweight and honest — when a region has thin data the bars
 // degrade to "no data" rather than faking it.
 import { useMemo } from "react";
-import type { RegionalCell } from "@/lib/landing/scrollytelling";
+import type { RegionalCell } from "@/lib/landing/scrolly-types";
 import { fmtUsd } from "@/lib/format";
 
 const REGION_ORDER = ["US", "CA", "UK", "EU", "AU", "JP", "SE", "SEA"] as const;
 const TOP_COMBOS_PER_REGION = 3;
 
-export default function RegionalSpread({ cells }: { cells: RegionalCell[] }) {
+export default function RegionalSpread({
+  cells,
+  minListings = 5,
+  hideRegions = [],
+}: {
+  cells: RegionalCell[];
+  minListings?: number;
+  hideRegions?: readonly string[];
+}) {
   const grouped = useMemo(() => {
+    const hidden = new Set(hideRegions);
+    const regionN = new Map<string, number>();
+    for (const c of cells) {
+      regionN.set(c.region, (regionN.get(c.region) ?? 0) + c.n);
+    }
     const by: Map<string, RegionalCell[]> = new Map();
     for (const c of cells) {
       if (!c.median_ask || c.median_ask <= 0) continue;
+      if (hidden.has(c.region)) continue;
+      if ((regionN.get(c.region) ?? 0) < minListings) continue;
       const arr = by.get(c.region) ?? [];
       arr.push(c);
       by.set(c.region, arr);
@@ -24,7 +39,7 @@ export default function RegionalSpread({ cells }: { cells: RegionalCell[] }) {
       by.set(region, arr.slice(0, TOP_COMBOS_PER_REGION));
     }
     return by;
-  }, [cells]);
+  }, [cells, hideRegions, minListings]);
 
   const allMedians = useMemo(
     () => cells.map((c) => c.median_ask ?? 0).filter((v) => v > 0),
@@ -37,7 +52,7 @@ export default function RegionalSpread({ cells }: { cells: RegionalCell[] }) {
   if (orderedRegions.length === 0) {
     return (
       <div className="rounded-lg border border-ink-700/60 bg-ink-900/40 p-4 text-sm text-ink-400">
-        No regional data yet — needs more sold observations to surface.
+        No region currently has enough unique listings to publish a median.
       </div>
     );
   }
