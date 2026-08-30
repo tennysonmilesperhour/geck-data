@@ -41,7 +41,7 @@ export default function SupplyStackedBars({ months }: { months: SupplyMonth[] })
               x2={M.l + innerW}
               y1={yFor(v)}
               y2={yFor(v)}
-              stroke="#1a3326"
+              stroke="#1e293b"
               strokeDasharray="2 3"
               strokeWidth={1}
             />
@@ -50,7 +50,7 @@ export default function SupplyStackedBars({ months }: { months: SupplyMonth[] })
               y={yFor(v) + 3}
               textAnchor="end"
               fontSize={10}
-              fill="#8ca395"
+              fill="#64748b"
             >
               {Math.round(v)}
             </text>
@@ -86,7 +86,7 @@ export default function SupplyStackedBars({ months }: { months: SupplyMonth[] })
               y={H - 54}
               textAnchor="middle"
               fontSize={10}
-              fill="#8ca395"
+              fill="#64748b"
             >
               {month.monthLabel}
             </text>
@@ -102,7 +102,7 @@ export default function SupplyStackedBars({ months }: { months: SupplyMonth[] })
           return (
             <g key={l.combo} transform={`translate(${col * 140}, ${row * 16})`}>
               <rect width={10} height={10} fill={l.color} rx={1.5} />
-              <text x={14} y={9} fill="#c9dad1">
+              <text x={14} y={9} fill="#cbd5e1">
                 {l.combo}
               </text>
             </g>

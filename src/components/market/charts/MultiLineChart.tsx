@@ -62,11 +62,11 @@ export default function MultiLineChart({ series }: { series: MultiSeries[] }) {
               x2={M.l + innerW}
               y1={yFor(v)}
               y2={yFor(v)}
-              stroke="#1a3326"
+              stroke="#1e293b"
               strokeDasharray="2 3"
               strokeWidth={1}
             />
-            <text x={M.l - 6} y={yFor(v) + 3} textAnchor="end" fontSize={10} fill="#8ca395">
+            <text x={M.l - 6} y={yFor(v) + 3} textAnchor="end" fontSize={10} fill="#64748b">
               ${Math.round(v).toLocaleString()}
             </text>
           </g>
@@ -97,7 +97,7 @@ export default function MultiLineChart({ series }: { series: MultiSeries[] }) {
               y={H - 22}
               textAnchor={i === 0 ? "start" : i === arr.length - 1 ? "end" : "middle"}
               fontSize={10}
-              fill="#8ca395"
+              fill="#64748b"
             >
               {label}
             </text>
@@ -126,7 +126,7 @@ export default function MultiLineChart({ series }: { series: MultiSeries[] }) {
                 ) : (
                   <circle cx={9} cy={-4} r={3} fill={s.color} />
                 )}
-                <text x={24} y={0} fill="#c9dad1">
+                <text x={24} y={0} fill="#cbd5e1">
                   {s.name}
                 </text>
               </g>
