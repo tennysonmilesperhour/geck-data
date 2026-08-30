@@ -5,6 +5,11 @@ name: Weekly API listings (last 7 days)
 # Original JPEG URLs are stored so scrape-images-weekly.yml can copy
 # them into the listing-images bucket.
 #
+# This is new-ad enrichment only. Do not call mark_unseen here: a
+# first_listed window is not a catalog walk. Freshness and inactive
+# flags depend on the weekday catalog recrawl
+# (scrape-listings-catalog-api.yml, weekdays 8:35am America/Denver).
+#
 # Monday 14:55 UTC is 8:55am America/Denver during MDT.
 on:
   schedule:

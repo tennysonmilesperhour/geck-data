@@ -1,27 +1,37 @@
-"""Windowed MorphMarket listings ingest via the public JSON API.
+"""MorphMarket listings ingest via the public JSON API.
 
-Walks GET /api/v1/listings/?ordering=-first_posted, keeps Crested Geckos
-whose first_listed timestamp falls inside WINDOW_HOURS (default 168,
-one week), then fetches each listing detail for morph tags and original
-photo URLs.
+Two modes, selected by --mode or INGEST_MODE:
 
-Morph tags come only from cached_traits on the detail payload, never
-from the title. Traits are stored comma-space delimited so the 0037
-combo views (which split on commas) can see them.
+  windowed (default)  Crested geckos first_listed in WINDOW_HOURS
+                      (default 168). New-ad enrichment. Never calls
+                      mark_unseen_listings_inactive.
+  catalog             Every animal MorphMarket currently lists, filtered
+                      client-side to Crested Gecko. After a complete
+                      walk, calls mark_unseen so stale live flags drop.
+                      A truncated or aborted walk does not mark unseen.
 
-Does not use Decodo. Does not call mark_unseen_listings_inactive: this
-is a windowed walk, not a full catalog sweep. The paused weekly resync
-workflow still owns that hygiene job.
+Walks GET /api/v1/listings/?ordering=-first_posted&page_size=100.
+category=crested-geckos is not a valid list filter; keep a row when
+category_name is Crested Gecko, scientific name is Correlophus
+ciliatus, or the path contains /crested-geckos/. Date field is
+first_listed, never a renewal stamp.
+
+Morph tags come only from cached_traits names, never the title.
+Photos are images[].image originals, not signed webp. Dual-writes
+listings (PK listing_id) and market_listings (id=mm_<numeric>).
 
 Env vars:
   SUPABASE_URL / SUPABASE_SERVICE_KEY
   TRIGGERED_BY          optional label, defaults to 'manual'
-  WINDOW_HOURS          lookback for first_listed (default 168)
-  MAX_PAGES             list-page cap (default 250)
+  INGEST_MODE           windowed | catalog (overridden by --mode)
+  WINDOW_HOURS          lookback for first_listed in windowed mode
+  MAX_PAGES             list-page cap (windowed 250, catalog 800)
+  MIN_CATALOG_WRITES    refuse mark_unseen below this many upserts
   DETAIL_SLEEP_S        pause between detail fetches (default 0.15)
 """
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import os
 import sys
@@ -69,6 +79,60 @@ def _max_pages() -> int:
 def _detail_sleep() -> float:
     raw = os.environ.get("DETAIL_SLEEP_S", "0.15")
     return max(0.0, float(raw))
+
+
+def _min_catalog_writes() -> int:
+    raw = os.environ.get("MIN_CATALOG_WRITES", "50")
+    return max(1, int(raw))
+
+
+def apply_cli_args(argv: Optional[list[str]] = None) -> None:
+    """--mode overrides INGEST_MODE. Env alone is enough for Actions."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--mode",
+        choices=("windowed", "catalog"),
+        help="windowed = 7-day first_listed pulse; catalog = full live recrawl",
+    )
+    args, _unknown = parser.parse_known_args(argv)
+    if args.mode:
+        os.environ["INGEST_MODE"] = args.mode
+
+
+def ingest_mode() -> str:
+    raw = (
+        os.environ.get("INGEST_MODE")
+        or os.environ.get("MODE")
+        or "windowed"
+    )
+    text = raw.strip().lower()
+    if text in ("catalog", "full", "recrawl"):
+        return "catalog"
+    return "windowed"
+
+
+def catalog_walk_complete(
+    *,
+    aborted: bool,
+    saw_natural_end: bool,
+    hit_page_cap: bool,
+) -> bool:
+    """True only when the catalog was walked to its last page."""
+    return (not aborted) and saw_natural_end and (not hit_page_cap)
+
+
+def should_mark_unseen(
+    *,
+    mode: str,
+    complete: bool,
+    succeeded: int,
+    min_writes: int,
+) -> bool:
+    return (
+        mode == "catalog"
+        and complete
+        and succeeded >= min_writes
+    )
 
 
 def _parse_iso(value: Any) -> Optional[dt.datetime]:
@@ -166,7 +230,6 @@ def detail_to_listing_row(
     names = trait_names(detail)
     images = original_image_urls(detail)
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
-    listed_iso = listed_at.isoformat()
     owner = detail.get("owner") or {}
     seller_slug = None
     seller_name = None
@@ -190,10 +253,10 @@ def detail_to_listing_row(
         maturity = maturity.strip().title()
 
     cat = detail.get("category") or {}
-    scientific_name = None
+    scientific_name = "Correlophus ciliatus"
     category_name = "Crested Geckos"
     if isinstance(cat, dict):
-        scientific_name = cat.get("scientific_name")
+        scientific_name = cat.get("scientific_name") or scientific_name
         category_name = cat.get("name") or category_name
 
     origin = detail.get("item_origin")
@@ -233,7 +296,8 @@ def detail_to_listing_row(
         "category": category_name,
         "origin": origin,
         "birth_date": birth_str,
-        "first_seen_at": listed_iso,
+        # first_seen_at is omitted so a recrawl cannot overwrite the
+        # original discovery stamp. New rows pick up the table default.
         "last_seen_at": now_iso,
         "last_updated_at": now_iso,
         "is_active": True,
@@ -280,7 +344,7 @@ def write_image_and_gallery_rows(
             "listing_id": mm_id,
             "image_url": url,
             "storage_bucket": "listing-images",
-            "species": "unknown",
+            "species": "crested",
         }
         for url in images
         if url not in existing
@@ -341,10 +405,137 @@ def patch_canonical_extras(
         log(f"WARN: market_listings extra patch failed for {listing_id}: {exc}")
 
 
+def _canonical_ids_for(listing_id: str) -> list[str]:
+    listing_id = listing_id.strip()
+    if not listing_id:
+        return []
+    ids = [listing_id]
+    if not listing_id.startswith("mm_"):
+        ids.append(f"mm_{listing_id}")
+    return ids
+
+
+def leave_unseen_canonical_inactive(supabase, run_id: int) -> int:
+    """Flip market_listings off live for rows the catalog did not re-see.
+
+    mark_unseen_listings_inactive only updates public.listings. Public
+    KPIs read market_listings.current_status, so zombies stay 'live'
+    unless this follows. Status is 'removed', not 'sold': disappearance
+    is not a confirmed sale and we do not invent a sold price. Last ask
+    stays last ask.
+    """
+    run = (
+        supabase.table("scrape_runs")
+        .select("started_at")
+        .eq("id", run_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not run or not run[0].get("started_at"):
+        log("WARN: cannot sync canonical unseen; scrape_runs.started_at missing")
+        return 0
+    started = run[0]["started_at"]
+    unseen: list[str] = []
+    page_size = 1000
+    offset = 0
+    while True:
+        chunk = (
+            supabase.table("listings")
+            .select("listing_id")
+            .eq("is_active", False)
+            .lt("last_seen_at", started)
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+            or []
+        )
+        if not chunk:
+            break
+        for row in chunk:
+            lid = str(row.get("listing_id") or "").strip()
+            if lid:
+                unseen.extend(_canonical_ids_for(lid))
+        if len(chunk) < page_size:
+            break
+        offset += page_size
+
+    unseen = list(dict.fromkeys(unseen))
+    if not unseen:
+        log("canonical unseen sync: no inactive listings older than this run")
+        return 0
+
+    now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+    flipped = 0
+    events: list[dict[str, Any]] = []
+    batch_size = 200
+    for i in range(0, len(unseen), batch_size):
+        batch = unseen[i : i + batch_size]
+        try:
+            result = (
+                supabase.table("market_listings")
+                .update({"current_status": "removed"})
+                .in_("id", batch)
+                .eq("current_status", "live")
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN: market_listings unseen update failed: {exc}")
+            continue
+        changed = [str(r.get("id")) for r in (result.data or []) if r.get("id")]
+        flipped += len(changed)
+        for listing_id in changed:
+            events.append(
+                {
+                    "listing_id": listing_id,
+                    "status": "removed",
+                    "observed_at": now_iso,
+                    "source": "catalog_unseen",
+                }
+            )
+    for i in range(0, len(events), batch_size):
+        try:
+            supabase.table("listing_status_events").insert(
+                events[i : i + batch_size]
+            ).execute()
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN: listing_status_events removed insert failed: {exc}")
+    log(
+        f"canonical unseen sync: flipped {flipped} live market_listings "
+        f"to removed (no sold price written)"
+    )
+    return flipped
+
+
+def mark_unseen_after_complete_catalog(supabase, run_id: int) -> None:
+    try:
+        result = supabase.rpc(
+            "mark_unseen_listings_inactive",
+            {"target_run_id": run_id},
+        ).execute()
+        log(f"mark_unseen_listings_inactive returned {result.data}")
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN: mark_unseen_listings_inactive failed: {exc}")
+        return
+    try:
+        leave_unseen_canonical_inactive(supabase, run_id)
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN: canonical unseen sync failed: {exc}")
+
+
 def main() -> int:
+    apply_cli_args()
+    mode = ingest_mode()
     window_hours = _window_hours()
+    # Catalog walks the whole live list; windowed only needs enough
+    # newest-first pages to cover WINDOW_HOURS.
+    default_pages = "800" if mode == "catalog" else "250"
+    if os.environ.get("MAX_PAGES") is None:
+        os.environ["MAX_PAGES"] = default_pages
     max_pages = _max_pages()
     sleep_s = _detail_sleep()
+    min_writes = _min_catalog_writes()
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=window_hours)
     cutoff_date = cutoff.date()
 
@@ -355,11 +546,20 @@ def main() -> int:
     failed = 0
     consecutive_empty = 0
     consecutive_fetch_failures = 0
+    aborted = False
+    saw_natural_end = False
+    hit_page_cap = False
 
-    log(
-        f"API windowed ingest: WINDOW_HOURS={window_hours} "
-        f"cutoff={cutoff.isoformat()} MAX_PAGES={max_pages}"
-    )
+    if mode == "catalog":
+        log(
+            f"API catalog recrawl: MAX_PAGES={max_pages} "
+            f"MIN_CATALOG_WRITES={min_writes}"
+        )
+    else:
+        log(
+            f"API windowed ingest: WINDOW_HOURS={window_hours} "
+            f"cutoff={cutoff.isoformat()} MAX_PAGES={max_pages}"
+        )
 
     try:
         for page in range(1, max_pages + 1):
@@ -379,10 +579,15 @@ def main() -> int:
             consecutive_fetch_failures = 0
 
             results = payload.get("results") or []
+            has_next = bool(payload.get("next"))
             if not results:
                 consecutive_empty += 1
                 if consecutive_empty >= EMPTY_PAGE_TOLERANCE:
                     log("stopping after consecutive empty list pages")
+                    saw_natural_end = True
+                    break
+                if not has_next:
+                    saw_natural_end = True
                     break
                 continue
 
@@ -396,7 +601,11 @@ def main() -> int:
                     in_window_on_page += 1
                 if not is_crested(item):
                     continue
-                if listed_date and listed_date.date() < cutoff_date:
+                if (
+                    mode == "windowed"
+                    and listed_date
+                    and listed_date.date() < cutoff_date
+                ):
                     continue
                 listing_id = str(item.get("key") or "").strip()
                 if not listing_id:
@@ -412,7 +621,9 @@ def main() -> int:
                     continue
 
                 listed_at = _parse_iso(detail.get("first_listed")) or listed_date
-                if listed_at is None or listed_at < cutoff:
+                if listed_at is None:
+                    listed_at = dt.datetime.now(dt.timezone.utc)
+                if mode == "windowed" and listed_at < cutoff:
                     continue
                 if not is_crested(detail) and not is_crested(item):
                     continue
@@ -433,24 +644,64 @@ def main() -> int:
                     patch_canonical_extras(
                         supabase, listing_id, detail, listed_at
                     )
+                label = "crested" if mode == "catalog" else "crested in window"
+                log(f"page {page}: {len(page_rows)} {label}, wrote {wrote}")
+            else:
                 log(
-                    f"page {page}: {len(page_rows)} crested in window, "
-                    f"wrote {wrote}"
+                    f"page {page}: no "
+                    f"{'crested' if mode == 'catalog' else 'in-window crested'} "
+                    "listings"
                 )
-            else:
-                log(f"page {page}: no in-window crested listings")
 
-            if in_window_on_page == 0:
-                consecutive_empty += 1
-                if consecutive_empty >= EMPTY_PAGE_TOLERANCE:
+            if page >= max_pages:
+                if has_next:
+                    hit_page_cap = True
                     log(
-                        "stopping: "
-                        f"{consecutive_empty} list pages with no "
-                        "first_listed-in-window ads"
+                        f"page cap reached at {max_pages} with another page "
+                        "remaining; walk is truncated"
                     )
-                    break
-            else:
-                consecutive_empty = 0
+                else:
+                    saw_natural_end = True
+                break
+
+            if not has_next:
+                saw_natural_end = True
+                log("stopping: list API reported no next page")
+                break
+
+            if mode == "windowed":
+                if in_window_on_page == 0:
+                    consecutive_empty += 1
+                    if consecutive_empty >= EMPTY_PAGE_TOLERANCE:
+                        log(
+                            "stopping: "
+                            f"{consecutive_empty} list pages with no "
+                            "first_listed-in-window ads"
+                        )
+                        saw_natural_end = True
+                        break
+                else:
+                    consecutive_empty = 0
+
+        complete = catalog_walk_complete(
+            aborted=aborted,
+            saw_natural_end=saw_natural_end,
+            hit_page_cap=hit_page_cap,
+        )
+        if should_mark_unseen(
+            mode=mode,
+            complete=complete,
+            succeeded=succeeded,
+            min_writes=min_writes,
+        ):
+            mark_unseen_after_complete_catalog(supabase, run_id)
+        elif mode == "catalog":
+            log(
+                "skipping mark_unseen_listings_inactive "
+                f"(complete={complete} succeeded={succeeded} "
+                f"min_writes={min_writes} hit_page_cap={hit_page_cap} "
+                f"saw_natural_end={saw_natural_end})"
+            )
 
         status = "success" if failed == 0 else "partial"
         finalise_scrape_run(
@@ -462,11 +713,12 @@ def main() -> int:
             failed=failed,
         )
         log(
-            f"done status={status} attempted={attempted} "
-            f"succeeded={succeeded} failed={failed}"
+            f"done mode={mode} status={status} attempted={attempted} "
+            f"succeeded={succeeded} failed={failed} complete={complete}"
         )
         return 0
     except Exception as exc:  # noqa: BLE001
+        aborted = True
         log(f"FATAL: {exc}")
         traceback.print_exc()
         finalise_scrape_run(

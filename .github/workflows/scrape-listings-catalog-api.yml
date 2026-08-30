@@ -1,0 +1,60 @@
+name: Weekday API listings (catalog recrawl)
+
+# Recrawl every animal MorphMarket currently has listed (not a first_listed
+# window). Crested rows are kept client-side. After a complete walk this
+# job calls mark_unseen_listings_inactive so live flags drop for ads the
+# catalog no longer shows.
+#
+# Freshness and inactive flags depend on this weekday recrawl. The Monday
+# weekly 7-day job (scrape-listings-weekly-api.yml) is new-ad enrichment
+# only and must not call mark_unseen.
+#
+# 8:35am America/Denver during MDT is 14:35 UTC. Revisit after the fall
+# DST change (MST is UTC-7).
+on:
+  schedule:
+    - cron: '35 14 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-listings
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_listings_api.py (catalog recrawl)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action_catalog_api
+          INGEST_MODE: catalog
+        working-directory: scripts
+        run: python scrape_listings_api.py --mode=catalog
+
+      - name: Refresh and verify combo_index_daily
+        uses: ./.github/actions/refresh-indices
+        with:
+          supabase-url: ${{ secrets.SUPABASE_URL }}
+          supabase-service-key: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Weekday API catalog recrawl did not complete."
