@@ -85,7 +85,7 @@ export default function CumulativeSales({
       .attr("x", 4)
       .attr("y", -6)
       .attr("fill", chartTheme.label)
-      .text("cumulative sold");
+      .text("cumulative records");
 
     const area = d3
       .area<Point>()
@@ -125,7 +125,7 @@ export default function CumulativeSales({
       .append("title")
       .text(
         (p) =>
-          `Week of ${d3.timeFormat("%b %-d")(p.week)}\n+${p.weekly} sold this week\n${p.cumulative} cumulative`,
+          `Week of ${d3.timeFormat("%b %-d")(p.week)}\n+${p.weekly} records this week\n${p.cumulative} cumulative`,
       );
   }, [points, weeks]);
 

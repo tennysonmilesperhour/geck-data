@@ -132,7 +132,7 @@ export default function AtlasDashboard({
         <article><span>Observed window</span><strong>{snapshot.observedWindow}</strong><small>{snapshot.observedWindowDays} UTC days</small></article>
         <article><span>Recently confirmed</span><strong>{formatCount(snapshot.recentListings)}</strong><small>live rows seen in 48 hours</small></article>
         <article><span>Median ask</span><strong>{snapshot.medianAsk === null ? "—" : formatPrice(snapshot.medianAsk)}</strong><small>{snapshot.askingRangeNote}</small></article>
-        <article><span>Captured sales</span><strong>{formatCount(snapshot.capturedSold.count)}</strong><small>{snapshot.capturedSold.window}</small></article>
+        <article><span>Captured sold events</span><strong>{formatCount(snapshot.capturedSold.count)}</strong><small>{snapshot.capturedSold.window}</small></article>
       </section>
 
       <div className={styles.dashboardGrid}>
@@ -220,13 +220,13 @@ export default function AtlasDashboard({
               <small>{snapshot.latestObservationNote}</small>
             </article>
             <article>
-              <span>Captured sales</span>
+              <span>Captured sold events</span>
               <strong>{formatCount(snapshot.capturedSold.count)}</strong>
               <p>Explicit sold status events. This is the smaller, directly observed historical pool.</p>
               <small>{snapshot.capturedSold.window}</small>
             </article>
             <article>
-              <span>Inferred sales</span>
+              <span>Inferred sold records</span>
               <strong>{formatCount(snapshot.inferredSold.count)}</strong>
               <p>Listings inferred sold after disappearing. Kept separate from captured events.</p>
               <small>{snapshot.inferredSold.window}</small>

@@ -170,10 +170,10 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
   },
   "cumulative-sales": {
     id: "cumulative-sales",
-    title: "Cumulative sales",
-    subtitle: "Running total of sold listings over the trailing 26 weeks.",
+    title: "Cumulative reconciled exits",
+    subtitle: "Running total of captured and inferred listing exits over the trailing 26 weeks.",
     description:
-      "Running total of reconciled sales (captured plus inferred, migration 0053) aggregated per week in SQL. It used to count only the 92-row captured pool from a single week; it now spans the whole reconciled sold history. Hover any week dot for that week's incremental and running total.",
+      "Running total of reconciled records (captured events plus inferred disappearances, migration 0054) aggregated per week in SQL. This is archive coverage, not a count of confirmed transactions. Hover any week dot for that week's incremental and running total.",
     category: "activity",
     pages: ["sold"],
     render: (ctx) => (

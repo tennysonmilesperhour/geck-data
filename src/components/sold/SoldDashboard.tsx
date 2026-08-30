@@ -238,11 +238,12 @@ export default function SoldDashboard({
 
       <section className="space-y-2">
         <p className="text-xs text-ink-400">
-          The cumulative chart below counts captured sold events only: the{" "}
-          {fmtInt(captured.total)} status transitions the pipeline recorded, all
-          of them in May. The {fmtInt(inferred.total)} inferred records are not
-          in that series. The days-to-sell histogram uses the pool selected
-          above, and only the rows where time on market could be measured.
+          The cumulative chart below combines both dated evidence pools: {" "}
+          {fmtInt(captured.total)} captured sold events and {fmtInt(inferred.total)}{" "}
+          inferred disappearances, with group lots excluded. It is a view of
+          archive coverage, not a count of confirmed transactions. The
+          days-to-sell histogram remains tied to the pool selected above and
+          only includes rows where time on market could be measured.
         </p>
         <ChartGrid page="sold" ctx={{ soldRows: rows, soldActivity }} />
       </section>
