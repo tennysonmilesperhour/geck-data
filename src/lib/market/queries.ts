@@ -347,13 +347,11 @@ export async function fetchCombosRanked(
       .gte("day", cutoff)
       .order("day", { ascending: true })
       .limit(5000);
-    // Cross-walk combo_id (canonical short id) -> combo_name (display
-    // name) so we can key the sparkline by the same string the rollup
-    // uses.
-    const { HIGH_VALUE_COMBOS } = await import("@/lib/market/combos");
-    const idToDisplay = new Map(
-      HIGH_VALUE_COMBOS.map((c) => [c.id, c.display]),
-    );
+    // combo_index_daily.combo_id is the same "Trait A x Trait B" string the
+    // rollup now emits as combo_name, so key the sparkline directly by it.
+    // The old cross-walk mapped only the 12 curated ids to display names, so
+    // every auto-discovered combo went without a sparkline; keying by combo_id
+    // gives all of them one.
     for (const r of (sparkRows ?? []) as Array<{
       combo_id: string;
       median_price: number | string | null;
@@ -361,17 +359,18 @@ export async function fetchCombosRanked(
       if (r.median_price == null) continue;
       const v = Number(r.median_price);
       if (!Number.isFinite(v)) continue;
-      const display = idToDisplay.get(r.combo_id) ?? r.combo_id;
-      const arr = sparkByCombo.get(display) ?? [];
+      const arr = sparkByCombo.get(r.combo_id) ?? [];
       arr.push(v);
-      sparkByCombo.set(display, arr);
+      sparkByCombo.set(r.combo_id, arr);
     }
   } catch {
     // Non-fatal; rows just render without sparklines.
   }
 
   const mapped: RankedComboRow[] = rows.map((r) => {
-    const parts = r.combo_name.split(" × ");
+    // Split on either separator: the rollup emits "A x B", curated names use
+    // "A × B". Splitting on only one left the second trait blank.
+    const parts = r.combo_name.split(/\s+(?:x|×)\s+/i);
     // Nothing is substituted for anything else here. `ask` used to fall back
     // to the sold median, which put an asking price under a "sold" heading
     // whenever the combo had no live listings.

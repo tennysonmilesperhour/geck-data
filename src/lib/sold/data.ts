@@ -144,8 +144,9 @@ async function fetchSoldPageData(): Promise<SoldPageData> {
       };
     }
 
-    // sold_activity_weekly counts listing_status_events only, so this series
-    // is the captured pool and nothing else. The page labels it that way.
+    // sold_activity_weekly now counts v_sold_reconciled (migration 0053), so
+    // this series is every reconciled sale (captured plus inferred) across the
+    // window, not the 92-row captured pool it used to be.
     let activity: SoldActivityWeek[] = [];
     if (!activityResult.error) {
       activity = normaliseSoldActivity(
@@ -158,15 +159,20 @@ async function fetchSoldPageData(): Promise<SoldPageData> {
       const start = new Date();
       start.setUTCDate(start.getUTCDate() - ACTIVITY_WEEKS * 7);
       const fallback = await supabase
-        .from("listing_status_events")
-        .select("observed_at")
-        .eq("status", "sold")
-        .gte("observed_at", start.toISOString())
-        .order("observed_at", { ascending: true })
+        .from("v_sold_reconciled")
+        .select("sold_at")
+        .eq("is_group_lot", false)
+        .not("sold_at", "is", null)
+        .gte("sold_at", start.toISOString())
+        .order("sold_at", { ascending: true })
         .limit(FALLBACK_EVENT_LIMIT);
 
       if (!fallback.error) {
-        activity = aggregateSoldEvents((fallback.data ?? []) as SoldEvent[]);
+        activity = aggregateSoldEvents(
+          ((fallback.data ?? []) as { sold_at: string }[]).map((r) => ({
+            observed_at: r.sold_at,
+          })),
+        );
       }
     }
 

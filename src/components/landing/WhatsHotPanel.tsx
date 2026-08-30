@@ -14,6 +14,7 @@ import MorphTerm from "@/components/morphs/MorphTerm";
 import PopulationBadge from "@/components/morphs/PopulationBadge";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { comboFromName } from "@/lib/market/combos";
+import { comboSlugFromId } from "@/lib/market/combo-slug";
 import { anchorOf, paletteFor } from "@/lib/market/anchors";
 import { useLandingFilters } from "./LandingFilters";
 
@@ -121,18 +122,23 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                       {(() => {
+                        // Curated combos route by their short id; every
+                        // auto-discovered pair routes by its slug, which
+                        // /combo/[slug] resolves via resolveComboFromSlug. So
+                        // the whole list is navigable, not just the dozen.
                         const canonical = comboFromName(combo.combo_name);
+                        const href = canonical
+                          ? `/combo/${canonical.id}`
+                          : `/combo/${comboSlugFromId(combo.combo_name)}`;
                         const cls = `font-medium ${isSelected ? "text-emerald-100" : "text-ink-100"}`;
-                        return canonical ? (
+                        return (
                           <Link
-                            href={`/combo/${canonical.id}`}
+                            href={href}
                             onClick={(e) => e.stopPropagation()}
                             className={`${cls} hover:text-claude-glow`}
                           >
                             <MorphTerm name={combo.combo_name} />
                           </Link>
-                        ) : (
-                          <MorphTerm name={combo.combo_name} className={cls} />
                         );
                       })()}
                     </div>

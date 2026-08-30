@@ -50,6 +50,26 @@ export async function GET(req: NextRequest) {
     .select("*")
     .limit(limit);
   if (error) {
+    // The cross-platform arbitrage view is not present until the pHash
+    // matcher and a second marketplace feed exist, and cross_platform_listings
+    // currently holds no rows. A missing relation is the honest "no data yet"
+    // case, not a server fault, so it returns an empty set (matching the
+    // documented contract) rather than a 500. Any other error still surfaces.
+    const missingRelation =
+      (error as { code?: string }).code === "42P01" ||
+      /does not exist/i.test(error.message);
+    if (missingRelation) {
+      return NextResponse.json(
+        {
+          pairs: [],
+          count: 0,
+          min_pct: minPct,
+          note: "No cross-platform arbitrage source is available yet.",
+          generated_at: new Date().toISOString(),
+        },
+        { headers },
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 500, headers });
   }
   const rows = ((data ?? []) as PairRow[]).filter(

@@ -173,7 +173,7 @@ export const CHART_REGISTRY: Record<string, ChartDef> = {
     title: "Cumulative sales",
     subtitle: "Running total of sold listings over the trailing 26 weeks.",
     description:
-      "Single-series cumulative area of server-aggregated sold events. Hover any week dot for that week's incremental + running total.",
+      "Running total of reconciled sales (captured plus inferred, migration 0053) aggregated per week in SQL. It used to count only the 92-row captured pool from a single week; it now spans the whole reconciled sold history. Hover any week dot for that week's incremental and running total.",
     category: "activity",
     pages: ["sold"],
     render: (ctx) => (

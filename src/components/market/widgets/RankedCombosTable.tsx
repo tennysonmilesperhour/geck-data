@@ -14,6 +14,7 @@ import LivePreviewTag, {
 import MorphTerm from "@/components/morphs/MorphTerm";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { comboFromName } from "@/lib/market/combos";
+import { comboSlugFromId } from "@/lib/market/combo-slug";
 import { anchorOf, paletteFor } from "@/lib/market/anchors";
 import type { ComboRankSort } from "@/lib/market/widget-types";
 import type { RankedComboRow } from "@/lib/market/queries";
@@ -121,28 +122,30 @@ export default function RankedCombosTable({
                     {(() => {
                       const canonical = comboFromName(r.combo);
                       const palette = paletteFor(anchorOf(r.combo));
+                      // Curated combos link by short id; auto-discovered pairs
+                      // link by slug (resolved by /combo/[slug]), so every row
+                      // in the full universe is clickable.
+                      const href = canonical
+                        ? `/combo/${canonical.id}`
+                        : `/combo/${comboSlugFromId(r.combo)}`;
                       return (
                         <span className="flex items-center gap-2">
                           <span
                             aria-hidden
                             className="inline-block h-3 w-3 shrink-0 rounded-sm"
                             style={{
-                              background: palette?.hex ?? "#447256",
+                              background: palette?.hex ?? "#334155",
                               opacity: 0.9,
                             }}
                             title={palette?.key ?? "unclassified"}
                           />
-                          {canonical ? (
-                            <Link
-                              href={`/combo/${canonical.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="font-medium text-forest-50 hover:text-claude-glow"
-                            >
-                              <MorphTerm name={r.combo} />
-                            </Link>
-                          ) : (
-                            <MorphTerm name={r.combo} className="font-medium text-forest-50" />
-                          )}
+                          <Link
+                            href={href}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-medium text-forest-50 hover:text-claude-glow"
+                          >
+                            <MorphTerm name={r.combo} />
+                          </Link>
                         </span>
                       );
                     })()}
