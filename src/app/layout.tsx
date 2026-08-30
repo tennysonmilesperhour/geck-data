@@ -69,10 +69,11 @@ export default async function RootLayout({
   // closed to null keeps a Supabase hiccup from taking down every page.
   //
   // The section gate beside it decides whether Shows, Cross-platform, and
-  // Drops render at all. The first two point at empty tables; price_drops
-  // still has historical rows but the stream has been dead since June, so
-  // that tab is gated on recent row count. Fail to null shows every tab,
-  // because hiding a section that does have data is the worse error.
+  // Drops render at all. Shows stays hidden until show_mentions has rows.
+  // Cross-platform unhides when cross_platform_listings does (Feedle / shop
+  // ingest). price_drops still has historical rows but the stream has been
+  // dead since June, so that tab is gated on recent row count. Fail to null
+  // shows every tab, because hiding a section that does have data is worse.
   const [feed, sections] = await Promise.all([
     getMarketFeedVerdict().catch(() => null),
     getOptionalSections().catch(() => null),

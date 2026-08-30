@@ -1,0 +1,49 @@
+name: Weekday cross-platform shops
+
+# Public-storefront ingest for Feedle (Korea), TikisGeckos, and Altitude
+# Exotics into cross_platform_listings. Does not touch MorphMarket tables
+# and must not share the scrape-listings concurrency group.
+#
+# 10:50am America/Denver during MDT is 16:50 UTC. Chosen to sit after
+# scrape-listings-catalog-api (35 14 * * 1-5 UTC) so the two jobs do not
+# start together. Revisit after the fall DST change (MST is UTC-7).
+on:
+  schedule:
+    - cron: '50 16 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-cross-platform
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scrape_cross_platform.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGERED_BY: github_action_cross_platform
+        working-directory: scripts
+        run: python scrape_cross_platform.py --source=all
+
+      - name: Notify Discord on failure
+        if: ${{ failure() || cancelled() }}
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          context: "Weekday cross-platform ingest (Feedle / Tikis / Altitude) did not complete."

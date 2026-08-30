@@ -40,6 +40,20 @@ export const LISTINGS_SCRAPER = {
   thresholdHours: 96,
 } as const;
 
+export const FEEDLE_SCRAPER = {
+  scrapeType: "cross_platform_feedle",
+  label: "Feedle Air / KR catalog",
+  cadence: "weekday 10:50am Denver",
+  thresholdHours: 96,
+} as const;
+
+export const SHOPS_SCRAPER = {
+  scrapeType: "cross_platform_shops",
+  label: "TikisGeckos + Altitude Exotics",
+  cadence: "weekday 10:50am Denver",
+  thresholdHours: 96,
+} as const;
+
 const EXPECTED: Array<{
   scrapeType: string;
   label: string;
@@ -47,6 +61,8 @@ const EXPECTED: Array<{
   thresholdHours: number;
 }> = [
   LISTINGS_SCRAPER,
+  FEEDLE_SCRAPER,
+  SHOPS_SCRAPER,
   { scrapeType: "details", label: "Listing detail re-scrape", cadence: "weekly", thresholdHours: 204 },
   { scrapeType: "sellers", label: "Seller store pages", cadence: "weekly", thresholdHours: 204 },
   { scrapeType: "images", label: "Primary image download", cadence: "weekly", thresholdHours: 204 },

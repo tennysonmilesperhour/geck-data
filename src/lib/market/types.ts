@@ -35,7 +35,8 @@ export type SourceId =
   | "morphmarket"
   | "breeder"
   | "fauna"
-  | "kijiji";
+  | "kijiji"
+  | "feedle";
 
 export type Filters = {
   timeframe: Timeframe;

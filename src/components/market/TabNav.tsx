@@ -35,7 +35,7 @@ const DESCRIPTION: Record<Tab, string> = {
   regional:
     "Regional pricing and arbitrage map: where each morph commands a premium and where it sells at a discount.",
   arbitrage:
-    "Cross-region price gaps worth knowing: which morphs have the widest spread between cheapest and priciest markets.",
+    "Source-axis ask vs ask (Feedle Air vs MorphMarket) and cross-region MorphMarket spreads. Not a trade signal.",
   supply:
     "Forward supply outlook: breeder pairings tracked, expected hatchlings, and where future inventory will land.",
   breeders:
