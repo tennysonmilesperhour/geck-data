@@ -89,7 +89,7 @@ export default function ComboDetailPanel({
             <MultiLineChart series={detail.series} />
           ) : (
             <div className="rounded-lg border border-dashed border-forest-700 bg-forest-950/40 px-4 py-8 text-center font-mono text-[11px] uppercase tracking-wider text-forest-500">
-              Multi-series chart not wired yet
+              Too few daily observations to chart
             </div>
           )}
         </div>

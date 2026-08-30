@@ -33,9 +33,11 @@ import {
   type ComboRow,
   type HeatmapCell,
   type HeatmapMetric,
+  type IndexPoint,
   type MarketIndex,
   type MarketSubIndex,
   type Mover,
+  type MultiSeries,
   type PeakIndicator,
   type RegionKey,
   type RegionalHeatmap,
@@ -79,6 +81,19 @@ const DAYS_BY_TIMEFRAME: Record<string, number> = {
 
 function windowDays(filters: Filters): number {
   return DAYS_BY_TIMEFRAME[filters.timeframe] ?? 365;
+}
+
+// A "YYYY-MM-DD" day key from combo_index_daily rendered as a compact
+// axis label ("May 9"). Parsed as UTC so the label never drifts a day
+// across timezones.
+function shortDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function confidenceSources(filters: Filters): SourceId[] {
@@ -561,19 +576,27 @@ export async function fetchComboDetail(
   try {
     const supabase = createClient();
     const w = windowDays(filters);
-    const [blend, series] = await Promise.all([
+    // Second half of the fetch is the combo's own daily asking-price index
+    // (combo_index_daily: one median per combo per observed day), the same
+    // materialized view that feeds the ranked-table sparklines. `combo` here
+    // is the rollup's combo_name, which is exactly the MV's combo_id, so it
+    // keys directly with no cross-walk. A failure here is non-fatal: the panel
+    // falls back to its "no price line yet" placeholder rather than failing
+    // the whole detail fetch.
+    const dailyCutoff = new Date(Date.now() - w * 86400_000)
+      .toISOString()
+      .slice(0, 10);
+    const [blend, daily] = await Promise.all([
       supabase.rpc("v_combo_source_blend", { p_combo: combo, window_days: w }),
       supabase
-        .from("price_history")
-        .select(
-          "observed_at, price_usd_equivalent, source, listing_id!inner(cached_traits, norm_traits)",
-        )
-        .gte("observed_at", new Date(Date.now() - w * 86400_000).toISOString())
-        .not("price_usd_equivalent", "is", null)
-        .limit(2000),
+        .from("combo_index_daily")
+        .select("day, median_price")
+        .eq("combo_id", combo)
+        .gte("day", dailyCutoff)
+        .order("day", { ascending: true })
+        .limit(400),
     ]);
     if (blend.error) throw blend.error;
-    if (series.error) throw series.error;
     const blendRows = ((blend.data ?? []) as Array<{
       source: string;
       n: number;
@@ -596,16 +619,30 @@ export async function fetchComboDetail(
       weighted += px * pct;
       totalPct += pct;
     }
+    // Build the single daily asking-price line from combo_index_daily. It is
+    // the same median-per-day series behind the ranked-table sparkline, drawn
+    // full-size here. Still a single honest series (asking price), not the
+    // multi-source sold/ask overlay from the mock preview, so it is labelled
+    // for exactly what it is. Two points are the minimum for a line; below
+    // that the panel keeps its placeholder.
+    const dailyRows = (daily.data ?? []) as Array<{
+      day: string;
+      median_price: number | string | null;
+    }>;
+    const points: IndexPoint[] = dailyRows
+      .filter((d) => d.median_price != null && Number.isFinite(Number(d.median_price)))
+      .map((d) => ({ t: shortDay(d.day), v: Math.round(Number(d.median_price)) }));
+    const priceSeries: MultiSeries[] =
+      points.length >= 2
+        ? [{ name: "Median asking price", color: "#34d399", points }]
+        : [];
     return ok<ComboDetail>(
       {
         combo: combo as ComboDetail["combo"],
         meanBlendedPrice: totalPct > 0 ? Math.round(weighted / totalPct) : null,
         range: null,
         observations,
-        // There is still no per-combo multi-series pipeline, so the chart data
-        // stays empty on purpose and ComboDetailPanel shows its "chart not
-        // wired" placeholder instead of a line drawn from one blended number.
-        series: [],
+        series: priceSeries,
         blend: blendRows.map((b) => {
           const id = normalizeSourceId(b.source);
           return {
