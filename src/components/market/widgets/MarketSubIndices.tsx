@@ -48,7 +48,7 @@ export default function MarketSubIndices({
           const deltaColor = positive ? "text-ready" : "text-danger";
           const arrow = positive ? "▲" : "▼";
           const palette = paletteFor(sub.morph as AnchorKey);
-          const lineColor = palette?.hex ?? (positive ? "#7bbf83" : "#d76d62");
+          const lineColor = palette?.hex ?? (positive ? "#34d399" : "#f87171");
           const bgTint = palette?.soft ?? "transparent";
           const labelTint = palette?.text ?? "#cdd7d0";
           return (

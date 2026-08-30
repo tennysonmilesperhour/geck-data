@@ -20,7 +20,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect sales",
     short: "GI sales",
     kind: "internal",
-    color: "#0e9a73",
+    color: "#10b981",
     description: "Confirmed sale events from Geck Inspect users' transaction logs.",
   },
   {
@@ -28,7 +28,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect listings",
     short: "GI listings",
     kind: "internal",
-    color: "#2dbf95",
+    color: "#34d399",
     description: "Live and recently closed listings captured by the Geck Inspect ingest.",
   },
   {

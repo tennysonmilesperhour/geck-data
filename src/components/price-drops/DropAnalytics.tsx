@@ -120,9 +120,9 @@ export default function DropAnalytics({ rows }: { rows: ReadonlyArray<DropPoint>
             const isMild = i < 3;
             const isAggressive = i >= 6;
             const bg = isAggressive
-              ? "linear-gradient(180deg, #d76d62, #8e3a32)"
+              ? "linear-gradient(180deg, #f87171, #8e3a32)"
               : isMild
-                ? "linear-gradient(180deg, #cd6e3c, #6b341a)"
+                ? "linear-gradient(180deg, #f59e0b, #92400e)"
                 : "linear-gradient(180deg, #bda255, #5e5025)";
             const low = i === 0 ? "0" : `${HIST_BIN_EDGES[i]}%`;
             const high =
@@ -199,7 +199,7 @@ export default function DropAnalytics({ rows }: { rows: ReadonlyArray<DropPoint>
           <path
             d={dailyPath}
             fill="none"
-            stroke="rgb(178,89,41)"
+            stroke="rgb(245,158,11)"
             strokeWidth={1}
             strokeOpacity={0.55}
             strokeLinecap="round"
@@ -209,7 +209,7 @@ export default function DropAnalytics({ rows }: { rows: ReadonlyArray<DropPoint>
           <path
             d={rollingPath}
             fill="none"
-            stroke="#2dbf95"
+            stroke="#34d399"
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -219,7 +219,7 @@ export default function DropAnalytics({ rows }: { rows: ReadonlyArray<DropPoint>
           <span>30d ago</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <span aria-hidden className="inline-block h-0.5 w-3 bg-[rgb(178,89,41)]/55" />
+              <span aria-hidden className="inline-block h-0.5 w-3 bg-[rgb(245,158,11)]/60" />
               daily
             </span>
             <span className="flex items-center gap-1.5">

@@ -21,7 +21,7 @@ const CARDS: Card[] = [
     eyebrow: "Track",
     title: "Composite indices",
     body: "One number per anchor family and per canonical combo. 7d / 30d / 90d deltas with sparklines.",
-    accent: "#0e9a73",
+    accent: "#10b981",
     glyph: "◈",
   },
   {
@@ -29,7 +29,7 @@ const CARDS: Card[] = [
     eyebrow: "Trust",
     title: "Methodology",
     body: "How every metric is computed and what its blind spots are. The trust layer behind the dashboard.",
-    accent: "#7ab1d1",
+    accent: "#38bdf8",
     glyph: "❉",
   },
   {
@@ -37,7 +37,7 @@ const CARDS: Card[] = [
     eyebrow: "Save",
     title: "Watchlist",
     body: "Save combos, traits, sellers, regions. Matches land in /alerts. Sign in to start tracking.",
-    accent: "#cd6e3c",
+    accent: "#f59e0b",
     glyph: "★",
   },
 ];

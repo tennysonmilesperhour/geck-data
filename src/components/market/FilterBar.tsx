@@ -223,7 +223,7 @@ function Segmented<T extends string>({
               reason != null
                 ? "cursor-not-allowed text-forest-600 line-through decoration-forest-700"
                 : active
-                  ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(123,191,131,0.25)]"
+                  ? "bg-ready/20 text-ready shadow-[inset_0_0_0_1px_rgba(52,211,153,0.25)]"
                   : "text-forest-300 hover:bg-forest-850 hover:text-forest-100"
             }`}
           >

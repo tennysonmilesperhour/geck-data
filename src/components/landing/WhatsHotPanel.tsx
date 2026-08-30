@@ -74,7 +74,7 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
             const isHovered = hoveredCombo === combo.combo_name;
             const anchor = anchorOf(combo.combo_name);
             const palette = paletteFor(anchor);
-            const barColor = palette?.hex ?? "#0e9a73";
+            const barColor = palette?.hex ?? "#10b981";
             const barSoft = palette?.soft ?? "rgba(16,185,129,0.08)";
             return (
               <li key={combo.combo_name}>

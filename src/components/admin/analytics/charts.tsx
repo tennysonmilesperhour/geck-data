@@ -6,7 +6,7 @@
 import type { DayPoint } from "./aggregations";
 
 export const PALETTE = {
-  emerald: "#0e9a73",
+  emerald: "#10b981",
   blue: "#3b82f6",
   amber: "#f59e0b",
   purple: "#a855f7",

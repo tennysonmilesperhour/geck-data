@@ -62,7 +62,7 @@ export default function TabNav({
             aria-label={`${LABEL[t]} tab: ${DESCRIPTION[t]}`}
             className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition ${
               active
-                ? "border border-ready/50 bg-ready/15 text-ready shadow-[inset_0_0_0_1px_rgba(123,191,131,0.2),_0_0_20px_-6px_rgba(123,191,131,0.35)]"
+                ? "border border-ready/50 bg-ready/15 text-ready shadow-[inset_0_0_0_1px_rgba(52,211,153,0.2),_0_0_20px_-6px_rgba(52,211,153,0.35)]"
                 : "border border-transparent text-forest-300 hover:bg-forest-850 hover:text-forest-100"
             }`}
           >

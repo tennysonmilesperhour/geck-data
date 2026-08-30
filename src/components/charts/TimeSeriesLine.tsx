@@ -23,9 +23,9 @@ export type ChartEvent = {
 };
 
 const EVENT_TONE_COLOR: Record<NonNullable<ChartEvent["tone"]>, string> = {
-  info: "#7ab1d1",      // ocean
-  warn: "#cd6e3c",      // clay-400
-  positive: "#7bbf83",  // sage
+  info: "#38bdf8",      // ocean
+  warn: "#f59e0b",      // amber-500
+  positive: "#34d399",  // sage
 };
 
 export type ValueFormat = "number" | "currency";

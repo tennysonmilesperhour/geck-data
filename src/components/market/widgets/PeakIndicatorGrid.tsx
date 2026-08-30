@@ -30,7 +30,7 @@ const TIER_META: Record<
     label: "BELOW RANGE",
     tint: "bg-ready/10 border-ready/40",
     text: "text-ready",
-    marker: "#2dbf95",
+    marker: "#34d399",
   },
 };
 

@@ -1,39 +1,21 @@
-// Field-guide section break. Renders a thin hairline-rule with a small
-// botanical glyph in the middle. Use between major sections of a page
-// when you want a visual breath; do not stack adjacent to a
-// SectionHeader — the eyebrow already does that work.
+// Section break. A thin slate hairline-rule with a small geometric mark in
+// the middle. Use between major sections of a page when you want a visual
+// breath; do not stack adjacent to a SectionHeader.
 //
-// The hairlines come from globals.css (.ornament-rule). This component
-// only provides the markup wrapper + the center glyph SVG so the
-// shape stays consistent everywhere.
+// The old field-guide leaf motif was dropped when the app moved to the
+// Market Analytics slate theme: the mark is now a neutral dot/diamond, in
+// keeping with the quiet rules the preview uses between sections. The
+// hairlines come from globals.css (.ornament-rule); this component only
+// provides the wrapper + the centre glyph.
 
 export type SectionOrnamentVariant = "leaf" | "diamond" | "circle";
 
 const GLYPHS: Record<SectionOrnamentVariant, JSX.Element> = {
   leaf: (
-    // Single stylised leaf, drawn at 14x14. Stroke uses currentColor
-    // so the ornament-rule .clay tone applies.
-    <svg
-      width="16"
-      height="14"
-      viewBox="0 0 16 14"
-      aria-hidden
-      className="shrink-0"
-    >
-      <path
-        d="M2 7 C 4 2, 10 2, 14 7 C 10 12, 4 12, 2 7 Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M2 7 L 14 7"
-        stroke="currentColor"
-        strokeWidth="1"
-        strokeLinecap="round"
-      />
+    // Neutral small dot. (The name is kept so existing callers compile; the
+    // botanical leaf it used to draw is gone with the field-guide theme.)
+    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden className="shrink-0">
+      <circle cx="4" cy="4" r="2" fill="currentColor" />
     </svg>
   ),
   diamond: (

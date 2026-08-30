@@ -10,99 +10,117 @@ const config: Config = {
         // hierarchy actually reads on a dark surface. Text tones stay
         // near-neutral but with a faint green warmth.
         ink: {
-          950: "#070f0b",   // page bg — deepest forest
-          900: "#0a1611",   // app bg
-          850: "#0e1d17",   // panel bg
-          800: "#13261d",   // card bg
-          750: "#193428",   // hover
-          700: "#234436",   // border strong
-          650: "#2e5645",   // border
-          600: "#447256",   // muted border
-          500: "#6c8675",   // muted fg
-          400: "#8ea69a",   // dim fg
-          300: "#aebfb5",   // secondary fg
-          200: "#cdd7d0",   // primary fg-dim
-          100: "#e6ece8",   // primary fg
-          50:  "#f4f7f5",   // brightest fg
+          // Retuned to the Geck Inspect "Market Analytics" slate scale so
+          // GeckIntellect reads as the same product surface. Token names are
+          // unchanged; only the values moved from forest green to slate, so
+          // every existing class shifts palette without a rewrite.
+          950: "#020617",   // page bg — slate-950
+          900: "#0a1120",   // app bg — lifted slate
+          850: "#0f172a",   // panel bg — slate-900
+          800: "#131d31",   // card bg — slate-900/lifted
+          750: "#1a2438",   // hover
+          700: "#1e293b",   // border strong — slate-800
+          650: "#273349",   // border
+          600: "#334155",   // muted border — slate-700
+          500: "#64748b",   // muted fg — slate-500
+          400: "#94a3b8",   // dim fg — slate-400
+          300: "#cbd5e1",   // secondary fg — slate-300
+          200: "#e2e8f0",   // primary fg-dim — slate-200
+          100: "#f1f5f9",   // primary fg — slate-100
+          50:  "#f8fafc",   // brightest fg — slate-50
         },
         // /market layers the deeper "forest" tones on top. Mirrors
         // ink-* so per-surface search-and-replace stays clean.
         forest: {
-          975: "#040a07",   // deepest bg (below 950 — used as page wash)
-          950: "#060f0b",
-          900: "#091611",
-          850: "#0c1d17",
-          800: "#10261d",
-          750: "#163627",
-          700: "#1f4231",
-          650: "#2b5440",
-          600: "#3e7055",
-          500: "#5b8975",
-          400: "#86a99a",
-          300: "#aec4ba",
-          200: "#cddcd3",
-          100: "#e7ede9",
-          50:  "#f4faf6",
+          // /market scope. Same slate scale as ink, a shade deeper at the
+          // bottom so the dashboard reads a touch darker than the rest of
+          // the app, matching the Market Analytics panel ground.
+          975: "#010409",   // deepest wash
+          950: "#020617",
+          900: "#0a1120",
+          850: "#0f172a",   // forest-surface bg — slate-900
+          800: "#131d31",
+          750: "#1a2438",
+          700: "#1e293b",
+          650: "#273349",
+          600: "#334155",
+          500: "#64748b",
+          400: "#94a3b8",
+          300: "#cbd5e1",
+          200: "#e2e8f0",
+          100: "#f1f5f9",
+          50:  "#f8fafc",
         },
         // Primary CTA / accent. Slightly more pigment than the
         // previous flat emerald so it reads as a chosen ink rather
         // than a Tailwind default. Kept under `claude` so the rest of
         // the codebase compiles unchanged.
         claude: {
-          DEFAULT: "#0e9a73",  // moss / deep emerald
-          soft:    "#076c50",
-          glow:    "#2dbf95",  // hover / focus glow
+          // Primary accent, retuned to the Market Analytics emerald so the
+          // CTA / link / highlight colour matches the preview exactly.
+          DEFAULT: "#10b981",  // emerald-500
+          soft:    "#059669",  // emerald-600
+          glow:    "#34d399",  // emerald-400 — hover / focus / link text
         },
         // Warm terracotta — the field-guide accent. Used for "rising"
         // momentum, important highlights, and ornament strokes. NOT a
         // CTA color; pair with emerald for primary actions.
         clay: {
-          50:  "#fbeee5",
-          100: "#f5d9c6",
-          200: "#e9b394",
-          300: "#dc8c63",
-          400: "#cd6e3c",
-          500: "#b25929",   // primary clay
-          600: "#8e4521",
-          700: "#6b341a",
-          800: "#492311",
-          900: "#2a1409",
+          // Warm accent, retuned from terracotta to the Market Analytics
+          // amber. Used for eyebrows, "preview" notes and warm highlights;
+          // never a CTA. Kept under `clay` so existing classes compile.
+          50:  "#fffbeb",
+          100: "#fef3c7",
+          200: "#fde68a",
+          300: "#fcd34d",   // amber-300 — eyebrow text
+          400: "#fbbf24",   // amber-400
+          500: "#f59e0b",   // amber-500 — primary
+          600: "#d97706",
+          700: "#b45309",
+          800: "#92400e",
+          900: "#78350f",
         },
         // Parchment cream — for paper-warm highlights, tooltip
         // surfaces, ornamental hairlines. Use sparingly.
         parchment: {
-          50:  "#fbf6e8",
-          100: "#f5ecd0",
-          200: "#ead9a5",
-          300: "#d9c180",
-          400: "#bda255",
+          // Highlight surface, retuned to soft amber so warm accents read
+          // against the slate ground instead of as printed cream.
+          50:  "#fffbeb",
+          100: "#fef3c7",
+          200: "#fde68a",
+          300: "#fcd34d",
+          400: "#fbbf24",
         },
         // Status tokens. `ready` (sage) keeps the field-guide warmth.
         // `busy` shifts toward clay so amber doesn't compete with the
         // primary accent.
-        ready: "#7bbf83",     // sage / leaf green
-        busy:  "#cd6e3c",     // clay-400, warmer than amber
-        info:  "#7ab1d1",     // muted ocean
-        danger:"#d76d62",     // softened red — fits the warm palette
+        ready: "#34d399",     // emerald-400 — healthy / rising
+        busy:  "#f59e0b",     // amber-500 — attention / degraded
+        info:  "#38bdf8",     // sky-400 — informational / scraped source
+        danger:"#f87171",     // red-400 — error / falling
         // Legacy gecko tokens — existing components reference these.
         gecko: {
-          DEFAULT: "#7bbf83",
-          light:   "#a8d2af",
-          dark:    "#4b8c5b",
-          accent:  "#b25929", // clay-500
+          DEFAULT: "#34d399",  // emerald-400
+          light:   "#6ee7b7",  // emerald-300
+          dark:    "#059669",  // emerald-600
+          accent:  "#f59e0b",  // amber-500
         },
       },
       fontFamily: {
         // CSS variables come from src/app/layout.tsx (next/font/google).
         // Each registration falls back to a system stack so SSR + the
         // font-loading window never render with the wrong metrics.
+        // De-serifed to match the Market Analytics preview, which sets every
+        // heading in the sans UI face. Points at the sans variable so the
+        // 43 `font-display` headings across the app render sans without an
+        // edit to each one.
         display: [
-          "var(--font-display)",
-          "ui-serif",
-          "Iowan Old Style",
-          "Apple Garamond",
-          "Georgia",
-          "serif",
+          "var(--font-sans)",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif",
         ],
         sans: [
           "var(--font-sans)",
@@ -122,13 +140,15 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        panel: "0 1px 0 0 rgba(74,222,128,0.02) inset, 0 0 0 1px rgba(74,222,128,0.05)",
-        glow:  "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.35)",
-        // Stronger emerald inner border used on /market panels.
+        // Panels in the preview are a flat slate card with a hairline ring,
+        // no atmospheric glow. `panel` is that ring; `glow` stays emerald for
+        // the rare focused/elevated element.
+        panel: "0 0 0 1px rgba(30,41,59,0.8)",
+        glow:  "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.30)",
         "forest-panel":
-          "0 1px 0 0 rgba(74,222,128,0.03) inset, 0 0 0 1px rgba(74,222,128,0.06), 0 12px 40px -28px rgba(16,185,129,0.35)",
+          "0 0 0 1px rgba(30,41,59,0.8), 0 12px 40px -30px rgba(2,6,23,0.8)",
         "forest-glow":
-          "0 0 0 1px rgba(74,222,128,0.35), 0 8px 30px -12px rgba(16,185,129,0.35)",
+          "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.30)",
       },
     },
   },
