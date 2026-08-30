@@ -932,7 +932,7 @@ export async function fetchBreeders(
       return empty(null, "no sellers in market_sellers");
     }
     const ids = rows.map((r) => r.seller_id);
-    const [sold, statuses] = await Promise.all([
+    const [sold, statuses, profiles] = await Promise.all([
       supabase
         .from("market_listings")
         .select("seller_id, price_usd_equivalent, current_status")
@@ -946,7 +946,29 @@ export async function fetchBreeders(
         .eq("status", "sold")
         .gte("observed_at", since)
         .limit(5000),
+      supabase
+        .from("sellers")
+        .select("seller_slug, avatar_url")
+        .in("seller_slug", ids),
     ]);
+    const avatarBySeller = new Map<string, string>();
+    for (const profile of (profiles.data ?? []) as Array<{
+      seller_slug: string;
+      avatar_url: string | null;
+    }>) {
+      if (!profile.avatar_url) continue;
+      try {
+        const url = new URL(profile.avatar_url);
+        if (
+          url.protocol === "https:" &&
+          url.hostname === "d2bjn9a420fiq0.cloudfront.net"
+        ) {
+          avatarBySeller.set(profile.seller_slug, url.toString());
+        }
+      } catch {
+        // Malformed captured URLs stay out of the render path.
+      }
+    }
     // `sold` is every listing currently marked sold, with no date filter:
     // market_listings has no sold timestamp this query can bound, so the count
     // is sold-to-date, not sold-in-window. The attribution note says so rather
@@ -1017,6 +1039,7 @@ export async function fetchBreeders(
       return {
         id: s.seller_id,
         name: s.seller_name ?? s.seller_id,
+        avatarUrl: avatarBySeller.get(s.seller_id) ?? null,
         region,
         activeListings: Math.max(0, s.total_listings ?? 0),
         soldInWindow: soldAgg?.sold ?? 0,

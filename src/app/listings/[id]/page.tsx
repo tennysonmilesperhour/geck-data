@@ -11,10 +11,14 @@
 //   - Status timeline (live/sold/removed events from listing_status_events)
 //
 // Server-rendered. Public read on every backing table.
-import Image from "next/image";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import MiniSparkline from "@/components/charts/MiniSparkline";
+import ListingImage from "@/components/media/ListingImage";
+import {
+  rawMarketplaceListingId,
+  safeMarketImageUrl,
+} from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -57,9 +61,14 @@ type ImageRow = {
   image_url: string | null;
 };
 
+type CanonicalListingImageRow = {
+  primary_image_url: string | null;
+  all_image_urls: string[] | null;
+};
+
 async function fetchAll(id: string) {
   const admin = createAdminClient();
-  const [listing, history, statuses, images] = await Promise.all([
+  const [listing, history, statuses, images, canonical] = await Promise.all([
     admin
       .from("market_listings")
       .select(
@@ -88,8 +97,14 @@ async function fetchAll(id: string) {
       .eq("listing_id", id)
       .limit(10)
       .then(({ data }) => (data ?? []) as ImageRow[]),
+    admin
+      .from("listings")
+      .select("primary_image_url, all_image_urls")
+      .eq("listing_id", rawMarketplaceListingId(id))
+      .maybeSingle()
+      .then(({ data }) => (data ?? null) as CanonicalListingImageRow | null),
   ]);
-  return { listing, history, statuses, images };
+  return { listing, history, statuses, images, canonical };
 }
 
 function publicImageUrl(img: ImageRow): string | null {
@@ -106,7 +121,7 @@ export default async function ListingDetailPage({
 }: {
   params: { id: string };
 }) {
-  const { listing, history, statuses, images } = await fetchAll(params.id);
+  const { listing, history, statuses, images, canonical } = await fetchAll(params.id);
 
   if (!listing) {
     return (
@@ -129,7 +144,14 @@ export default async function ListingDetailPage({
     .filter((v): v is number => v != null);
   const firstObservedAt = history[0]?.observed_at ?? null;
   const lastObservedAt = history[history.length - 1]?.observed_at ?? null;
-  const firstImg = images.find(publicImageUrl);
+  const imageUrls = [
+    canonical?.primary_image_url,
+    ...(canonical?.all_image_urls ?? []),
+    ...images.map(publicImageUrl),
+  ]
+    .map(safeMarketImageUrl)
+    .filter((url): url is string => Boolean(url));
+  const uniqueImageUrls = [...new Set(imageUrls)];
 
   return (
     <div className="space-y-6">
@@ -145,8 +167,17 @@ export default async function ListingDetailPage({
             <p className="mt-1 text-sm text-ink-300">{listing.cached_traits}</p>
           )}
           <p className="mt-2 text-xs text-ink-500">
-            {listing.seller_name ? `${listing.seller_name} · ` : ""}
-            {listing.seller_location ?? ""}
+            {listing.seller_id ? (
+              <Link
+                href={`/sellers/${listing.seller_id}`}
+                className="transition hover:text-claude-glow"
+              >
+                {listing.seller_name ?? listing.seller_id}
+              </Link>
+            ) : (
+              listing.seller_name ?? "Unknown seller"
+            )}
+            {listing.seller_location ? ` · ${listing.seller_location}` : ""}
           </p>
         </div>
         <div className="text-right">
@@ -172,13 +203,29 @@ export default async function ListingDetailPage({
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <section className="md:col-span-1">
-          {firstImg && publicImageUrl(firstImg) ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={publicImageUrl(firstImg)!}
-              alt={listing.title ?? ""}
-              className="w-full rounded-lg border border-ink-700"
-            />
+          {uniqueImageUrls.length > 0 ? (
+            <div className="space-y-2">
+              <ListingImage
+                src={uniqueImageUrls[0]}
+                alt={listing.title ?? listing.id}
+                className="aspect-[4/5] w-full rounded-sm"
+                sizes="(min-width: 768px) 31vw, 94vw"
+                priority
+              />
+              {uniqueImageUrls.length > 1 ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {uniqueImageUrls.slice(1, 5).map((url, index) => (
+                    <ListingImage
+                      key={url}
+                      src={url}
+                      alt={`${listing.title ?? listing.id}, view ${index + 2}`}
+                      className="aspect-square w-full rounded-sm"
+                      sizes="(min-width: 768px) 7vw, 22vw"
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ) : (
             <div className="rounded-lg border border-ink-700 bg-ink-900/60 p-6 text-center text-xs text-ink-500">
               no image stored

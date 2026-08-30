@@ -15,6 +15,7 @@ import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import Link from "next/link";
+import SellerAvatar from "@/components/media/SellerAvatar";
 
 export default function BreedersTab({
   filters,
@@ -115,9 +116,14 @@ export default function BreedersTab({
                     {r.id ? (
                       <Link
                         href={`/sellers/${encodeURIComponent(r.id)}`}
-                        className="text-forest-50 underline-offset-2 hover:text-ready hover:underline"
+                        className="inline-flex items-center gap-3 text-forest-50 underline-offset-2 hover:text-ready hover:underline"
                       >
-                        {r.name}
+                        <SellerAvatar
+                          name={r.name}
+                          imageUrl={r.avatarUrl}
+                          size={34}
+                        />
+                        <span>{r.name}</span>
                       </Link>
                     ) : (
                       r.name

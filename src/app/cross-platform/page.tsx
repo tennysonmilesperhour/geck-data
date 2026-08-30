@@ -5,6 +5,8 @@ import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
+import ListingImage from "@/components/media/ListingImage";
+import { safeMarketImageUrl } from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +58,23 @@ export default async function CrossPlatformPage() {
   }
 
   const rows = (data ?? []) as CrossRow[];
+  const visibleIds = rows.slice(0, 200).map((row) => row.id);
+  const crossPlatformImages = new Map<string, string>();
+  if (visibleIds.length > 0) {
+    const { data: imageRows } = await supabase
+      .from("cross_platform_listing_images")
+      .select("cross_platform_listing_id, image_url")
+      .in("cross_platform_listing_id", visibleIds)
+      .limit(500);
+    for (const image of (imageRows ?? []) as Array<{
+      cross_platform_listing_id: string;
+      image_url: string | null;
+    }>) {
+      if (crossPlatformImages.has(image.cross_platform_listing_id)) continue;
+      const imageUrl = safeMarketImageUrl(image.image_url);
+      if (imageUrl) crossPlatformImages.set(image.cross_platform_listing_id, imageUrl);
+    }
+  }
 
   const byPlatform = new Map<string, CrossRow[]>();
   for (const r of rows) {
@@ -90,8 +109,18 @@ export default async function CrossPlatformPage() {
       key: "title",
       header: "Listing",
       render: (r) => (
-        <div>
-          <div className="font-medium text-ink-100">
+        <div className="group inline-flex items-center gap-3">
+          {crossPlatformImages.get(r.id) ? (
+            <ListingImage
+              src={crossPlatformImages.get(r.id)}
+              alt={r.title ?? r.external_id}
+              className="h-12 w-12 shrink-0 rounded-sm"
+              sizes="48px"
+              showFallback={false}
+            />
+          ) : null}
+          <div>
+            <div className="font-medium text-ink-100">
             {r.url ? (
               <a
                 href={r.url}
@@ -104,8 +133,9 @@ export default async function CrossPlatformPage() {
             ) : (
               (r.title ?? "(untitled)")
             )}
+            </div>
+            <div className="text-xs text-ink-400">{r.seller_name ?? "no data"}</div>
           </div>
-          <div className="text-xs text-ink-400">{r.seller_name ?? "no data"}</div>
         </div>
       ),
     },

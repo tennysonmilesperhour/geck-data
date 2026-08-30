@@ -30,6 +30,12 @@ import {
   isRedundantComboName,
   redundantComboKeys,
 } from "@/lib/market/combo-redundancy";
+import ListingImage from "@/components/media/ListingImage";
+import SellerAvatar from "@/components/media/SellerAvatar";
+import {
+  getListingImageMap,
+  getSellerVisualMap,
+} from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -200,6 +206,16 @@ export default async function TraitPage({
   const topSellers = Array.from(sellerMap.values())
     .sort((a, b) => b.n - a.n)
     .slice(0, 8);
+  const [listingImages, sellerVisuals] = await Promise.all([
+    getListingImageMap(
+      supabase,
+      liveFiltered.slice(0, 50).map((row) => row.id),
+    ),
+    getSellerVisualMap(
+      supabase,
+      topSellers.map((seller) => seller.id),
+    ),
+  ]);
 
   // Weekly sold count over 26 weeks for a freq sparkline.
   const buckets = new Map<string, number>();
@@ -225,9 +241,18 @@ export default async function TraitPage({
       render: (r) => (
         <Link
           href={`/listings/${r.id}`}
-          className="block truncate text-ink-100 hover:text-claude-glow"
+          className="group inline-flex min-w-0 items-center gap-3 text-ink-100 hover:text-claude-glow"
         >
-          {r.title ?? r.id}
+          {listingImages.get(r.id) ? (
+            <ListingImage
+              src={listingImages.get(r.id)}
+              alt={r.title ?? r.id}
+              className="h-11 w-11 shrink-0 rounded-sm"
+              sizes="44px"
+              showFallback={false}
+            />
+          ) : null}
+          <span className="truncate">{r.title ?? r.id}</span>
         </Link>
       ),
     },
@@ -372,14 +397,23 @@ export default async function TraitPage({
         <Panel title="Top sellers in this trait" subtitle="By live listing count." padded={false}>
           <ul className="divide-y divide-ink-700/40">
             {topSellers.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+              <li key={s.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm">
                 <Link
                   href={serverHref(`/sellers/${s.id}`, searchParams, { traits: [slug] })}
-                  className="text-ink-100 hover:text-claude-glow"
+                  className="inline-flex min-w-0 items-center gap-3 text-ink-100 hover:text-claude-glow"
                 >
-                  {s.name}
+                  <SellerAvatar
+                    name={s.name}
+                    imageUrl={sellerVisuals.get(s.id)?.avatarUrl}
+                    size={36}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate">{s.name}</span>
+                    <span className="block truncate text-xs text-ink-400">
+                      {s.loc ?? "Location not reported"}
+                    </span>
+                  </span>
                 </Link>
-                <span className="text-xs text-ink-400">{s.loc ?? ""}</span>
                 <span className="font-mono tabular-nums text-ink-300">{fmtInt(s.n)}</span>
               </li>
             ))}

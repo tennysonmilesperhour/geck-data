@@ -17,6 +17,8 @@ import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import SourceFootnote from "@/components/ui/SourceFootnote";
+import SellerAvatar from "@/components/media/SellerAvatar";
+import { getSellerVisualMap } from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -185,6 +187,10 @@ export default async function RegionPage({
     .slice()
     .sort((a, b) => (b.total_listings ?? 0) - (a.total_listings ?? 0))
     .slice(0, 12);
+  const sellerVisuals = await getSellerVisualMap(
+    supabase,
+    topSellers.map((seller) => seller.seller_id),
+  );
 
   const comboCols: Column<typeof topCombos[number]>[] = [
     {
@@ -259,14 +265,23 @@ export default async function RegionPage({
             <li className="p-4 text-sm text-ink-400">No sellers known in this region.</li>
           ) : (
             topSellers.map((s) => (
-              <li key={s.seller_id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+              <li key={s.seller_id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-2 text-sm">
                 <Link
                   href={serverHref(`/sellers/${s.seller_id}`, searchParams, { region: code })}
-                  className="text-ink-100 hover:text-claude-glow"
+                  className="group inline-flex min-w-0 items-center gap-3 text-ink-100 hover:text-claude-glow"
                 >
-                  {s.seller_name ?? s.seller_id}
+                  <SellerAvatar
+                    name={s.seller_name ?? s.seller_id}
+                    imageUrl={sellerVisuals.get(s.seller_id)?.avatarUrl}
+                    size={36}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate">{s.seller_name ?? s.seller_id}</span>
+                    <span className="block truncate text-xs text-ink-400">
+                      {s.seller_location ?? "Location not reported"}
+                    </span>
+                  </span>
                 </Link>
-                <span className="text-xs text-ink-400">{s.seller_location ?? ""}</span>
                 <span className="font-mono tabular-nums text-ink-300">{fmtInt(s.total_listings)}</span>
                 <span className="font-mono tabular-nums text-ink-400">{s.avg_price ? fmtUsd(s.avg_price) : "no data"}</span>
               </li>

@@ -20,7 +20,12 @@ const nextConfig = {
       {
         protocol: "https",
         hostname: "d2bjn9a420fiq0.cloudfront.net",
-        pathname: "/media/raw_images/**",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "dhotmtgryuovkmsncdby.supabase.co",
+        pathname: "/storage/v1/object/public/**",
       },
     ],
   },

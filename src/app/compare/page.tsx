@@ -21,6 +21,8 @@ import { HIGH_VALUE_COMBOS } from "@/lib/market/combos";
 import { anchorOf, paletteFor } from "@/lib/market/anchors";
 import SourceFootnote from "@/components/ui/SourceFootnote";
 import { resolveComboFromSlug, comboSlugFromId } from "@/lib/market/combo-slug";
+import SellerAvatar from "@/components/media/SellerAvatar";
+import { getSellerVisualMap } from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -233,6 +235,10 @@ export default async function ComparePage({
 
   const maxInventoryValue = Math.max(1, ...sellersEnriched.map((r) => r.inventoryValue));
   const maxListings = Math.max(1, ...sellersEnriched.map((r) => r.count));
+  const sellerVisuals = await getSellerVisualMap(
+    supabase,
+    sellersEnriched.map((row) => row.seller.seller_id),
+  );
 
   const sellerCols: Column<typeof sellersEnriched[number]>[] = [
     {
@@ -241,9 +247,14 @@ export default async function ComparePage({
       render: (row) => (
         <Link
           href={`/sellers/${row.seller.seller_id}`}
-          className="text-ink-100 hover:text-claude-glow"
+          className="group inline-flex items-center gap-3 text-ink-100 hover:text-claude-glow"
         >
-          {row.seller.seller_name ?? row.seller.seller_id}
+          <SellerAvatar
+            name={row.seller.seller_name ?? row.seller.seller_id}
+            imageUrl={sellerVisuals.get(row.seller.seller_id)?.avatarUrl}
+            size={34}
+          />
+          <span>{row.seller.seller_name ?? row.seller.seller_id}</span>
         </Link>
       ),
     },

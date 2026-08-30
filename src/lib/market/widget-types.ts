@@ -275,6 +275,8 @@ export type BreederRow = {
    *  source catches up. */
   id?: string;
   name: string;
+  /** Marketplace store profile image captured from the seller page. */
+  avatarUrl: string | null;
   /** Null when the seller's location string could not be mapped, which is most
    *  of them: about 85% of listings carry no location at all. It used to
    *  default to "US", which then fed the "Top region" KPI, so the dashboard

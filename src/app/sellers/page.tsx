@@ -14,7 +14,7 @@ import FeaturedSellerCard, {
   type FeaturedSeller,
 } from "@/components/sellers/FeaturedSellerCard";
 import LocationDistribution from "@/components/sellers/LocationDistribution";
-import SellerInitials from "@/components/sellers/SellerInitials";
+import SellerAvatar from "@/components/media/SellerAvatar";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import DataFreshness from "@/components/ui/DataFreshness";
 import { getSellerDailyActivity } from "@/lib/sellers/activity";
@@ -22,6 +22,7 @@ import { parseFilters } from "@/lib/filters/link";
 import { resolveComboFromSlug } from "@/lib/market/combo-slug";
 import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
 import SourceFootnote from "@/components/ui/SourceFootnote";
+import { getSellerVisualMap } from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,8 @@ type SellerRow = Seller & {
   total_listings: number | null;
   avg_price: number | null;
   seller_rating_score: number | null;
+  avatar_url: string | null;
+  recent_listing_image_url: string | null;
 };
 
 export default async function SellersPage({
@@ -105,6 +108,19 @@ export default async function SellersPage({
   const avgPriceAll =
     rows.reduce((a, r) => a + (r.avg_price ?? 0) * (r.total_listings ?? 0), 0) /
     Math.max(1, totalInv);
+  const sellerVisuals = await getSellerVisualMap(
+    supabase,
+    rows.map((row) => row.seller_id),
+    { includeRecentListing: true },
+  );
+  rows = rows.map((row) => {
+    const visual = sellerVisuals.get(row.seller_id);
+    return {
+      ...row,
+      avatar_url: visual?.avatarUrl ?? null,
+      recent_listing_image_url: visual?.recentListingImageUrl ?? null,
+    };
+  });
   const featured = rows.slice(0, 6) as FeaturedSeller[];
 
   // Chronological per-seller activity for the top ~60 (covers the
@@ -123,7 +139,11 @@ export default async function SellersPage({
           href={`/sellers/${s.seller_id}`}
           className="group inline-flex items-center gap-3"
         >
-          <SellerInitials name={s.seller_name ?? s.seller_id} size={28} />
+          <SellerAvatar
+            name={s.seller_name ?? s.seller_id}
+            imageUrl={s.avatar_url}
+            size={30}
+          />
           <span className="font-medium text-ink-100 transition group-hover:text-claude-glow">
             {s.seller_name ?? s.seller_id}
           </span>

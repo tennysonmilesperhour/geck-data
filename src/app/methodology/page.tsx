@@ -379,7 +379,7 @@ export default function MethodologyPage() {
           </p>
           <p className="mt-2 text-sm text-ink-300">
             Most ads match several trait pairs. Each is measured against the
-            <em> cheapest</em> set it belongs to, so the percentage shown is the
+            cheapest set it belongs to, so the percentage shown is the
             smallest one the data supports rather than the largest one we could
             have chosen. Very few sets clear all of this at once: of roughly
             1,900 combo-and-age cells in the catalogue, about 34 currently

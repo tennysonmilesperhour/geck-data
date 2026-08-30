@@ -14,6 +14,12 @@ import TimeOnMarketHistogram from "@/components/sellers/TimeOnMarketHistogram";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative, fmtUsd } from "@/lib/format";
 import WatchButton from "@/components/alerts/WatchButton";
+import SellerAvatar from "@/components/media/SellerAvatar";
+import ListingImage from "@/components/media/ListingImage";
+import {
+  getListingImageMap,
+  getSellerVisualMap,
+} from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -231,33 +237,52 @@ export default async function SellerDetailPage({
     }
   }
 
-  // Pull recent photos from market_listings → listings join. The scraper
-  // writes primary_image_url onto the listings table (keyed on the raw
-  // numeric listing_id). market_listings.id is the mm_-prefixed form so
-  // we strip the prefix to match.
-  const photoIds = listings.slice(0, 12).map((l) =>
-    l.id.startsWith("mm_") ? l.id.slice(3) : l.id,
-  );
-  let photos: Array<{ listing_id: string; primary_image_url: string | null; name: string | null }> = [];
-  if (photoIds.length > 0) {
-    const photoRes = await supabase
-      .from("listings")
-      .select("listing_id, primary_image_url, name")
-      .in("listing_id", photoIds)
-      .not("primary_image_url", "is", null)
-      .limit(12);
-    photos = (photoRes.data ?? []) as typeof photos;
-  }
+  // Resolve visual context separately from identity. The circular image is
+  // the marketplace store avatar; every rectangular image is labelled and
+  // linked as inventory from an exact listing id.
+  const imageTargetIds = [
+    ...listings.slice(0, 48).map((row) => row.id),
+    ...sold.slice(0, 24).map((row) => row.id),
+  ];
+  const [sellerVisuals, listingImages] = await Promise.all([
+    getSellerVisualMap(supabase, [sellerId]),
+    getListingImageMap(supabase, imageTargetIds),
+  ]);
+  const sellerVisual = sellerVisuals.get(sellerId);
+  const photos = listings
+    .filter((row) => listingImages.has(row.id))
+    .slice(0, 12)
+    .map((row) => ({
+      listing_id: row.id,
+      image_url: listingImages.get(row.id)!,
+      name: row.title,
+    }));
 
   const listingColumns: Column<ListingRow>[] = [
     {
       key: "title",
       header: "Listing",
       render: (r) => (
-        <div>
-          <div className="font-medium text-ink-100">{r.title ?? r.id}</div>
-          <div className="text-xs text-ink-400">{r.id}</div>
-        </div>
+        <Link
+          href={`/listings/${r.id}`}
+          className="group inline-flex items-center gap-3"
+        >
+          {listingImages.get(r.id) ? (
+            <ListingImage
+              src={listingImages.get(r.id)}
+              alt={r.title ?? r.id}
+              className="h-11 w-11 shrink-0 rounded-sm"
+              sizes="44px"
+              showFallback={false}
+            />
+          ) : null}
+          <span>
+            <span className="block font-medium text-ink-100 transition group-hover:text-claude-glow">
+              {r.title ?? r.id}
+            </span>
+            <span className="block text-xs text-ink-400">{r.id}</span>
+          </span>
+        </Link>
       ),
     },
     { key: "maturity", header: "Maturity", render: (r) => r.maturity ?? "no data" },
@@ -288,7 +313,25 @@ export default async function SellerDetailPage({
     {
       key: "title",
       header: "Listing",
-      render: (r) => r.title ?? r.id,
+      render: (r) => (
+        <Link
+          href={`/listings/${r.id}`}
+          className="group inline-flex items-center gap-3"
+        >
+          {listingImages.get(r.id) ? (
+            <ListingImage
+              src={listingImages.get(r.id)}
+              alt={r.title ?? r.id}
+              className="h-10 w-10 shrink-0 rounded-sm"
+              sizes="40px"
+              showFallback={false}
+            />
+          ) : null}
+          <span className="transition group-hover:text-claude-glow">
+            {r.title ?? r.id}
+          </span>
+        </Link>
+      ),
     },
     {
       key: "price",
@@ -336,10 +379,25 @@ export default async function SellerDetailPage({
           <span aria-hidden>/</span>
           <span className="text-ink-300">{seller.seller_name ?? seller.seller_id}</span>
         </nav>
-        <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className="font-display text-[34px] font-medium leading-tight tracking-tight text-ink-50">
-            {seller.seller_name ?? seller.seller_id}
-          </h1>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <SellerAvatar
+              name={seller.seller_name ?? seller.seller_id}
+              imageUrl={sellerVisual?.avatarUrl}
+              size={72}
+              priority
+            />
+            <div className="min-w-0">
+              <h1 className="font-display text-[34px] font-medium leading-tight tracking-tight text-ink-50">
+                {seller.seller_name ?? seller.seller_id}
+              </h1>
+              <p className="mt-1 text-sm text-ink-400">
+                {[seller.seller_location, seller.membership]
+                  .filter(Boolean)
+                  .join(" · ") || "no data"}
+              </p>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             {seller.five_star_rating != null ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-clay-400/40 bg-clay-500/10 px-2 py-0.5 text-xs text-clay-300">
@@ -354,10 +412,6 @@ export default async function SellerDetailPage({
             />
           </div>
         </div>
-        <p className="mt-1 text-sm text-ink-400">
-          {[seller.seller_location, seller.membership].filter(Boolean).join(" · ") ||
-            "no data"}
-        </p>
         {seller.morph_specialization ? (
           <p className="mt-1 text-xs text-ink-500">
             <span className="text-ink-400">Specializes in</span>{" "}
@@ -373,22 +427,20 @@ export default async function SellerDetailPage({
           </h2>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
             {photos.map((p) => (
-              <a
+              <Link
                 key={p.listing_id}
-                href={`https://www.morphmarket.com/us/c/reptiles/lizards/crested-geckos/${p.listing_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative aspect-square overflow-hidden rounded-md border border-ink-700/60"
+                href={`/listings/${p.listing_id}`}
+                className="group"
                 title={p.name ?? p.listing_id}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.primary_image_url ?? ""}
+                <ListingImage
+                  src={p.image_url}
                   alt={p.name ?? p.listing_id}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition group-hover:scale-105"
+                  className="aspect-square w-full rounded-sm"
+                  sizes="(min-width: 768px) 14vw, (min-width: 640px) 22vw, 46vw"
+                  label="Listing"
                 />
-              </a>
+              </Link>
             ))}
           </div>
         </section>

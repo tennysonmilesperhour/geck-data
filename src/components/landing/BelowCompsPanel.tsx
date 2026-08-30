@@ -22,6 +22,7 @@ import { useMemo } from "react";
 import { fmtUsd, fmtInt, fmtRelative } from "@/lib/format";
 import type { BelowCompsListing } from "@/lib/landing/snapshot";
 import { useLandingFilters } from "./LandingFilters";
+import ListingImage from "@/components/media/ListingImage";
 
 type Props = {
   listings: BelowCompsListing[];
@@ -56,7 +57,7 @@ export default function BelowCompsPanel({ listings }: Props) {
           </h2>
           <p className="mt-1 text-xs text-ink-400">
             Ads priced at least 25% below the median ask of live ads with the
-            same trait pair <em>and</em> the same age class, both sides
+            same trait pair and the same age class, both sides
             confirmed in the current ingest cycle.
           </p>
         </div>
@@ -89,6 +90,15 @@ export default function BelowCompsPanel({ listings }: Props) {
                       : "border-ink-700/60 bg-ink-900/40 hover:border-amber-500/40 hover:bg-ink-800/60"
                   }`}
                 >
+                  {row.image_url ? (
+                    <ListingImage
+                      src={row.image_url}
+                      alt={row.title ?? row.id}
+                      className="h-20 w-20 shrink-0 rounded-sm"
+                      sizes="80px"
+                      showFallback={false}
+                    />
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-ink-100 group-hover:text-amber-100">
                       {row.title ?? "(no title)"}

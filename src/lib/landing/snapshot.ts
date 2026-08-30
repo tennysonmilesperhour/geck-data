@@ -22,6 +22,10 @@ import {
   isRedundantComboName,
   redundantComboKeys,
 } from "@/lib/market/combo-redundancy";
+import {
+  getListingImageMap,
+  getSellerVisualMap,
+} from "@/lib/media/market-images";
 
 export type ComboSnapshot = {
   combo_name: string;
@@ -68,6 +72,8 @@ export type BelowCompsListing = {
   seller_location: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;
+  /** Canonical catalog photo for this exact listing, when captured. */
+  image_url: string | null;
 };
 
 export type SellerCard = {
@@ -86,6 +92,10 @@ export type SellerCard = {
    * the card has to date-stamp them.
    */
   catalogue_updated_at: string | null;
+  /** Marketplace store profile image, never substituted with an animal. */
+  avatar_url: string | null;
+  /** A recent animal from this seller, explicitly labelled as stock. */
+  recent_listing_image_url: string | null;
 };
 
 export type ComboDaily = {
@@ -548,16 +558,37 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
         seller_location: row.seller_location,
         first_seen_at: row.first_seen_at,
         last_seen_at: row.last_seen_at,
+        image_url: null,
       });
     }
     below_comps.sort((a, b) => b.pct_below - a.pct_below);
     below_comps = below_comps.slice(0, BELOW_COMPS_LIMIT);
   }
 
-  const top_sellers: SellerCard[] = (sellerQ.data ?? [])
+  const topSellerRows = (sellerQ.data ?? [])
     .filter((s) => (s.total_listings ?? 0) > 0)
-    .slice(0, TOP_SELLER_LIMIT)
-    .map((s) => ({
+    .slice(0, TOP_SELLER_LIMIT);
+
+  const [belowCompImages, sellerVisuals] = await Promise.all([
+    getListingImageMap(
+      supabase,
+      below_comps.map((row) => row.id),
+    ),
+    getSellerVisualMap(
+      supabase,
+      topSellerRows.map((row) => row.seller_id),
+      { includeRecentListing: true },
+    ),
+  ]);
+
+  below_comps = below_comps.map((row) => ({
+    ...row,
+    image_url: belowCompImages.get(row.id) ?? null,
+  }));
+
+  const top_sellers: SellerCard[] = topSellerRows.map((s) => {
+    const visual = sellerVisuals.get(s.seller_id);
+    return {
       seller_id: s.seller_id,
       seller_name: s.seller_name,
       seller_location: s.seller_location,
@@ -569,7 +600,10 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
         s.five_star_rating != null ? Number(s.five_star_rating) : null,
       membership: s.membership,
       catalogue_updated_at: s.updated_at ?? null,
-    }));
+      avatar_url: visual?.avatarUrl ?? null,
+      recent_listing_image_url: visual?.recentListingImageUrl ?? null,
+    };
+  });
 
   return {
     totals,

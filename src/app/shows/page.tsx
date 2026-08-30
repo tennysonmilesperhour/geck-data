@@ -5,6 +5,8 @@ import KpiCard from "@/components/ui/KpiCard";
 import { SectionHeader } from "@/components/ui/Panel";
 import { createClient } from "@/lib/supabase/server";
 import { fmtDate, fmtInt, fmtRelative } from "@/lib/format";
+import ListingImage from "@/components/media/ListingImage";
+import { getListingImageMap } from "@/lib/media/market-images";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +47,13 @@ export default async function ShowsPage() {
   }
 
   const rows = (data ?? []) as MentionRow[];
+  const listingImages = await getListingImageMap(
+    supabase,
+    rows
+      .slice(0, 80)
+      .map((row) => row.listing_id)
+      .filter((id): id is string => Boolean(id)),
+  );
 
   const byShow = new Map<string, Aggregated>();
   for (const r of rows) {
@@ -112,7 +121,20 @@ export default async function ShowsPage() {
       key: "context",
       header: "Context",
       render: (r) => (
-        <span className="line-clamp-2 text-ink-200">{r.context ?? "no data"}</span>
+        <span className="inline-flex items-center gap-3">
+          {r.listing_id && listingImages.get(r.listing_id) ? (
+            <ListingImage
+              src={listingImages.get(r.listing_id)}
+              alt={r.context ?? r.show_name}
+              className="h-11 w-11 shrink-0 rounded-sm"
+              sizes="44px"
+              showFallback={false}
+            />
+          ) : null}
+          <span className="line-clamp-2 text-ink-200">
+            {r.context ?? "no data"}
+          </span>
+        </span>
       ),
     },
     {

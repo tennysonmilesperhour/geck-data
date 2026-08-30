@@ -1,7 +1,7 @@
 // Deterministic initials avatar. Hashes the seller name into a stable
 // gradient stop so the same seller always renders with the same pair
-// of hues — gives the directory a varied visual rhythm without
-// depending on uploaded photos (we don't have a complete photo set).
+// of hues. Marketplace profile images now take precedence where captured;
+// this remains the deterministic, identity-safe fallback.
 
 const PALETTES: ReadonlyArray<readonly [string, string]> = [
   ["#10b981", "#0ea5e9"], // emerald → sky

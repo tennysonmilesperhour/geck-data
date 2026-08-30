@@ -8,6 +8,9 @@ import DropAnalytics from "@/components/price-drops/DropAnalytics";
 import { createClient } from "@/lib/supabase/server";
 import { fmtPct, fmtRelative, fmtUsd } from "@/lib/format";
 import WatchButton from "@/components/alerts/WatchButton";
+import Link from "next/link";
+import ListingImage from "@/components/media/ListingImage";
+import { getListingImageMap } from "@/lib/media/market-images";
 
 const STRIP_TOKENS = /\b(male|female|unsexed|juv(?:enile)?|sub(?:adult)?|adult|babies?|hatchling|breeder|pair|trio)\b/gi;
 function morphTermFromTitle(title: string | null | undefined): string | null {
@@ -59,6 +62,10 @@ export default async function PriceDropsPage() {
   }
 
   const rows = (data ?? []) as unknown as DropRow[];
+  const listingImages = await getListingImageMap(
+    supabase,
+    rows.slice(0, 120).map((row) => row.listing_id),
+  );
 
   const sevenDay = rows.filter(
     (r) => r.observed_at && Date.now() - Date.parse(r.observed_at) < 7 * 86400_000,
@@ -80,12 +87,26 @@ export default async function PriceDropsPage() {
       key: "listing",
       header: "Listing",
       render: (r) => (
-        <div>
-          <div className="font-medium text-ink-100">
-            {r.market_listings?.title ?? r.listing_id}
-          </div>
-          <div className="text-xs text-ink-400">{r.listing_id}</div>
-        </div>
+        <Link
+          href={`/listings/${r.listing_id}`}
+          className="group inline-flex items-center gap-3"
+        >
+          {listingImages.get(r.listing_id) ? (
+            <ListingImage
+              src={listingImages.get(r.listing_id)}
+              alt={r.market_listings?.title ?? r.listing_id}
+              className="h-12 w-12 shrink-0 rounded-sm"
+              sizes="48px"
+              showFallback={false}
+            />
+          ) : null}
+          <span>
+            <span className="block font-medium text-ink-100 transition group-hover:text-claude-glow">
+              {r.market_listings?.title ?? r.listing_id}
+            </span>
+            <span className="block text-xs text-ink-400">{r.listing_id}</span>
+          </span>
+        </Link>
       ),
     },
     {

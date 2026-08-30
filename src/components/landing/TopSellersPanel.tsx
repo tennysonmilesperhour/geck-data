@@ -1,8 +1,7 @@
 // Top sellers on the home page. Uses the same visual language as
-// FeaturedSellerCard on /sellers (gradient initials avatar, emerald hover ring,
-// three-stat row) so the same data object reads as the same product on both
-// surfaces. Compact layout (smaller initials, tighter spacing) to fit the home
-// page's denser context.
+// FeaturedSellerCard on /sellers (marketplace avatar when captured, initials
+// fallback, recent-stock photography, emerald hover ring, three-stat row) so
+// the same data object reads as the same product on both surfaces.
 //
 // The ranking metric is market_sellers.total_listings, which is a stock count
 // frozen the last time that seller row was written, not a tally of what the
@@ -12,7 +11,8 @@
 import Link from "next/link";
 import { fmtUsd, fmtInt, fmtDate } from "@/lib/format";
 import type { SellerCard } from "@/lib/landing/snapshot";
-import SellerInitials from "@/components/sellers/SellerInitials";
+import SellerAvatar from "@/components/media/SellerAvatar";
+import ListingImage from "@/components/media/ListingImage";
 
 type Props = {
   sellers: SellerCard[];
@@ -54,61 +54,75 @@ export default function TopSellersPanel({ sellers }: Props) {
             <li key={s.seller_id}>
               <Link
                 href={`/sellers/${encodeURIComponent(s.seller_id)}`}
-                className="surface-elevated hover-lift group flex h-full flex-col gap-3 p-4"
+                className="surface-elevated hover-lift group flex h-full flex-col overflow-hidden"
               >
-                <div className="flex items-start gap-3">
-                  <SellerInitials
-                    name={s.seller_name ?? s.seller_id}
-                    size={40}
+                {s.recent_listing_image_url ? (
+                  <ListingImage
+                    src={s.recent_listing_image_url}
+                    alt={`Recent listing from ${s.seller_name ?? s.seller_id}`}
+                    className="h-28 w-full border-x-0 border-t-0"
+                    sizes="(min-width: 1024px) 28vw, (min-width: 640px) 44vw, 92vw"
+                    label="Recent stock"
+                    showFallback={false}
                   />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-display text-[15px] font-medium leading-tight text-ink-50 transition group-hover:text-claude-glow">
-                      {s.seller_name ?? s.seller_id}
+                ) : null}
+
+                <div className="flex flex-1 flex-col gap-3 p-4">
+                  <div className="flex items-start gap-3">
+                    <SellerAvatar
+                      name={s.seller_name ?? s.seller_id}
+                      imageUrl={s.avatar_url}
+                      size={40}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-display text-[15px] font-medium leading-tight text-ink-50 transition group-hover:text-claude-glow">
+                        {s.seller_name ?? s.seller_id}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-ink-400">
+                        {s.seller_location ?? "Location not reported"}
+                      </div>
                     </div>
-                    <div className="mt-0.5 truncate text-xs text-ink-400">
-                      {s.seller_location ?? "Location not reported"}
-                    </div>
+                    {s.membership ? (
+                      <span className="inline-flex shrink-0 rounded-full border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-ink-400">
+                        {s.membership}
+                      </span>
+                    ) : null}
                   </div>
-                  {s.membership ? (
-                    <span className="inline-flex shrink-0 rounded-full border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-ink-400">
-                      {s.membership}
-                    </span>
+
+                  <div className="grid grid-cols-3 gap-2 border-t border-ink-700/60 pt-3">
+                    <Stat
+                      label="Catalogue"
+                      value={
+                        s.total_listings != null ? fmtInt(s.total_listings) : "n/a"
+                      }
+                    />
+                    <Stat
+                      label="Avg ask"
+                      value={s.avg_price != null ? fmtUsd(s.avg_price) : "n/a"}
+                    />
+                    <Stat
+                      label="Rating"
+                      value={
+                        s.five_star_rating != null
+                          ? s.five_star_rating.toFixed(1)
+                          : "n/a"
+                      }
+                    />
+                  </div>
+
+                  <div className="text-[11px] text-ink-500">
+                    {s.catalogue_updated_at
+                      ? `Counted ${fmtDate(s.catalogue_updated_at)}`
+                      : "Count date not recorded"}
+                  </div>
+
+                  {s.morph_specialization ? (
+                    <div className="text-xs text-ink-400">
+                      <span className="text-ink-500">Focus · </span>
+                      {s.morph_specialization}
+                    </div>
                   ) : null}
                 </div>
-
-                <div className="grid grid-cols-3 gap-2 border-t border-ink-700/60 pt-3">
-                  <Stat
-                    label="Catalogue"
-                    value={
-                      s.total_listings != null ? fmtInt(s.total_listings) : "n/a"
-                    }
-                  />
-                  <Stat
-                    label="Avg ask"
-                    value={s.avg_price != null ? fmtUsd(s.avg_price) : "n/a"}
-                  />
-                  <Stat
-                    label="Rating"
-                    value={
-                      s.five_star_rating != null
-                        ? s.five_star_rating.toFixed(1)
-                        : "n/a"
-                    }
-                  />
-                </div>
-
-                <div className="text-[11px] text-ink-500">
-                  {s.catalogue_updated_at
-                    ? `Counted ${fmtDate(s.catalogue_updated_at)}`
-                    : "Count date not recorded"}
-                </div>
-
-                {s.morph_specialization ? (
-                  <div className="text-xs text-ink-400">
-                    <span className="text-ink-500">Focus · </span>
-                    {s.morph_specialization}
-                  </div>
-                ) : null}
               </Link>
             </li>
           ))}

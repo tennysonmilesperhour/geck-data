@@ -4,7 +4,8 @@
 // inventory size + plan tier + a 30-day activity sparkline so the
 // numbers have shape.
 import Link from "next/link";
-import SellerInitials from "./SellerInitials";
+import SellerAvatar from "@/components/media/SellerAvatar";
+import ListingImage from "@/components/media/ListingImage";
 import MiniSparkline from "@/components/charts/MiniSparkline";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
@@ -16,6 +17,8 @@ export type FeaturedSeller = {
   total_listings: number | null;
   avg_price: number | null;
   seller_rating_score: number | null;
+  avatar_url: string | null;
+  recent_listing_image_url: string | null;
 };
 
 export default function FeaturedSellerCard({
@@ -34,49 +37,56 @@ export default function FeaturedSellerCard({
   return (
     <Link
       href={`/sellers/${seller.seller_id}`}
-      className="surface-elevated hover-lift group block p-5"
+      className="surface-elevated hover-lift group block overflow-hidden"
     >
-      <div className="flex items-start gap-4">
-        <SellerInitials name={name} size={52} />
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-[19px] font-medium leading-tight text-ink-50 transition group-hover:text-claude-glow">
-            {name}
-          </div>
-          <div className="mt-1 truncate text-sm text-ink-400">
-            {seller.seller_location ?? "Location unknown"}
-          </div>
-        </div>
-        {plan ? <PlanBadge plan={plan} /> : null}
-      </div>
-
-      <div className="mt-5 grid grid-cols-3 gap-4">
-        <Stat
-          label="Listings"
-          value={fmtInt(seller.total_listings)}
+      {seller.recent_listing_image_url ? (
+        <ListingImage
+          src={seller.recent_listing_image_url}
+          alt={`Recent listing from ${name}`}
+          className="h-36 w-full border-x-0 border-t-0"
+          sizes="(min-width: 1024px) 30vw, (min-width: 768px) 45vw, 92vw"
+          label="Recent stock"
+          showFallback={false}
         />
-        <Stat
-          label="Avg price"
-          value={fmtUsd(seller.avg_price)}
-        />
-        <Stat
-          label="Rating"
-          value={rating != null ? rating.toFixed(2) : "no data"}
-        />
-      </div>
-
-      {hasActivity ? (
-        <div className="mt-5 border-t border-ink-700/60 pt-3">
-          <div className="mb-1 flex items-baseline justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-500">
-              new listings · 30d
-            </span>
-            <span className="font-mono text-[11px] tabular-nums text-ink-300">
-              {fmtInt(daily!.reduce((a, b) => a + b, 0))}
-            </span>
-          </div>
-          <MiniSparkline values={daily!} width={232} height={28} fill />
-        </div>
       ) : null}
+
+      <div className="p-5">
+        <div className="flex items-start gap-4">
+          <SellerAvatar name={name} imageUrl={seller.avatar_url} size={52} />
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-[19px] font-medium leading-tight text-ink-50 transition group-hover:text-claude-glow">
+              {name}
+            </div>
+            <div className="mt-1 truncate text-sm text-ink-400">
+              {seller.seller_location ?? "Location unknown"}
+            </div>
+          </div>
+          {plan ? <PlanBadge plan={plan} /> : null}
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 gap-4">
+          <Stat label="Listings" value={fmtInt(seller.total_listings)} />
+          <Stat label="Avg price" value={fmtUsd(seller.avg_price)} />
+          <Stat
+            label="Rating"
+            value={rating != null ? rating.toFixed(2) : "no data"}
+          />
+        </div>
+
+        {hasActivity ? (
+          <div className="mt-5 border-t border-ink-700/60 pt-3">
+            <div className="mb-1 flex items-baseline justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-500">
+                new listings · 30d
+              </span>
+              <span className="font-mono text-[11px] tabular-nums text-ink-300">
+                {fmtInt(daily!.reduce((a, b) => a + b, 0))}
+              </span>
+            </div>
+            <MiniSparkline values={daily!} width={232} height={28} fill />
+          </div>
+        ) : null}
+      </div>
     </Link>
   );
 }
