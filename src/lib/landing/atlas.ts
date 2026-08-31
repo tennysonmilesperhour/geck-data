@@ -8,10 +8,11 @@ import type {
   AtlasTrait,
 } from "@/components/design-lab/atlas-types";
 import { getListingImageMap } from "@/lib/media/market-images";
+import { CYCLE_HOURS } from "@/lib/market/feed-verdict";
 import { getSoldPageData } from "@/lib/sold/data";
 import { createPublicClient } from "@/lib/supabase/public";
 
-const FRESH_HOURS = 48;
+const CURRENT_HOURS = CYCLE_HOURS;
 const OBSERVATION_DAYS = 8;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -141,11 +142,11 @@ function generatedAt(value: Date): string {
 async function fetchAtlasSnapshot(): Promise<AtlasSnapshot> {
   const now = new Date();
   const supabase = createPublicClient();
-  const freshSince = new Date(now.getTime() - FRESH_HOURS * HOUR_MS).toISOString();
+  const freshSince = new Date(now.getTime() - CURRENT_HOURS * HOUR_MS).toISOString();
   const observationStart = startOfUtcDay(new Date(now.getTime() - (OBSERVATION_DAYS - 1) * DAY_MS));
 
   const [summaryResult, freshResult, observationResult, sold] = await Promise.all([
-    supabase.rpc("market_price_summary", { fresh_hours: FRESH_HOURS }),
+    supabase.rpc("market_price_summary", { fresh_hours: CURRENT_HOURS }),
     supabase
       .from("market_listings")
       .select("id, title, price_usd_equivalent, cached_traits, norm_traits")
@@ -223,6 +224,7 @@ async function fetchAtlasSnapshot(): Promise<AtlasSnapshot> {
     generatedAt: generatedAt(now),
     observedWindow: dateRange(`${firstDay}T00:00:00Z`, `${lastDay}T00:00:00Z`),
     observedWindowDays: OBSERVATION_DAYS,
+    currentWindowHours: CURRENT_HOURS,
     recentListings:
       numberOrNull(summary?.fresh_listings) ??
       (freshResult.error ? null : freshRows.length),
@@ -244,6 +246,6 @@ async function fetchAtlasSnapshot(): Promise<AtlasSnapshot> {
 
 export const getAtlasSnapshot = unstable_cache(
   fetchAtlasSnapshot,
-  ["landing-atlas-v1"],
+  ["landing-atlas-v2"],
   { revalidate: 300, tags: ["market-data", "sold-data"] },
 );

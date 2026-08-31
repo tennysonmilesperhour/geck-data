@@ -33,6 +33,9 @@ const formatPrice = (value: number) =>
 const formatCount = (value: number | null) =>
   value === null ? "—" : value.toLocaleString();
 
+const formatHours = (hours: number) =>
+  hours % 24 === 0 ? `${hours / 24} days` : `${hours} hours`;
+
 function DailyCaptureChart({ days }: { days: ReadonlyArray<AtlasObservationDay> }) {
   const maxValue = Math.max(1, ...days.map((day) => day.count));
   const left = 34;
@@ -105,6 +108,7 @@ export default function AtlasDashboard({
     .filter((trait): trait is AtlasTrait => Boolean(trait));
   const rankedTraits = [...traits].sort((a, b) => b.median - a.median);
   const atMaximum = selectedNames.length === 4;
+  const currentWindow = formatHours(snapshot.currentWindowHours);
 
   const toggleTrait = (name: string) => {
     setSelectedNames((current) => {
@@ -133,7 +137,7 @@ export default function AtlasDashboard({
 
       {!compact ? <section className={styles.metricStrip} aria-label="Market snapshot">
         <article><span>Observed window</span><strong>{snapshot.observedWindow}</strong><small>{snapshot.observedWindowDays} UTC days</small></article>
-        <article><span>Recently confirmed</span><strong>{formatCount(snapshot.recentListings)}</strong><small>live rows seen in 48 hours</small></article>
+        <article><span>Current-cycle sample</span><strong>{formatCount(snapshot.recentListings)}</strong><small>live rows seen in {currentWindow}</small></article>
         <article><span>Median ask</span><strong>{snapshot.medianAsk === null ? "—" : formatPrice(snapshot.medianAsk)}</strong><small>{snapshot.askingRangeNote}</small></article>
         <article><span>Captured sold events</span><strong>{formatCount(snapshot.capturedSold.count)}</strong><small>{snapshot.capturedSold.window}</small></article>
       </section> : null}
@@ -205,7 +209,7 @@ export default function AtlasDashboard({
                   </div>
                 </article>
               ))}
-              <p className={styles.chartNote}>Single-animal, fixed-price public listings · confirmed in 48 hours · asks are not completed sales</p>
+              <p className={styles.chartNote}>Single-animal, fixed-price public listings · confirmed in {currentWindow} · asks are not completed sales</p>
             </div>
           </div>
         </section>
@@ -219,7 +223,7 @@ export default function AtlasDashboard({
             <article>
               <span>Current asks</span>
               <strong>{formatCount(snapshot.recentListings)}</strong>
-              <p>Live catalogue rows re-confirmed in the last 48 hours. Used for the trait comparisons on this page.</p>
+              <p>Live catalogue rows re-confirmed in the current {currentWindow} ingest window. Used for the trait comparisons on this page.</p>
               <small>{snapshot.latestObservationNote}</small>
             </article>
             <article>

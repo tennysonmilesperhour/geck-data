@@ -25,6 +25,7 @@ export type AtlasSnapshot = {
   generatedAt: string;
   observedWindow: string;
   observedWindowDays: number;
+  currentWindowHours: number;
   recentListings: number | null;
   medianAsk: number | null;
   askingRangeNote: string;

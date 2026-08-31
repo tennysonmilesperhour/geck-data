@@ -13,6 +13,7 @@ export const DESIGN_LAB_SNAPSHOT = {
   generatedAt: "Aug 30, 2026 · 03:42 MDT",
   observedWindow: "Aug 22–29, 2026",
   observedWindowDays: 8,
+  currentWindowHours: 192,
   recentListings: 564,
   medianAsk: 260,
   // Legacy preview aliases remain while the older concept pages still read

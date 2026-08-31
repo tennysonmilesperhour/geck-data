@@ -59,7 +59,7 @@ export default async function LandingPage() {
             </div>
           ),
           atlas: <AtlasDashboard snapshot={atlas} production compact />,
-          signals: <WhatsHotPanel combos={snapshot.combos} comboDaily={comboDaily} limit={6} />,
+          signals: <WhatsHotPanel combos={snapshot.combos} comboDaily={comboDaily} limit={6} currentHours={snapshot.totals.fresh_hours} />,
           opportunities: <BelowCompsPanel listings={snapshot.below_comps} limit={6} />,
           indices: <AnchorIndicesStrip />,
           sellers: <TopSellersPanel sellers={snapshot.top_sellers} />,

@@ -23,9 +23,10 @@ type Props = {
   /** Combo_name -> 14 daily arrival counts (oldest first). */
   comboDaily?: Map<string, number[]>;
   limit?: number;
+  currentHours?: number;
 };
 
-export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) {
+export default function WhatsHotPanel({ combos, comboDaily, limit = 8, currentHours = 48 }: Props) {
   const { hoveredCombo, selectedCombos, toggleCombo, setHoveredCombo } =
     useLandingFilters();
 
@@ -37,6 +38,9 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
     ),
     1,
   );
+  const currentWindow = currentHours % 24 === 0
+    ? `${currentHours / 24}-day cycle`
+    : `${currentHours}-hour window`;
 
   return (
     <section
@@ -52,8 +56,8 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
             What&apos;s hot
           </h2>
           <p className="mt-1.5 text-xs text-ink-400">
-            Ranked by ads re-confirmed in the last 48 hours, with that
-            window&apos;s median. Catalogue totals are labelled as catalogue.{" "}
+            Ranked by ads re-confirmed in the current {currentWindow}, with
+            that window&apos;s median. Catalogue totals are labelled as catalogue.{" "}
             <span className="text-ink-300">Click</span> to filter the page.
           </p>
         </div>
@@ -159,7 +163,7 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
                           live={
                             useFresh ? combo.fresh_live_count : combo.live_count
                           }
-                          liveWindow={useFresh ? "48h fresh" : "catalogue"}
+                          liveWindow={useFresh ? currentWindow : "catalogue"}
                           sold={combo.sold_count}
                         />
                       </span>
@@ -191,4 +195,3 @@ export default function WhatsHotPanel({ combos, comboDaily, limit = 8 }: Props) 
     </section>
   );
 }
-

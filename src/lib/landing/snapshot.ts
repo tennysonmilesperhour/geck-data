@@ -11,7 +11,7 @@
 // the last time we looked, not a claim about today. It only flips to 'sold' on
 // an explicit sold event, so an ad that quietly vanished from MorphMarket
 // stays "live" in our warehouse indefinitely. Every headline number below is
-// therefore computed over rows re-confirmed inside FRESH_HOURS, and the rows
+// therefore computed over rows re-confirmed inside CURRENT_HOURS, and the rows
 // we could not re-confirm are carried beside them as their own population.
 // The two are never averaged into one median or one count.
 
@@ -31,7 +31,7 @@ export type ComboSnapshot = {
   combo_name: string;
   /** Catalogue-wide live flag count over the rollup window. Not "now". */
   live_count: number;
-  /** Live ads re-confirmed inside FRESH_HOURS. This is the "now" count. */
+  /** Live ads re-confirmed inside the current ingest cycle. */
   fresh_live_count: number;
   fresh_median_ask: number | null;
   sold_count: number;
@@ -114,7 +114,7 @@ type ArrivalRow = {
 };
 
 export type MarketTotals = {
-  /** Re-observation window that qualifies a live row as fresh. */
+  /** Re-observation window that qualifies a live row for the current cycle. */
   fresh_hours: number;
   /** Live rows re-confirmed inside that window. This is the headline count. */
   fresh_listings: number;
@@ -161,9 +161,10 @@ export type MarketSnapshot = {
 };
 
 const WINDOW_DAYS = 365;
-// A listing counts as fresh if we re-confirmed it this recently. Matches the
-// default the market_price_summary RPC uses so the copy and the SQL agree.
-const FRESH_HOURS = 48;
+// The scraper is a weekly pulse, so "current" must survive between passes.
+// A 48-hour window made the homepage empty from midweek onward even while the
+// coverage banner correctly described the latest pass as recent.
+const CURRENT_HOURS = CYCLE_HOURS;
 // Same sanity band the pricing RPCs apply, so a count taken here describes the
 // same rows the median was taken over.
 const PRICE_SANITY_MAX = 100_000;
@@ -266,7 +267,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   // The RPC derives its own cutoff from the database clock. This one is for
   // the satellite queries that have to describe the same population; a few
   // seconds of clock skew does not move a 48 hour boundary.
-  const freshSince = new Date(Date.now() - FRESH_HOURS * HOUR_MS).toISOString();
+  const freshSince = new Date(Date.now() - CURRENT_HOURS * HOUR_MS).toISOString();
 
   const [
     summaryQ,
@@ -283,7 +284,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
       // live prices and took the median in JS, which was row-capped (so the
       // median described an arbitrary slice) and blended freshly confirmed
       // ads with ones last seen in June.
-      supabase.rpc("market_price_summary", { fresh_hours: FRESH_HOURS }),
+      supabase.rpc("market_price_summary", { fresh_hours: CURRENT_HOURS }),
       supabase
         .from("market_listings")
         .select("id", { count: "exact", head: true })
@@ -361,7 +362,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   const freshP75 = num(summary?.fresh_p75_ask);
 
   const totals: MarketTotals = {
-    fresh_hours: FRESH_HOURS,
+    fresh_hours: CURRENT_HOURS,
     fresh_listings: num(summary?.fresh_listings) ?? 0,
     stale_listings: num(summary?.stale_listings) ?? 0,
     fresh_priced_listings: freshPricedQ.error ? null : (freshPricedQ.count ?? null),

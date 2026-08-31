@@ -54,11 +54,11 @@ const MODULES: ModuleDefinition[] = [
 ];
 
 const METRIC_LABELS: Record<MetricId, string> = {
-  median: "Median fresh ask",
-  listings: "Fresh live listings",
-  sellers: "Sellers on fresh ads",
+  median: "Current-cycle median ask",
+  listings: "Current-cycle listings",
+  sellers: "Current-cycle sellers",
   hottest: "Leading trait pair",
-  coverage: "Unconfirmed catalogue",
+  coverage: "Outside current cycle",
 };
 
 const PRESETS: Record<Exclude<Preferences["preset"], "custom">, Preferences> = {
@@ -348,29 +348,32 @@ export default function PulseWorkspace({
 
 function buildMetricCards(snapshot: PulseSummary): Record<MetricId, { label: string; value: string; context: string }> {
   const { totals, hottest_combo } = snapshot;
+  const currentWindow = totals.fresh_hours % 24 === 0
+    ? `${totals.fresh_hours / 24} days`
+    : `${totals.fresh_hours} hours`;
   return {
     median: {
-      label: "Median fresh ask",
+      label: "Current-cycle median ask",
       value: totals.fresh_median_ask != null ? fmtUsd(totals.fresh_median_ask) : "Unavailable",
-      context: totals.fresh_priced_listings != null ? `${fmtInt(totals.fresh_priced_listings)} priced fresh ads` : "fresh asks only",
+      context: totals.fresh_priced_listings != null ? `${fmtInt(totals.fresh_priced_listings)} priced ads observed in ${currentWindow}` : "current asks only",
     },
     listings: {
-      label: "Fresh live listings",
+      label: "Current-cycle listings",
       value: fmtInt(totals.fresh_listings),
-      context: `re-confirmed in the last ${totals.fresh_hours} hours`,
+      context: `re-confirmed in the last ${currentWindow}`,
     },
     sellers: {
-      label: "Sellers on fresh ads",
+      label: "Current-cycle sellers",
       value: totals.fresh_sellers != null ? fmtInt(totals.fresh_sellers) : "Unavailable",
-      context: "distinct sellers in the fresh listing set",
+      context: "distinct sellers in the current listing sample",
     },
     hottest: {
       label: "Leading trait pair",
       value: hottest_combo?.combo_name ?? "No supported pair",
-      context: hottest_combo ? `${fmtInt(hottest_combo.fresh_live_count)} fresh listings` : "current sample too thin",
+      context: hottest_combo ? `${fmtInt(hottest_combo.fresh_live_count)} current-cycle listings` : "current sample too thin",
     },
     coverage: {
-      label: "Unconfirmed catalogue",
+      label: "Outside current cycle",
       value: fmtInt(totals.stale_listings),
       context: "kept separate from current asking metrics",
     },
