@@ -19,6 +19,7 @@
 // pinned one or more combos in What's Hot, the list narrows to just those.
 // Empty filter = show all.
 import { useMemo } from "react";
+import Link from "next/link";
 import { fmtUsd, fmtInt, fmtRelative } from "@/lib/format";
 import type { BelowCompsListing } from "@/lib/landing/snapshot";
 import { useLandingFilters } from "./LandingFilters";
@@ -26,9 +27,10 @@ import ListingImage from "@/components/media/ListingImage";
 
 type Props = {
   listings: BelowCompsListing[];
+  limit?: number;
 };
 
-export default function BelowCompsPanel({ listings }: Props) {
+export default function BelowCompsPanel({ listings, limit = listings.length }: Props) {
   const { selectedCombos, hoveredCombo, priceBand } = useLandingFilters();
 
   const filtered = useMemo(() => {
@@ -44,6 +46,7 @@ export default function BelowCompsPanel({ listings }: Props) {
     }
     return list;
   }, [listings, selectedCombos, priceBand]);
+  const visible = filtered.slice(0, limit);
 
   return (
     <section className="rounded-2xl border border-ink-700 bg-ink-850 p-5 shadow-panel">
@@ -62,8 +65,8 @@ export default function BelowCompsPanel({ listings }: Props) {
           </p>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-          {filtered.length}{" "}
-          {filtered.length === listings.length ? "found" : `of ${listings.length}`}
+          {Math.min(filtered.length, limit)} shown
+          {filtered.length > limit ? ` of ${filtered.length}` : ""}
         </span>
       </header>
 
@@ -75,7 +78,7 @@ export default function BelowCompsPanel({ listings }: Props) {
         </div>
       ) : (
         <ul className="space-y-2">
-          {filtered.map((row) => {
+          {visible.map((row) => {
             const isMatched =
               hoveredCombo != null && row.comp_combo === hoveredCombo;
             return (
@@ -147,6 +150,11 @@ export default function BelowCompsPanel({ listings }: Props) {
         and are not controlled for, and every figure here is an asking price,
         not a sale.
       </p>
+      {filtered.length > limit ? (
+        <Link href="/market" className="mt-3 inline-flex text-xs text-ink-400 transition hover:text-emerald-200">
+          Open the full market dashboard →
+        </Link>
+      ) : null}
     </section>
   );
 }

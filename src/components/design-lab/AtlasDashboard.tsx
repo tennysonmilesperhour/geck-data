@@ -86,14 +86,17 @@ function DailyCaptureChart({ days }: { days: ReadonlyArray<AtlasObservationDay> 
 export default function AtlasDashboard({
   snapshot = DESIGN_LAB_SNAPSHOT,
   production = false,
+  compact = false,
 }: {
   snapshot?: AtlasSnapshot;
   production?: boolean;
+  compact?: boolean;
 }) {
   const traits = snapshot.traits.slice(0, ORBIT_POINTS.length);
   const [selectedNames, setSelectedNames] = useState<string[]>(() =>
     traits.slice(0, Math.min(3, traits.length)).map((trait) => trait.name),
   );
+  const [supportingEvidenceOpen, setSupportingEvidenceOpen] = useState(false);
   const maxMedian = Math.max(1, ...traits.map((trait) => trait.median));
   const maxCount = Math.max(1, ...traits.map((trait) => trait.count));
   const maxDaily = Math.max(1, ...snapshot.dailyObservations.map((day) => day.count));
@@ -113,8 +116,8 @@ export default function AtlasDashboard({
   };
 
   return (
-    <div className={`${styles.page} ${production ? styles.production : ""}`}>
-      <header className={styles.hero}>
+    <div className={`${styles.page} ${production ? styles.production : ""} ${compact ? styles.compact : ""}`}>
+      {!compact ? <header className={styles.hero}>
         <div className={styles.heroTitle}>
           <p className={styles.eyebrow}>Atlas / Crested gecko market evidence</p>
           <h1>Market atlas</h1>
@@ -126,14 +129,14 @@ export default function AtlasDashboard({
             <strong>{snapshot.generatedAt}</strong>
           </div>
         </div>
-      </header>
+      </header> : null}
 
-      <section className={styles.metricStrip} aria-label="Market snapshot">
+      {!compact ? <section className={styles.metricStrip} aria-label="Market snapshot">
         <article><span>Observed window</span><strong>{snapshot.observedWindow}</strong><small>{snapshot.observedWindowDays} UTC days</small></article>
         <article><span>Recently confirmed</span><strong>{formatCount(snapshot.recentListings)}</strong><small>live rows seen in 48 hours</small></article>
         <article><span>Median ask</span><strong>{snapshot.medianAsk === null ? "—" : formatPrice(snapshot.medianAsk)}</strong><small>{snapshot.askingRangeNote}</small></article>
         <article><span>Captured sold events</span><strong>{formatCount(snapshot.capturedSold.count)}</strong><small>{snapshot.capturedSold.window}</small></article>
-      </section>
+      </section> : null}
 
       <div className={styles.dashboardGrid}>
         <section className={`${styles.panel} ${styles.comparePanel}`} aria-labelledby="compare-title">
@@ -235,7 +238,7 @@ export default function AtlasDashboard({
           <p className={styles.boundaryNote}>The two sale pools are not added together. Different evidence methods remain visible as different numbers.</p>
         </aside>
 
-        <section className={`${styles.panel} ${styles.capturePanel}`} aria-labelledby="capture-title">
+        {!compact ? <section className={`${styles.panel} ${styles.capturePanel}`} aria-labelledby="capture-title">
           <header className={styles.panelHeader}>
             <div>
               <p className={styles.eyebrow}>02 / Capture trend</p>
@@ -261,9 +264,9 @@ export default function AtlasDashboard({
           ) : (
             <p className={styles.emptyCapture}>Daily observation coverage was unavailable for this snapshot.</p>
           )}
-        </section>
+        </section> : null}
 
-        <section className={`${styles.panel} ${styles.ladderPanel}`} aria-labelledby="ladder-title">
+        {!compact ? <section className={`${styles.panel} ${styles.ladderPanel}`} aria-labelledby="ladder-title">
           <header className={styles.panelHeaderCompact}>
             <p className={styles.eyebrow}>03 / Current traits</p>
             <h2 id="ladder-title">Price ladder</h2>
@@ -280,10 +283,84 @@ export default function AtlasDashboard({
               </div>
             ))}
           </div>
-        </section>
+        </section> : null}
       </div>
 
-      <section className={styles.evidenceGallery} aria-labelledby="gallery-title">
+      {compact ? (
+        <section className={styles.supportingEvidence} aria-label="Supporting Atlas evidence">
+          <button
+            type="button"
+            className={styles.evidenceToggle}
+            aria-expanded={supportingEvidenceOpen}
+            onClick={() => setSupportingEvidenceOpen((open) => !open)}
+          >
+            <span>
+              <small>Coverage and supporting evidence</small>
+              <strong>Daily collection volume, price ladder, and recent listing images</strong>
+            </span>
+            <b>{supportingEvidenceOpen ? "Close" : "Open"} <span aria-hidden>{supportingEvidenceOpen ? "−" : "+"}</span></b>
+          </button>
+          {supportingEvidenceOpen ? (
+            <div className={styles.evidenceContents}>
+              <div className={`${styles.dashboardGrid} ${styles.secondaryGrid}`}>
+                <section className={`${styles.panel} ${styles.capturePanel}`} aria-labelledby="compact-capture-title">
+                  <header className={styles.panelHeader}>
+                    <div>
+                      <p className={styles.eyebrow}>02 / Capture trend</p>
+                      <h2 id="compact-capture-title">Daily observed listings</h2>
+                    </div>
+                    <p>Each point counts unique listings with a price observation that day. Spikes describe collection volume, not demand.</p>
+                  </header>
+                  {snapshot.dailyObservations.length > 0 ? (
+                    <>
+                      <DailyCaptureChart days={snapshot.dailyObservations} />
+                      <div className={styles.captureCells} aria-label="Exact daily observed listing counts">
+                        {snapshot.dailyObservations.map((day) => (
+                          <div key={day.date} style={{ "--cell-strength": 0.12 + (day.count / maxDaily) * 0.68 } as CSSProperties}>
+                            <span>{day.label}</span><strong>{day.count}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : <p className={styles.emptyCapture}>Daily observation coverage was unavailable for this snapshot.</p>}
+                </section>
+                <section className={`${styles.panel} ${styles.ladderPanel}`} aria-labelledby="compact-ladder-title">
+                  <header className={styles.panelHeaderCompact}>
+                    <p className={styles.eyebrow}>03 / Current traits</p>
+                    <h2 id="compact-ladder-title">Price ladder</h2>
+                    <p>Ranked by median asking price. Fresh sample depth remains attached to every row.</p>
+                  </header>
+                  <div className={styles.ladderRows}>
+                    {rankedTraits.map((trait, index) => (
+                      <div className={styles.ladderRow} key={trait.name}>
+                        <span>{String(index + 1).padStart(2, "0")}</span><strong>{trait.name}</strong>
+                        <div><span style={{ width: `${(trait.median / maxMedian) * 100}%` }} /></div>
+                        <b>{formatPrice(trait.median)}</b><small>n={trait.count}</small>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+              <section className={styles.evidenceGallery} aria-labelledby="compact-gallery-title">
+                <header>
+                  <div><p className={styles.eyebrow}>04 / Listing evidence</p><h2 id="compact-gallery-title">Recent specimens</h2></div>
+                  <p>Images resolve from the same recently confirmed listing rows behind the current market layer.</p>
+                </header>
+                {snapshot.specimens.length > 0 ? (
+                  <div>
+                    {snapshot.specimens.map((item, index) => (
+                      <figure key={`${item.src}-${index}`}>
+                        {item.href ? <Link href={item.href} aria-label={`Open ${item.label} listing`}><Image src={item.src} alt={`${item.label} crested gecko from a recent listing`} fill sizes="(max-width: 700px) 50vw, 25vw" /></Link> : <Image src={item.src} alt={`${item.label} crested gecko from a recent listing`} fill sizes="(max-width: 700px) 50vw, 25vw" />}
+                        <figcaption><span>{String(index + 1).padStart(2, "0")}</span><strong>{item.label}</strong><small>Recently confirmed listing</small></figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                ) : <p className={styles.emptyGallery}>No recently confirmed listing images were available in this snapshot.</p>}
+              </section>
+            </div>
+          ) : null}
+        </section>
+      ) : <section className={styles.evidenceGallery} aria-labelledby="gallery-title">
         <header>
           <div><p className={styles.eyebrow}>04 / Listing evidence</p><h2 id="gallery-title">Recent specimens</h2></div>
           <p>Images resolve from the same recently confirmed listing rows behind the current market layer.</p>
@@ -306,12 +383,12 @@ export default function AtlasDashboard({
         ) : (
           <p className={styles.emptyGallery}>No recently confirmed listing images were available in this snapshot.</p>
         )}
-      </section>
+      </section>}
 
-      <footer className={styles.footer}>
+      {!compact ? <footer className={styles.footer}>
         <div><span>Atlas data boundary</span><p>Current trait figures are asking-price summaries, not completed-sale valuations. Daily totals describe observed coverage, not total market activity.</p></div>
         <div className={styles.footerLinks}><span>Continue exploring</span><p><Link href="/market">Market</Link><Link href="/sold">Sold archive</Link><Link href="/sellers">Sellers</Link><Link href="/status">Data status</Link></p></div>
-      </footer>
+      </footer> : null}
     </div>
   );
 }

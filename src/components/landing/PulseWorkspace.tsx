@@ -9,6 +9,7 @@ import styles from "./pulse-workspace.module.css";
 
 const SECTION_IDS = [
   "controls",
+  "atlas",
   "signals",
   "opportunities",
   "indices",
@@ -26,7 +27,7 @@ type PulseSummary = Pick<MarketSnapshot, "totals" | "hottest_combo" | "generated
 export type PulseWorkspaceSections = Record<SectionId, ReactNode>;
 
 type Preferences = {
-  version: 1;
+  version: 2;
   preset: "overview" | "buying" | "research" | "custom";
   sectionOrder: SectionId[];
   hiddenSections: SectionId[];
@@ -39,10 +40,11 @@ type ModuleDefinition = {
   description: string;
 };
 
-const STORAGE_KEY = "geck-inspect:pulse-preferences:v1";
+const STORAGE_KEY = "geck-inspect:pulse-preferences:v2";
 
 const MODULES: ModuleDefinition[] = [
-  { id: "controls", label: "Market filters", description: "Trait combinations and asking-price range." },
+  { id: "controls", label: "Listing filters", description: "Narrow the comparable listings by trait pair and asking-price range." },
+  { id: "atlas", label: "Atlas comparison", description: "Compare fresh trait-family medians and inspect the evidence boundary." },
   { id: "signals", label: "Market signals", description: "Observed combinations and recent arrival patterns." },
   { id: "opportunities", label: "Below comparisons", description: "Fresh listings below matched asking-price sets." },
   { id: "indices", label: "Morph indices", description: "High-volume trait families and their medians." },
@@ -61,23 +63,23 @@ const METRIC_LABELS: Record<MetricId, string> = {
 
 const PRESETS: Record<Exclude<Preferences["preset"], "custom">, Preferences> = {
   overview: {
-    version: 1,
+    version: 2,
     preset: "overview",
     sectionOrder: [...SECTION_IDS],
     hiddenSections: [],
     metrics: ["median", "listings", "sellers", "hottest"],
   },
   buying: {
-    version: 1,
+    version: 2,
     preset: "buying",
-    sectionOrder: ["controls", "opportunities", "signals", "indices", "sellers", "explore", "story"],
+    sectionOrder: ["controls", "opportunities", "atlas", "signals", "indices", "sellers", "explore", "story"],
     hiddenSections: ["story"],
     metrics: ["median", "listings", "hottest", "coverage"],
   },
   research: {
-    version: 1,
+    version: 2,
     preset: "research",
-    sectionOrder: ["indices", "signals", "sellers", "story", "controls", "opportunities", "explore"],
+    sectionOrder: ["atlas", "indices", "signals", "sellers", "story", "controls", "opportunities", "explore"],
     hiddenSections: ["opportunities"],
     metrics: ["median", "listings", "sellers", "coverage"],
   },
@@ -114,11 +116,11 @@ function readPreferences(value: string | null): Preferences | null {
     const metrics = Array.isArray(parsed.metrics)
       ? parsed.metrics.filter(isMetricId)
       : [];
-    if (parsed.version !== 1 || order.length !== SECTION_IDS.length || new Set(order).size !== SECTION_IDS.length || metrics.length < 2) {
+    if (parsed.version !== 2 || order.length !== SECTION_IDS.length || new Set(order).size !== SECTION_IDS.length || metrics.length < 2) {
       return null;
     }
     return {
-      version: 1,
+      version: 2,
       preset: parsed.preset === "overview" || parsed.preset === "buying" || parsed.preset === "research" ? parsed.preset : "custom",
       sectionOrder: order,
       hiddenSections: hidden,
@@ -222,8 +224,8 @@ export default function PulseWorkspace({
       <header className={styles.workspaceHeader}>
         <div>
           <p className={styles.eyebrow}>Pulse / Current crested gecko market</p>
-          <h1>Your market workspace</h1>
-          <p className={styles.intro}>A configurable first page for current asking-price evidence, market coverage, trait signals, and seller context.</p>
+          <h1>Market pulse</h1>
+          <p className={styles.intro}>Fresh asking-price evidence, comparable listings, trait activity, and seller context in one configurable view.</p>
         </div>
         <div className={styles.headerActions}>
           <div>
@@ -253,7 +255,7 @@ export default function PulseWorkspace({
 
       <div className={styles.preferenceSummary}>
         <span>{preferences.preset === "custom" ? "Custom Pulse" : `${preferences.preset[0].toUpperCase()}${preferences.preset.slice(1)} preset`}</span>
-        <p>{visibleSectionIds.length} modules visible · {preferences.metrics.length} headline metrics · saved on this device</p>
+        <p>{visibleSectionIds.length} modules · {preferences.metrics.length} headline metrics · saved on this device</p>
         <button type="button" onClick={() => setCustomizerOpen(true)}>Edit feed</button>
       </div>
 
