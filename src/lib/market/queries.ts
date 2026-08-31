@@ -728,7 +728,20 @@ export async function fetchRegionalHeatmap(
     }
     let lo = Infinity;
     let hi = -Infinity;
-    const built = Array.from(byCombo.entries()).map(([combo, regions]) => {
+    // The heatmap now draws from every auto-discovered combo, not the 8
+    // combo_match knew, so cap it at the deepest ones by total observations.
+    // A 500-row heatmap is unreadable; the top slice keeps it a heatmap while
+    // still being far richer than the old curated dozen.
+    const HEATMAP_COMBO_LIMIT = 40;
+    const totalN = (regions: Map<RegionKey, (typeof rows)[number]>) => {
+      let s = 0;
+      for (const r of regions.values()) s += r.n;
+      return s;
+    };
+    const built = Array.from(byCombo.entries())
+      .sort((a, b) => totalN(b[1]) - totalN(a[1]))
+      .slice(0, HEATMAP_COMBO_LIMIT)
+      .map(([combo, regions]) => {
       const cells: Record<RegionKey, HeatmapCell> = {
         US: null, EU: null, UK: null, CA: null,
         AU: null, JP: null, SE: null, SEA: null,
@@ -865,22 +878,32 @@ export async function fetchArbitrage(
     if (rows.length === 0) {
       return empty(null, "no regional rows");
     }
+    // Asking-price basis. Regional sold data is almost entirely absent (a sold
+    // price needs a mappable seller region, and only a handful of reconciled
+    // sales carry one), so keying the spread off the sold median left this
+    // panel empty. The live ask median is populated wherever a region is, so
+    // the spread is "asking price here vs asking price there" — a real signal,
+    // just an asks-not-sales one, which the copy states.
     const byCombo = new Map<string, (typeof rows)[number][]>();
     for (const r of rows) {
-      if (!r.median_sold) continue;
+      if (!r.median_ask) continue;
       const arr = byCombo.get(r.combo_name) ?? [];
       arr.push(r);
       byCombo.set(r.combo_name, arr);
     }
     const outRows = Array.from(byCombo.entries())
+      // A spread needs two regions to compare. Most combos land in one region
+      // (the catalogue is overwhelmingly US), so this drops the majority and
+      // keeps only the genuinely cross-region ones.
+      .filter(([, rs]) => rs.length >= 2)
       .map(([combo, rs]) => {
         const sorted = [...rs].sort(
-          (a, b) => Number(a.median_sold) - Number(b.median_sold),
+          (a, b) => Number(a.median_ask) - Number(b.median_ask),
         );
         const low = sorted[0]!;
         const high = sorted[sorted.length - 1]!;
-        const lowPx = Number(low.median_sold);
-        const highPx = Number(high.median_sold);
+        const lowPx = Number(low.median_ask);
+        const highPx = Number(high.median_ask);
         const spreadAbs = highPx - lowPx;
         const spreadPct = lowPx === 0 ? 0 : (spreadAbs / lowPx) * 100;
         return {
@@ -917,7 +940,7 @@ export async function fetchArbitrage(
           opportunities: pcts.filter((p) => p >= 10).length,
         },
       },
-      `v_regional_heatmap(${w}d) spread`,
+      `v_regional_heatmap(${w}d) ask spread`,
     );
   } catch (e) {
     return empty(null, `fetchArbitrage error: ${errMsg(e)}`);

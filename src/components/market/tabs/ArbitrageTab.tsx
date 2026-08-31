@@ -74,7 +74,7 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
               <p className="mt-0.5 max-w-md text-xs text-forest-400">
                 {isSource
                   ? "Median asking price for the same canonical combo on each source. This is not a sold comparison, and Feedle Air is a scheduled import lot rather than a MorphMarket click-buy."
-                  : "Where the same combination is priced meaningfully differently across markets. Confidence scores how thin each leg is. A narrow sample on one side inflates the spread."}
+                  : "Where the same combo carries a different asking price from one region to another. Asks, not sales: regional sold prices are too sparse to compare. Only listings whose seller has a mappable location are placed in a region, which today means US and CA. Confidence scores how thin each leg is, and a narrow sample on one side inflates the spread."}
               </p>
             </div>
           </div>
