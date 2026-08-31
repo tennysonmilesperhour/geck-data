@@ -54,7 +54,7 @@ export default async function LandingPage() {
                 />
               </div>
               <p className="font-mono text-[10px] leading-4 text-ink-500">
-                These controls narrow the comparable-listing module. The Atlas orbit is an independent trait-family comparison.
+                These controls narrow the comparable-listing module. The morph comparison has its own scope, maturity, and sex controls.
               </p>
             </div>
           ),
