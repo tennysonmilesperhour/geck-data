@@ -6,6 +6,7 @@ import {
   US_LABEL,
   buildSourceArbRows,
   comboFromListing,
+  combosFromListing,
   looksLikeNonCrested,
   medianUsd,
   payloadFlaggedGroupLot,
@@ -87,4 +88,62 @@ test("buildSourceArbRows assigns low/high by which market is cheaper", () => {
   const rows = buildSourceArbRows(kr, us, 3);
   assert.equal(rows[0]!.low.label, US_LABEL);
   assert.equal(rows[0]!.high.label, KR_LABEL);
+});
+
+test("combosFromListing expands every trait pair and matches across sources", () => {
+  const feedle = combosFromListing("Lilly White, Axanthic, Full Pinstripe");
+  const ids = feedle.map((c) => c.id).sort();
+  // C(3,2) = 3 pairs, ids are sorted normalized tokens joined with "__".
+  assert.deepEqual(ids, [
+    "axanthic__lillywhite",
+    "axanthic__fullpinstripe".split("__").sort().join("__"),
+    "fullpinstripe__lillywhite",
+  ].sort());
+  // A MorphMarket listing naming the same two morphs lands on the same id,
+  // so the two sources group together.
+  const mm = combosFromListing("Axanthic, Lilly White");
+  assert.equal(mm[0]!.id, "axanthic__lillywhite");
+});
+
+test("combosFromListing drops redundant modifier pairs and non-morph tokens", () => {
+  // Harlequin is contained in Extreme Harlequin, so that pair is one trait
+  // restated and is dropped; Normal/Quad are not morphs.
+  const out = combosFromListing("Extreme Harlequin, Harlequin, Normal, Quad, Red");
+  const ids = out.map((c) => c.id);
+  assert.ok(!ids.some((id) => id.includes("harlequin") && id.split("__").length === 2 && id.split("__").every((t) => t.includes("harlequin"))));
+  // Only the real cross-trait pairs survive: {extremeharlequin,red} and
+  // {harlequin,red}. Normal and Quad never seed a pair.
+  assert.deepEqual(
+    ids.sort(),
+    ["extremeharlequin__red", "harlequin__red"].sort(),
+  );
+});
+
+test("combosFromListing returns nothing without a structured trait field", () => {
+  assert.deepEqual(combosFromListing(null), []);
+  assert.deepEqual(combosFromListing(""), []);
+  assert.deepEqual(combosFromListing("Normal"), []);
+});
+
+test("buildSourceArbRows groups auto-discovered ids across both sides", () => {
+  const kr = [
+    { comboId: "axanthic__lillywhite", comboDisplay: "Axanthic × Lilly White", priceUsd: 100 },
+    { comboId: "axanthic__lillywhite", comboDisplay: "Axanthic × Lilly White", priceUsd: 100 },
+    { comboId: "axanthic__lillywhite", comboDisplay: "Axanthic × Lilly White", priceUsd: 100 },
+    // present only on KR -> no row
+    { comboId: "cream__yellow", comboDisplay: "Cream × Yellow", priceUsd: 50 },
+    { comboId: "cream__yellow", comboDisplay: "Cream × Yellow", priceUsd: 50 },
+    { comboId: "cream__yellow", comboDisplay: "Cream × Yellow", priceUsd: 50 },
+  ];
+  const us = [
+    { comboId: "axanthic__lillywhite", comboDisplay: "Axanthic × Lilly White", priceUsd: 400 },
+    { comboId: "axanthic__lillywhite", comboDisplay: "Axanthic × Lilly White", priceUsd: 400 },
+    { comboId: "axanthic__lillywhite", comboDisplay: "Axanthic × Lilly White", priceUsd: 400 },
+  ];
+  const rows = buildSourceArbRows(kr, us, 3);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.combo, "Axanthic × Lilly White");
+  assert.equal(rows[0]!.low.label, KR_LABEL);
+  assert.equal(rows[0]!.low.price, 100);
+  assert.equal(rows[0]!.high.price, 400);
 });

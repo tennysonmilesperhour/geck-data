@@ -14,7 +14,7 @@ import {
   SOURCE_ARB_MIN_N,
   US_LABEL,
   buildSourceArbRows,
-  comboFromListing,
+  combosFromListing,
   looksLikeNonCrested,
   payloadFlaggedGroupLot,
   payloadIsSold,
@@ -108,16 +108,15 @@ export async function GET() {
       if (looksLikeNonCrested(row.title)) continue;
       const price = num(row.price_usd_equivalent) ?? num(row.price);
       if (price == null) continue;
-      const combo = comboFromListing(
-        row.cached_traits || row.norm_traits,
-        row.title,
-      );
-      if (!combo) continue;
-      usAsks.push({
-        comboId: combo.id,
-        comboDisplay: combo.display,
-        priceUsd: price,
-      });
+      // One ask per trait pair the listing implies, not one per listing: a
+      // three-trait animal contributes to each of its pairs.
+      for (const combo of combosFromListing(row.cached_traits || row.norm_traits)) {
+        usAsks.push({
+          comboId: combo.id,
+          comboDisplay: combo.display,
+          priceUsd: price,
+        });
+      }
     }
 
     const krAsks: SourceAsk[] = [];
@@ -126,13 +125,13 @@ export async function GET() {
       if (payloadIsSold(row.payload)) continue;
       const price = num(row.price) ?? num(row.price_usd_equivalent);
       if (price == null) continue;
-      const combo = comboFromListing(row.traits_raw, row.title);
-      if (!combo) continue;
-      krAsks.push({
-        comboId: combo.id,
-        comboDisplay: combo.display,
-        priceUsd: price,
-      });
+      for (const combo of combosFromListing(row.traits_raw)) {
+        krAsks.push({
+          comboId: combo.id,
+          comboDisplay: combo.display,
+          priceUsd: price,
+        });
+      }
     }
 
     const rows = buildSourceArbRows(krAsks, usAsks).slice(0, 10);
@@ -148,12 +147,13 @@ export async function GET() {
           generated_at: new Date().toISOString(),
           empty_reason:
             krAsks.length === 0
-              ? "no priced Feedle Air crested asks matched a canonical combo"
+              ? "no priced Feedle Air crested listing carried a usable trait pair"
               : usAsks.length === 0
-                ? "no live MorphMarket asks matched a canonical combo"
-                : `no combo had at least ${SOURCE_ARB_MIN_N} asks on both sides`,
+                ? "no live MorphMarket listing carried a usable trait pair"
+                : `no trait pair had at least ${SOURCE_ARB_MIN_N} asks on both sides`,
           attribution_note:
-            `Ask vs ask. ${KR_LABEL} is a scheduled Korea-to-US import lot, ` +
+            `Ask vs ask, over every trait pair both sources list (not just a ` +
+            `curated set). ${KR_LABEL} is a scheduled Korea-to-US import lot, ` +
             `not a MorphMarket click-buy. ${US_LABEL} uses current_status=live; ` +
             `last_seen_at is only fresh for the recent API recrawl, so catalogue ` +
             `leftovers still dominate the live flag. Group lots excluded. ` +
@@ -178,10 +178,12 @@ export async function GET() {
         min_n: SOURCE_ARB_MIN_N,
         generated_at: new Date().toISOString(),
         attribution_note:
-          `Ask vs ask, median of each side. ${KR_LABEL} USD asks vs ${US_LABEL} ` +
-          `live asks. MorphMarket last_seen_at is not a live filter here: ` +
-          `most rows flagged live have not been re-observed in the last 48h. ` +
-          `Feedle Air is a scheduled import lot. Hidden when either side has ` +
+          `Ask vs ask, median of each side, over every trait pair both sources ` +
+          `list. ${KR_LABEL} USD asks vs ${US_LABEL} live asks. MorphMarket ` +
+          `last_seen_at is not a live filter here: most rows flagged live have ` +
+          `not been re-observed in the last 48h. Feedle Air is a scheduled ` +
+          `import lot, and a pair is matched by trait name, so grade and lineage ` +
+          `are not controlled for. Hidden when either side has ` +
           `n<${SOURCE_ARB_MIN_N}. Confidence is sample size only.`,
         confidence: sampleConfidence(
           Math.min(

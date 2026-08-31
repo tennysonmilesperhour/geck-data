@@ -2,10 +2,25 @@
 //
 // KR side: Feedle Air USD asks in cross_platform_listings.
 // US side: MorphMarket market_listings flagged live.
-// Matching is HIGH_VALUE_COMBOS on traits/title, not pHash. This is not
-// a sold-comp and not a click-buy spread.
+// Matching is by auto-discovered trait pair (combosFromListing), the same
+// auto-discovery the other combo surfaces use, not pHash. This is not a
+// sold-comp and not a click-buy spread.
 
-import { HIGH_VALUE_COMBOS, matchCombo } from "./combos";
+import { matchCombo, normTrait } from "./combos";
+
+// Tokens that are not morphs, so they never seed a combo. "Normal" is a wild
+// type marker; the Feedle group-size words (Quad/Pair/Trio) are trait strings
+// on that storefront, not pack sizes, but they are not morphs either.
+const NON_MORPH_TOKENS = new Set([
+  "normal",
+  "unknown",
+  "crested",
+  "crestedgecko",
+  "quad",
+  "pair",
+  "trio",
+  "group",
+]);
 
 export const SOURCE_ARB_MIN_N = 3;
 export const KR_LABEL = "Feedle Air (KR)";
@@ -47,6 +62,64 @@ export function comboFromListing(
     if (fromTitle) return { id: fromTitle.id, display: fromTitle.display };
   }
   return null;
+}
+
+/**
+ * Every trait pair a listing implies, for the auto-discovered source axis.
+ *
+ * comboFromListing above maps a listing to at most one of the 12 curated
+ * combos, which is why the source tab showed a single row. This instead
+ * expands the comma-delimited trait field into all two-trait combinations, so
+ * any pair a breeder actually lists can be compared across sources, the same
+ * auto-discovery the combo rollup and regional heatmap use. The id is the two
+ * normalized tokens sorted and joined, so a Feedle listing and a MorphMarket
+ * listing that name the same two morphs land on the same id and group
+ * together.
+ *
+ * A pair is dropped when one trait's normalized token contains the other's
+ * (Harlequin x Extreme Harlequin, Dalmatian x Super Dalmatian, Pinstripe x
+ * Full Pinstripe): that is one trait restated with a modifier, the dominant
+ * case the SQL surfaces drop with _traits_are_redundant. This is a lighter
+ * substring check, not that seeded relations table, so a few allelic pairs it
+ * would catch can still appear; the n>=3-both-sides floor keeps those rare.
+ *
+ * Title is deliberately not a fallback here. An unstructured title expands
+ * into noisy n-grams, and a pair built from noise would invent a comparison,
+ * so a listing with no structured trait field simply yields nothing.
+ */
+export function combosFromListing(
+  traits: string | string[] | null | undefined,
+): Array<{ id: string; display: string }> {
+  const phrases: string[] = Array.isArray(traits)
+    ? traits.map((t) => String(t))
+    : typeof traits === "string"
+      ? traits.split(/[,;|/]+/)
+      : [];
+  // Keep the original-case phrase for display, the normalized token for
+  // matching. Dedupe by normalized token within the listing.
+  const toks: Array<{ norm: string; display: string }> = [];
+  const seen = new Set<string>();
+  for (const phrase of phrases) {
+    const display = phrase.trim();
+    const norm = normTrait(display);
+    if (norm.length < 2 || NON_MORPH_TOKENS.has(norm) || seen.has(norm)) continue;
+    seen.add(norm);
+    toks.push({ norm, display });
+  }
+  const out: Array<{ id: string; display: string }> = [];
+  for (let i = 0; i < toks.length; i++) {
+    for (let j = i + 1; j < toks.length; j++) {
+      const a = toks[i]!;
+      const b = toks[j]!;
+      if (a.norm.includes(b.norm) || b.norm.includes(a.norm)) continue;
+      const [lo, hi] = a.norm < b.norm ? [a, b] : [b, a];
+      out.push({
+        id: `${lo.norm}__${hi.norm}`,
+        display: `${lo.display} × ${hi.display}`,
+      });
+    }
+  }
+  return out;
 }
 
 export function looksLikeNonCrested(title: string | null | undefined): boolean {
@@ -92,10 +165,15 @@ export function buildSourceArbRows(
     usBy.set(ask.comboId, arr);
   }
 
+  // Every combo present on both sides, not just the 12 curated ones. The ids
+  // are auto-discovered trait pairs (combosFromListing), so this is the whole
+  // overlap of what Feedle and MorphMarket actually list.
   const rows: SourceArbRow[] = [];
-  for (const combo of HIGH_VALUE_COMBOS) {
-    const kr = krBy.get(combo.id) ?? [];
-    const us = usBy.get(combo.id) ?? [];
+  const bothIds = new Set<string>();
+  for (const id of krBy.keys()) if (usBy.has(id)) bothIds.add(id);
+  for (const comboId of bothIds) {
+    const kr = krBy.get(comboId) ?? [];
+    const us = usBy.get(comboId) ?? [];
     if (kr.length < minN || us.length < minN) continue;
     const krMed = medianUsd(kr.map((a) => a.priceUsd));
     const usMed = medianUsd(us.map((a) => a.priceUsd));
@@ -107,7 +185,8 @@ export function buildSourceArbRows(
     const highPx = lowIsKr ? usMed : krMed;
     const spreadPct = lowPx === 0 ? 0 : (spreadAbs / lowPx) * 100;
     rows.push({
-      combo: combo.display,
+      // Label the row from the listing's own display name for the pair.
+      combo: kr[0]?.comboDisplay ?? us[0]?.comboDisplay ?? comboId,
       low: {
         label: lowIsKr ? KR_LABEL : US_LABEL,
         tag: "ask",
