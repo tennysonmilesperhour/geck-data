@@ -67,6 +67,27 @@ def slug_seller_id(seller_name: Optional[str]) -> Optional[str]:
     return slug or None
 
 
+def canonical_seller_id(
+    seller_slug: Optional[str], seller_name: Optional[str]
+) -> Optional[str]:
+    """The seller_id a listing should carry.
+
+    Prefer MorphMarket's real seller slug when the row has it — the detail
+    scrape and the Eye in the Sky extension both capture it (e.g.
+    'emikos_geckos', 'jackies_critter_collection'). Only fall back to
+    slugifying the display name when no real slug is present. Keeping the real
+    slug means one seller resolves to one id across the extension, the scraper
+    and this canonical mirror, instead of splitting into e.g.
+    'jackies_critter_collection' vs 'jackiescrittercollection'. Underscores and
+    hyphens in a real slug are part of the id and are preserved; only casing is
+    normalised.
+    """
+    slug = (seller_slug or "").strip().lower()
+    if slug:
+        return slug
+    return slug_seller_id(seller_name)
+
+
 def parse_birth_date(raw: Optional[str]) -> tuple[Optional[int], Optional[int], Optional[int]]:
     """Parse strings like '7th October 2025' or '2025-10-07' into (y, m, d).
 
@@ -306,7 +327,9 @@ def transform_listing(row: dict[str, Any]) -> Optional[dict[str, Any]]:
         "detail_collected": True,
         "has_dams": False,
         "has_sires": False,
-        "seller_id": slug_seller_id(row.get("seller_name")),
+        "seller_id": canonical_seller_id(
+            row.get("seller_slug"), row.get("seller_name")
+        ),
         "seller_name": row.get("seller_name") or None,
         "store_name": row.get("seller_name") or None,
         "min_shipping": min_ship,
@@ -346,7 +369,7 @@ def transform_seller(row: dict[str, Any]) -> Optional[dict[str, Any]]:
 
     Returns None if there's no seller_name to slug.
     """
-    seller_id = slug_seller_id(row.get("seller_name"))
+    seller_id = canonical_seller_id(row.get("seller_slug"), row.get("seller_name"))
     if not seller_id:
         return None
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
