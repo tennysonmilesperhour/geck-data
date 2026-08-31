@@ -10,9 +10,10 @@
 --
 -- Honesty note carried by the shape: `total_attributed` is live listings that
 -- carry a seller, and `live_total` is all live listings. Seller identity sits
--- on only ~12% of the catalogue because MorphMarket's public API hides the
--- owner on the rest, so every share is a share of the attributed pool and the
--- widget states that coverage.
+-- on only ~12% of the catalogue today, not because MorphMarket hides it
+-- (listings scraped recently attribute at 100%) but because the rest are stale
+-- rows last scraped before seller capture worked and never refreshed. Every
+-- share is a share of the attributed pool and the widget states that coverage.
 -- ============================================================================
 
 create or replace function public.v_breeder_concentration(top_n integer default 12)

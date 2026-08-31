@@ -1211,9 +1211,10 @@ export async function fetchBreeders(
 // Seller concentration: share of the tracked live catalogue held by each
 // seller. Powers the concentration bar chart on the Breeders tab (the
 // preview's market-share panel). The honest caveat is baked into the shape:
-// MorphMarket's public API returns no owner on ~88% of listings, so the
-// denominator is the ~12% that carry an identified seller, and the widget
-// labels the coverage rather than implying a whole-market reading.
+// only ~12% of live rows carry a seller, not because MorphMarket hides it
+// (listings scraped recently attribute at 100%) but because the rest are
+// stale rows last scraped before capture worked and never refreshed. The
+// denominator is that attributed pool, and the widget labels the coverage.
 // ----------------------------------------------------------------------------
 const CONCENTRATION_TOP_N = 12;
 

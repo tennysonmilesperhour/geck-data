@@ -4,7 +4,9 @@
 // row plus a ranked set of gradient share bars.
 //
 // Honesty is structural here. Seller identity sits on only ~12% of live
-// listings (MorphMarket's public API hides the owner on the rest), so every
+// listings today, not because it is hidden but because most rows are stale:
+// they were last scraped before seller capture worked and have not been
+// refreshed (every listing scraped recently carries its seller). So every
 // share is a share of that attributed pool, and the footer states the
 // coverage outright rather than letting the bars read as the whole market.
 import type { BreederConcentration } from "@/lib/market/widget-types";
@@ -96,10 +98,11 @@ export default function BreederConcentrationPanel({
 
       <footer className="mt-4 border-t border-forest-700/70 pt-3 text-[11px] leading-relaxed text-forest-500">
         Share of the {data.totalAttributed.toLocaleString()} live listings
-        ({data.coveragePct}% of the catalogue) that carry an identified seller.
-        MorphMarket hides the seller on most public listings, so this reads
-        concentration among sellers we can name, not the whole market. It
-        widens as seller attribution improves.
+        ({data.coveragePct}% of the catalogue) with a captured seller. The rest
+        are older listings last scraped before seller capture was in place and
+        not refreshed since, so this reads concentration among recently
+        attributed sellers, not the whole market. A full catalog re-scrape
+        widens it.
       </footer>
     </section>
   );
