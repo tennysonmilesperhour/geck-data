@@ -44,9 +44,9 @@ const STORAGE_KEY = "geck-inspect:pulse-preferences:v2";
 
 const MODULES: ModuleDefinition[] = [
   { id: "controls", label: "Listing filters", description: "Narrow the comparable listings by trait pair and asking-price range." },
-  { id: "atlas", label: "Atlas comparison", description: "Compare fresh trait-family medians and inspect the evidence boundary." },
+  { id: "atlas", label: "Atlas comparison", description: "Compare current-cycle trait-family medians and inspect the evidence boundary." },
   { id: "signals", label: "Market signals", description: "Observed combinations and recent arrival patterns." },
-  { id: "opportunities", label: "Below comparisons", description: "Fresh listings below matched asking-price sets." },
+  { id: "opportunities", label: "Below comparisons", description: "Current-cycle listings below matched asking-price sets." },
   { id: "indices", label: "Morph indices", description: "High-volume trait families and their medians." },
   { id: "sellers", label: "Seller landscape", description: "Catalogue scale and specialization context." },
   { id: "story", label: "Market structure", description: "Longer-form views of the current dataset." },

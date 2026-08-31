@@ -156,9 +156,9 @@ export default function ScrollytellingSection({
         title="How fast a listing moves."
         description={
           <>
-            Days from first listing to sold. This panel stays dark while the
-            sold stream is frozen (last inferred sale 2026-06-07) so a stale
-            histogram cannot be read as current demand.
+            Days from first listing to a recorded sold event. This panel stays
+            dark whenever the sold-event stream falls outside its freshness
+            guard, so archived timing cannot be read as current demand.
           </>
         }
         viz={
