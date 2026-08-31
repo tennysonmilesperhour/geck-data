@@ -76,7 +76,7 @@ const STREAMS: Stream[] = [
     table: "cross_platform_listings",
     timeCol: "last_seen_at",
     label: "Cross-platform listings",
-    note: "Fauna Classifieds, Reptile Forums, Preloved, Kijiji, …",
+    note: "Feedle Air, Feedle KRW, TikisGeckos, Altitude Exotics. Not MorphMarket.",
   },
 ];
 

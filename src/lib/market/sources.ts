@@ -79,6 +79,15 @@ export const SOURCES: readonly SourceMeta[] = [
     color: "#f472b6",
     description: "Kijiji listings, primarily Canadian market signal.",
   },
+  {
+    id: "feedle",
+    label: "Feedle Air",
+    short: "Feedle",
+    kind: "external",
+    color: "#fb7185",
+    description:
+      "Korean Feedle Air USD asks. Scheduled import lots, not MorphMarket click-buy.",
+  },
 ] as const;
 
 const BY_ID = new Map<SourceId, SourceMeta>(SOURCES.map((s) => [s.id, s]));
@@ -93,6 +102,8 @@ const ALIAS_MAP: Readonly<Record<string, SourceId>> = {
   morphmarket_scrape: "morphmarket",
   extension_legacy: "gi_listings",
   extension_inferred: "gi_listings",
+  feedle_air: "feedle",
+  feedle_kr: "feedle",
 };
 
 export function normalizeSourceId(raw: string | null | undefined): SourceId {

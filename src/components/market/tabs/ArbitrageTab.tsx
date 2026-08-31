@@ -1,13 +1,12 @@
 "use client";
-// Arbitrage tab. Pulls the biggest cross-region spreads for each combo
-// and surfaces them as a ranked "buy here, sell there" list.
+// Arbitrage tab. Two axes:
+//   region  MorphMarket regional heatmap spreads (sold medians)
+//   source  Feedle Air USD asks vs MorphMarket live asks, combo-matched
 //
-// The previous version had a By-source / By-region toggle, but the
-// source axis returned fixture data unconditionally because we don't
-// yet have multi-source price feeds. That toggle has been dropped
-// until the underlying data exists. The fetchArbitrage signature still
-// takes an axis arg so adding it back later is a one-line UI change.
+// Source-axis copy is ask vs ask on purpose. No "sell into strength".
+import { useState } from "react";
 import type { Filters } from "@/lib/market/types";
+import type { ArbitrageAxis } from "@/lib/market/widget-types";
 import { fetchArbitrage } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import EmptyState from "@/components/market/EmptyState";
@@ -16,26 +15,32 @@ import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
 
 export default function ArbitrageTab({ filters }: { filters: Filters }) {
-  const q = useFilteredQuery(fetchArbitrage, filters, ["region"] as const, "region");
+  const [axis, setAxis] = useState<ArbitrageAxis>("source");
+  const q = useFilteredQuery(fetchArbitrage, filters, [axis] as const, axis);
   if (!q.data) {
     return (
-      <EmptyState
-        status={q.status}
-        label="Arbitrage spreads"
-        note={q.note}
-      />
+      <div className="space-y-4">
+        <AxisToggle axis={axis} onChange={setAxis} />
+        <EmptyState
+          status={q.status}
+          label="Arbitrage spreads"
+          note={q.note}
+        />
+      </div>
     );
   }
   const data = q.data;
+  const isSource = data.axis === "source";
 
   return (
     <div className="space-y-4">
+      <AxisToggle axis={axis} onChange={setAxis} />
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <KpiCard
           label="Biggest spread"
           value={`${data.kpis.biggestPct.toFixed(1)}%`}
           tone="positive"
-          sub="between two regions"
+          sub={isSource ? "Feedle Air vs MorphMarket asks" : "between two regions"}
         />
         <KpiCard
           label="Avg spread"
@@ -44,10 +49,10 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
           sub={`across ${data.rows.length} pairs`}
         />
         <KpiCard
-          label="Opportunities ≥ 10%"
+          label="Spreads of 10% or more"
           value={data.kpis.opportunities.toString()}
           tone={data.kpis.opportunities > 0 ? "warn" : "default"}
-          sub="notable mispricings in window"
+          sub={isSource ? "combo medians, n>=3 each side" : "notable gaps in window"}
         />
       </section>
 
@@ -62,12 +67,14 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
             </span>
             <div>
               <h2 className="font-display text-[18px] font-medium tracking-tight text-forest-50">
-                Arbitrage — biggest spreads
+                {isSource
+                  ? "Source asks: KR Feedle Air vs US MorphMarket"
+                  : "Regional spreads"}
               </h2>
               <p className="mt-0.5 max-w-md text-xs text-forest-400">
-                Where the same combination is priced meaningfully differently
-                across markets. Confidence scores how thin each leg is — a
-                narrow sample on one side inflates the spread.
+                {isSource
+                  ? "Median asking price for the same canonical combo on each source. This is not a sold comparison, and Feedle Air is a scheduled import lot rather than a MorphMarket click-buy."
+                  : "Where the same combination is priced meaningfully differently across markets. Confidence scores how thin each leg is. A narrow sample on one side inflates the spread."}
               </p>
             </div>
           </div>
@@ -81,8 +88,8 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
             <thead>
               <tr className="text-left font-mono text-[10px] uppercase tracking-[0.14em] text-forest-400">
                 <th className="px-3 py-2">Combo</th>
-                <th className="px-3 py-2">Buy</th>
-                <th className="px-3 py-2">Sell</th>
+                <th className="px-3 py-2">{isSource ? "Lower ask" : "Buy"}</th>
+                <th className="px-3 py-2">{isSource ? "Higher ask" : "Sell"}</th>
                 <th className="px-3 py-2 text-right">Spread</th>
                 <th className="px-3 py-2 text-right">%</th>
                 <th className="px-3 py-2 text-right">Conf</th>
@@ -104,14 +111,26 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
                     <td className="px-3 py-3">
                       <div className="font-medium text-forest-50">{r.combo}</div>
                       <div className="font-mono text-[10px] text-forest-500">
-                        cross-region
+                        {isSource ? "ask vs ask" : "cross-region"}
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <Leg tag="BUY" label={r.low.label} price={r.low.price} n={r.low.n} tone="positive" />
+                      <Leg
+                        tag={isSource ? "ASK" : "BUY"}
+                        label={r.low.label}
+                        price={r.low.price}
+                        n={r.low.n}
+                        tone="positive"
+                      />
                     </td>
                     <td className="px-3 py-3">
-                      <Leg tag="SELL" label={r.high.label} price={r.high.price} n={r.high.n} tone="warn" />
+                      <Leg
+                        tag={isSource ? "ASK" : "SELL"}
+                        label={r.high.label}
+                        price={r.high.price}
+                        n={r.high.n}
+                        tone="warn"
+                      />
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums text-forest-100">
                       ${r.spreadAbs.toLocaleString()}
@@ -132,10 +151,47 @@ export default function ArbitrageTab({ filters }: { filters: Filters }) {
         </div>
 
         <footer className="border-t border-forest-700/70 p-3 text-[11px] text-forest-500">
-          Spreads before shipping, fees, and currency conversion. Treat as a
-          shortlist, not a trade signal.
+          {isSource
+            ? q.note ??
+              "Ask vs ask. Feedle Air is a scheduled Korea-to-US import lot. MorphMarket live includes catalogue leftovers. Hidden when either side has fewer than 3 listings."
+            : "Spreads before shipping, fees, and currency conversion. Treat as a shortlist, not a trade signal."}
         </footer>
       </section>
+    </div>
+  );
+}
+
+function AxisToggle({
+  axis,
+  onChange,
+}: {
+  axis: ArbitrageAxis;
+  onChange: (axis: ArbitrageAxis) => void;
+}) {
+  return (
+    <div className="forest-surface-soft inline-flex items-center gap-1 p-1">
+      {(
+        [
+          ["source", "By source"],
+          ["region", "By region"],
+        ] as const
+      ).map(([id, label]) => {
+        const active = axis === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            className={`rounded-lg px-3 py-1.5 text-sm transition ${
+              active
+                ? "border border-ready/50 bg-ready/15 text-ready"
+                : "border border-transparent text-forest-300 hover:bg-forest-850 hover:text-forest-100"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -37,6 +37,10 @@ const PLATFORM_LABELS: Record<string, string> = {
   reptile_forums: "Reptile Forums",
   preloved: "Preloved",
   kijiji: "Kijiji",
+  feedle_air: "Feedle Air (KR USD import)",
+  feedle_kr: "Feedle (KRW)",
+  tikis_geckos: "TikisGeckos",
+  altitude_exotics: "Altitude Exotics",
 };
 
 export default async function CrossPlatformPage() {
@@ -148,14 +152,7 @@ export default async function CrossPlatformPage() {
       key: "price",
       header: "Price",
       align: "right",
-      render: (r) => (
-        <span>
-          {fmtUsd(r.price_usd_equivalent ?? r.price)}
-          {r.currency && r.currency !== "USD" && (r.price_usd_equivalent ?? null) == null ? (
-            <span className="ml-1 text-xs text-ink-400">{r.currency}</span>
-          ) : null}
-        </span>
-      ),
+      render: (r) => formatCrossPrice(r),
     },
     { key: "first", header: "First seen", render: (r) => fmtRelative(r.first_seen_at) },
     { key: "last", header: "Last seen", render: (r) => fmtRelative(r.last_seen_at) },
@@ -172,7 +169,7 @@ export default async function CrossPlatformPage() {
     { key: "c", header: "Listings", align: "right", render: (p) => fmtInt(p.count) },
     {
       key: "m",
-      header: "Median price",
+      header: "Median USD equiv",
       align: "right",
       render: (p) => fmtUsd(p.median_price),
     },
@@ -184,7 +181,7 @@ export default async function CrossPlatformPage() {
       <SectionHeader
         eyebrow="Sources"
         title="Cross-platform"
-        description="Listings observed on platforms other than MorphMarket."
+        description="Listings observed on platforms other than MorphMarket. Feedle Air, Feedle KRW, TikisGeckos, and Altitude Exotics land here. They do not enter MorphMarket medians."
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -222,6 +219,20 @@ export default async function CrossPlatformPage() {
       </section>
     </div>
   );
+}
+
+function formatCrossPrice(r: CrossRow): string {
+  if (r.currency === "KRW") {
+    const krw =
+      r.price != null && Number.isFinite(Number(r.price))
+        ? `KRW ${Number(r.price).toLocaleString()}`
+        : "no data";
+    if (r.price_usd_equivalent != null && Number.isFinite(Number(r.price_usd_equivalent))) {
+      return `${krw} (USD equiv ${fmtUsd(r.price_usd_equivalent)})`;
+    }
+    return krw;
+  }
+  return fmtUsd(r.price_usd_equivalent ?? r.price);
 }
 
 function median(vals: (number | null | undefined)[]): number | null {

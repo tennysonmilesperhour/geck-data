@@ -107,11 +107,20 @@ export default function MethodologyPage() {
             </li>
             <li>
               <strong className="text-ink-100">Cross-platform listings.</strong>{" "}
-              Never populated in practice. The{" "}
+              Feedle Air (Korean USD import asks), native Feedle KRW, TikisGeckos,
+              and Altitude Exotics upsert into{" "}
+              <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">
+                cross_platform_listings
+              </code>
+              . They do not enter MorphMarket medians,{" "}
+              <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">
+                combo_index_daily
+              </code>
+              , or whats-hot. See{" "}
               <Link href="/cross-platform" className="underline">
-                page
+                /cross-platform
               </Link>{" "}
-              exists but has no feed behind it.
+              and <a href="#source-asks" className="underline">source-axis asks</a>.
             </li>
           </ul>
         </Panel>
@@ -411,8 +420,53 @@ export default function MethodologyPage() {
           <p className="mt-2 text-sm text-ink-300">
             The previous version of this page described matching the same
             animal across marketplaces by image hash to flag arbitrage. No live
-            page does that.
+            page does that. Combo-level Feedle Air vs MorphMarket asks are a
+            different comparison; see{" "}
+            <a href="#source-asks" className="underline">
+              source-axis asks
+            </a>
+            .
           </p>
+        </Panel>
+      </section>
+
+      <section id="source-asks" className="scroll-mt-16">
+        <Panel title="Source-axis asks (Feedle Air vs MorphMarket)">
+          <p className="text-sm text-ink-300">
+            The Market tab&apos;s Arbitrage source axis compares median{" "}
+            <strong className="text-ink-100">asking prices</strong> for the
+            same canonical combo on two labeled sources. It is not a sold
+            comparison and it is not a recommendation to buy or sell.
+          </p>
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-300">
+            <li>
+              <strong className="text-ink-100">KR side:</strong> Feedle Air
+              listings in <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">cross_platform_listings</code>{" "}
+              with platform=feedle_air, currency=USD, a positive price, crested,
+              not a group lot. Air is a scheduled Korea-to-US import lot, not a
+              MorphMarket click-buy. Native KRW rows (feedle_kr) stay out of
+              this table.
+            </li>
+            <li>
+              <strong className="text-ink-100">US side:</strong> MorphMarket{" "}
+              <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">market_listings</code>{" "}
+              with current_status=live, not a group lot. We do not require a
+              48-hour last_seen_at window: that column is only fresh for the
+              recent API recrawl, and catalogue leftovers still dominate the
+              live flag. The attribution note says so.
+            </li>
+            <li>
+              Matching is the same HIGH_VALUE_COMBOS trait set used elsewhere,
+              on cached_traits / traits_raw / title. Not pHash. These are
+              different animals with similar morph labels.
+            </li>
+            <li>
+              A combo needs at least 3 priced asks on each side. Altitude
+              Exotics and TikisGeckos can show on /cross-platform; they are not
+              mixed into this KR vs US table. AU/JP regional claims are not
+              turned on here.
+            </li>
+          </ul>
         </Panel>
       </section>
 
@@ -442,7 +496,7 @@ export default function MethodologyPage() {
       </section>
 
       <p className="text-xs text-ink-500">
-        Last reviewed: 2026-08-29. Every claim on this page maps to a query or
+        Last reviewed: 2026-08-30. Every claim on this page maps to a query or
         a view in the codebase. If a chart says something this page does not
         back up, that is a bug in the chart, and we would like to know.
       </p>

@@ -46,6 +46,8 @@ import {
   type SupplyPipeline,
 } from "./widget-types";
 import { normalizeSourceId, sourceMeta } from "./sources";
+import { sampleConfidence } from "./sample-confidence";
+import type { SourceArbRow } from "./source-arbitrage";
 
 export type QueryResult<T> = {
   data: T;
@@ -135,28 +137,9 @@ function roundOrNull(v: number | null): number | null {
   return v == null ? null : Math.round(v);
 }
 
-// Confidence means one thing across this file: how many observations sit
-// behind the number on screen. Every fetcher used to carry its own formula
-// (20 + n * 2 here, 20 + min(40, n) there, a SQL score with a floor of 20 in
-// v_combo_rollups), so the same 0..100 chip meant three different things and
-// none of them matched the rubric /methodology publishes. One curve instead:
-//
-//   score = 100 * log10(n) / log10(SATURATION), and 0 when n <= 0
-//
-// Every doubling of the sample is worth the same fixed step, a single
-// observation earns nothing, and past SATURATION more rows stop changing what
-// we are willing to say. It is a sample-size statement and nothing else: it
-// says nothing about how fresh those observations are, which is what the
-// stale-data banner is for.
-const CONFIDENCE_SATURATION_N = 200;
-
-function sampleConfidence(n: number): number {
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  const capped = Math.min(n, CONFIDENCE_SATURATION_N);
-  return Math.round(
-    (Math.log10(capped) / Math.log10(CONFIDENCE_SATURATION_N)) * 100,
-  );
-}
+// Confidence uses sampleConfidence() from sample-confidence.ts so the
+// source-axis API and these widgets share one curve. It is a sample-size
+// statement and nothing else.
 
 // ----------------------------------------------------------------------------
 // Market Index: v_market_index(window_days) + delta vs period start
@@ -804,16 +787,65 @@ function pickMetric(
 }
 
 // ----------------------------------------------------------------------------
-// Arbitrage: derived from v_regional_heatmap (axis='region'). The
-// 'source' axis returns an empty state until we have real multi-source
-// price data; it used to return fixture data unconditionally.
+// Arbitrage: axis='region' is v_regional_heatmap spreads. axis='source'
+// is combo-level Feedle Air vs MorphMarket live asks (ask vs ask).
 // ----------------------------------------------------------------------------
+async function fetchSourceArbitrage(
+  _filters: Filters,
+): Promise<QueryResult<Arbitrage | null>> {
+  try {
+    const res = await fetch("/api/market/source-arbitrage", {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg =
+        typeof body.error === "string"
+          ? body.error
+          : `source-arbitrage HTTP ${res.status}`;
+      return empty(null, msg);
+    }
+    const body = (await res.json()) as {
+      axis: ArbitrageAxis;
+      rows: SourceArbRow[];
+      kpis: Arbitrage["kpis"];
+      attribution_note?: string;
+      empty_reason?: string;
+    };
+    if (!body.rows || body.rows.length === 0) {
+      return empty(
+        null,
+        body.empty_reason ?? body.attribution_note ?? "no source-axis spreads",
+      );
+    }
+    const note = body.attribution_note;
+    return ok<Arbitrage>(
+      {
+        axis: "source",
+        rows: body.rows.map((r) => ({
+          ...r,
+          attribution: {
+            sources: ["morphmarket", "feedle"],
+            confidence: {
+              score: sampleConfidence(Math.min(r.low.n, r.high.n)),
+            },
+          },
+        })),
+        kpis: body.kpis,
+      },
+      note,
+    );
+  } catch (e) {
+    return empty(null, `fetchSourceArbitrage error: ${errMsg(e)}`);
+  }
+}
+
 export async function fetchArbitrage(
   filters: Filters,
   axis: ArbitrageAxis,
 ): Promise<QueryResult<Arbitrage | null>> {
   if (axis === "source") {
-    return empty(null, "source axis needs multi-source price data");
+    return fetchSourceArbitrage(filters);
   }
   try {
     const supabase = createClient();

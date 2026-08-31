@@ -96,10 +96,19 @@ export default function ApiDocsPage() {
       <Endpoint
         method="GET"
         path="/api/market/arbitrage"
-        purpose="Cross-platform arbitrage pair candidates. Joins MorphMarket and cross-platform listings by image pHash and emits the price delta. cross_platform_listings currently holds no rows, so this returns an empty set rather than pairs."
+        purpose="Legacy pHash pair candidates (MorphMarket image vs cross-platform image). Separate from the dashboard source axis."
         params={[]}
         example="/api/market/arbitrage"
-        notes="Empty until the pHash worker has populated phash columns. Best-effort: pHash collisions exist; treat each row as a heads-up rather than a confirmation."
+        notes="Empty until a pHash worker has populated phash columns. Best-effort: pHash collisions exist; treat each row as a heads-up rather than a confirmation. Combo-level KR vs US asks live at /api/market/source-arbitrage instead."
+      />
+
+      <Endpoint
+        method="GET"
+        path="/api/market/source-arbitrage"
+        purpose="Combo-level ask vs ask: Feedle Air USD (Korea scheduled import) vs MorphMarket live listings. Matched by HIGH_VALUE_COMBOS on traits, not pHash. Hides rows with n<3 on either side. Altitude Exotics, TikisGeckos, and Feedle KRW are not in this table."
+        params={[]}
+        example="/api/market/source-arbitrage"
+        notes="Ask vs ask, not sold. MorphMarket uses current_status=live; last_seen_at is not a 48h gate because catalogue leftovers still dominate that column. Feedle Air is not a MorphMarket click-buy."
       />
 
       <Endpoint

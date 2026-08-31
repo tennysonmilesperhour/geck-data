@@ -126,15 +126,8 @@ export const getLatestMarketSeenAt = unstable_cache(
 // ----------------------------------------------------------------------------
 // Which optional sections have anything behind them.
 // ----------------------------------------------------------------------------
-// Two tabs in the header, Shows and Cross-platform, point at tables that hold
-// zero rows: show_mentions and cross_platform_listings have never been
-// written to. A nav item is a promise that there is something to see, and
-// both were breaking it on every page load.
-//
-// The check is a count rather than a hard-coded removal, so a tab comes back
-// the moment its table starts receiving rows and no one has to remember to
-// re-add it. Both reads are head-only counts against empty or small tables
-// and share the same five minute cache as the freshness read beside them.
+// Two tabs in the header, Shows and Cross-platform, stay hidden until their
+// tables have rows. The check is a count rather than a hard-coded removal.
 export type OptionalSections = {
   shows: boolean;
   crossPlatform: boolean;

@@ -35,12 +35,9 @@ const STATUS_DOT: Record<FeedLevel, string> = {
 
 type Group = "core" | "analysis" | "ops";
 // `needs` names an optional section this tab depends on. A tab carrying one is
-// only rendered when that section has rows behind it, because a nav item is a
-// promise that there is something to see: show_mentions and
-// cross_platform_listings are both empty and have never been written to, so
-// Shows and Cross-platform were breaking that promise on every page load. The
-// gate is a live count rather than a deletion, so either tab returns on its
-// own the moment its table starts receiving rows.
+// only rendered when that section has rows behind it. Shows stays hidden
+// until show_mentions has rows; Cross-platform unhides when
+// cross_platform_listings does.
 type Tab = {
   href: string;
   label: string;

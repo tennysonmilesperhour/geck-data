@@ -104,6 +104,27 @@ MorphMarket JSON API ingest. No Decodo. Two modes:
 Freshness and inactive flags depend on the weekday catalog recrawl.
 The weekly 7-day job is new-ad enrichment.
 
+### scrape_cross_platform.py
+
+Public-storefront ingest into `cross_platform_listings` only. Never writes
+MorphMarket tables and never calls `mark_unseen`.
+
+```
+python scrape_cross_platform.py --source=all --dry-run
+python scrape_cross_platform.py --source=feedle_air
+```
+
+| `--source` | What it walks |
+|---|---|
+| `feedle_air` / `feedle_kr` | air.feedle.me public `getPetList` server action (same catalog as the homepage infinite scroll). Air stores the displayed USD ask; KR stores native KRW plus a labeled FX conversion. |
+| `tikis` | tikisgeckos.com/products.json (Shopify, paginated) |
+| `altitude` | altitudeexotics.com/shop?format=json (Squarespace) |
+| `all` | all of the above (default) |
+
+`--dry-run` prints per-platform counts and a few sample rows. GitHub Action
+`scrape-cross-platform.yml` runs weekdays at 16:50 UTC (10:50am Denver MDT)
+with the same `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` secrets.
+
 ### scrape_details.py
 
 Reads `listings_needing_detail_scrape(stale_after_days=7)` to get the
