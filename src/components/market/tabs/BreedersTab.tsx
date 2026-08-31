@@ -7,13 +7,14 @@
 // + ranked table with a per-row 12-week velocity sparkline, specialty
 // combo, and a lineage score pill.
 import type { Filters } from "@/lib/market/types";
-import { fetchBreeders } from "@/lib/market/queries";
+import { fetchBreeders, fetchBreederConcentration } from "@/lib/market/queries";
 import { useFilteredQuery } from "@/lib/market/useFilteredQuery";
 import EmptyState from "@/components/market/EmptyState";
 import KpiCard from "@/components/ui/KpiCard";
 import ConfidenceBadge from "@/components/market/ConfidenceBadge";
 import LivePreviewTag from "@/components/market/LivePreviewTag";
 import MiniSparkline from "@/components/charts/MiniSparkline";
+import BreederConcentrationPanel from "@/components/market/widgets/BreederConcentration";
 import Link from "next/link";
 import SellerAvatar from "@/components/media/SellerAvatar";
 
@@ -25,6 +26,7 @@ export default function BreedersTab({
   onSelectCombo?: (combo: string) => void;
 }) {
   const q = useFilteredQuery(fetchBreeders, filters, [] as const);
+  const concQ = useFilteredQuery(fetchBreederConcentration, filters, [] as const);
   if (!q.data) {
     return (
       <EmptyState
@@ -71,6 +73,14 @@ export default function BreedersTab({
           }
         />
       </section>
+
+      {concQ.data ? (
+        <BreederConcentrationPanel
+          data={concQ.data}
+          status={concQ.status}
+          note={concQ.note}
+        />
+      ) : null}
 
       <section className="forest-surface">
         <header className="flex items-start justify-between gap-3 border-b border-forest-700/70 p-4">

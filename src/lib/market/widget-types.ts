@@ -312,3 +312,29 @@ export type BreedersData = {
     avgDaysToSell: number | null;
   };
 };
+
+// One seller's slice of the tracked live catalogue, for the concentration
+// bar chart. `sharePct` is a share of the ATTRIBUTED pool (listings that
+// carry an identified seller), never of the whole catalogue, because
+// MorphMarket hides the seller on ~88% of public listings.
+export type BreederShareRow = {
+  id: string;
+  name: string;
+  listings: number;
+  sharePct: number;
+};
+
+export type BreederConcentration = {
+  /** Top sellers by tracked-listing count, most first. */
+  rows: BreederShareRow[];
+  /** Denominator for every sharePct: live listings that carry a seller. */
+  totalAttributed: number;
+  /** Distinct sellers behind those attributed listings. */
+  sellerCount: number;
+  /** attributed / all live listings, as a percent. The honesty caveat: this
+   *  concentration is measured over only this slice of the catalogue. */
+  coveragePct: number;
+  /** Combined share of the top ten sellers, within the attributed pool. */
+  top10Pct: number;
+  attribution: Attribution;
+};

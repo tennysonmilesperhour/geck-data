@@ -26,6 +26,7 @@ import {
   REGION_COLUMNS,
   type Arbitrage,
   type ArbitrageAxis,
+  type BreederConcentration,
   type BreederRow,
   type BreedersData,
   type ComboDetail,
@@ -1171,6 +1172,65 @@ export async function fetchBreeders(
     );
   } catch (e) {
     return empty(null, `fetchBreeders error: ${errMsg(e)}`);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Seller concentration: share of the tracked live catalogue held by each
+// seller. Powers the concentration bar chart on the Breeders tab (the
+// preview's market-share panel). The honest caveat is baked into the shape:
+// MorphMarket's public API returns no owner on ~88% of listings, so the
+// denominator is the ~12% that carry an identified seller, and the widget
+// labels the coverage rather than implying a whole-market reading.
+// ----------------------------------------------------------------------------
+const CONCENTRATION_TOP_N = 12;
+
+export async function fetchBreederConcentration(
+  _filters: Filters,
+): Promise<QueryResult<BreederConcentration | null>> {
+  try {
+    const supabase = createClient();
+    // Aggregated in the database (migration 0056) so the counts never hit
+    // PostgREST's row cap and the totals stay exact. One round trip returns
+    // the top-N rows plus the scalars the panel labels itself with.
+    const { data, error } = await supabase.rpc("v_breeder_concentration", {
+      top_n: CONCENTRATION_TOP_N,
+    });
+    if (error) throw error;
+    const payload = (data ?? null) as {
+      rows?: BreederConcentration["rows"];
+      totalAttributed?: number;
+      sellerCount?: number;
+      liveTotal?: number;
+      top10Pct?: number;
+    } | null;
+    const rows = payload?.rows ?? [];
+    const totalAttributed = payload?.totalAttributed ?? 0;
+    if (rows.length === 0 || totalAttributed === 0) {
+      return empty(null, "no live listing carries an identified seller yet");
+    }
+    const liveTotal = payload?.liveTotal ?? 0;
+    const coveragePct =
+      liveTotal > 0 ? Math.round((totalAttributed / liveTotal) * 1000) / 10 : 0;
+
+    return ok<BreederConcentration>(
+      {
+        rows,
+        totalAttributed,
+        sellerCount: payload?.sellerCount ?? rows.length,
+        coveragePct,
+        top10Pct: payload?.top10Pct ?? 0,
+        attribution: {
+          sources: ["gi_listings"],
+          confidence: { score: sampleConfidence(totalAttributed) },
+        },
+      },
+      `v_breeder_concentration: ${
+        payload?.sellerCount ?? rows.length
+      } sellers over ${totalAttributed} attributed listings`,
+    );
+  } catch (e) {
+    return empty(null, `fetchBreederConcentration error: ${errMsg(e)}`);
   }
 }
 
