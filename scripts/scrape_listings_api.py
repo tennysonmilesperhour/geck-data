@@ -22,24 +22,31 @@ listings (PK listing_id) and market_listings (id=mm_<numeric>).
 
 Env vars:
   SUPABASE_URL / SUPABASE_SERVICE_KEY
+  MORPHMARKET_PROXY_URL optional residential/mobile proxy used after a 403
   TRIGGERED_BY          optional label, defaults to 'manual'
   INGEST_MODE           windowed | catalog (overridden by --mode)
   WINDOW_HOURS          lookback for first_listed in windowed mode
   MAX_PAGES             list-page cap (windowed 250, catalog 800)
   MIN_CATALOG_WRITES    refuse mark_unseen below this many upserts
   DETAIL_SLEEP_S        pause between detail fetches (default 0.15)
+  PAGE_SLEEP_S          pause between list pages (default 0.5)
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html as html_lib
+import json
 import os
+import re
 import sys
 import time
 import traceback
 from typing import Any, Optional
+from urllib.parse import unquote, urlencode, urlsplit
 
-import requests
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import sync_playwright
 
 from lib.supabase_client import get_supabase
 from scrape_listings import (
@@ -55,15 +62,211 @@ PAGE_SIZE = 100
 EMPTY_PAGE_TOLERANCE = 3
 CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
 REQUEST_TIMEOUT_S = 45
-USER_AGENT = "GeckDataBot/1.0 (crested gecko market tracker)"
+MIN_DETAIL_SLEEP_S = 0.15
+MIN_PAGE_SLEEP_S = 0.5
 
-SESSION = requests.Session()
-SESSION.headers.update(
-    {
-        "Accept": "application/json",
-        "User-Agent": USER_AGENT,
-    }
+_SELLER_ANCHOR_RE = re.compile(
+    r'<a\b[^>]*\bhref=["\']/stores/(?P<slug>[^/"\']+)/?["\'][^>]*>'
+    r"(?P<body>.*?)</a>",
+    re.IGNORECASE | re.DOTALL,
 )
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+class MorphMarketFetchError(RuntimeError):
+    """A browser fetch failed without exposing proxy credentials."""
+
+
+class MorphMarketAccessDeniedError(MorphMarketFetchError):
+    """A 403 could not be cleared directly or with the configured proxy."""
+
+
+def _proxy_settings(raw_url: str) -> dict[str, str]:
+    """Translate a proxy URL into Playwright's split credential fields."""
+    candidate = raw_url.strip()
+    if not candidate:
+        raise ValueError("MORPHMARKET_PROXY_URL is empty")
+    if "://" not in candidate:
+        candidate = f"http://{candidate}"
+    parsed = urlsplit(candidate)
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https", "socks4", "socks5"}:
+        raise ValueError(
+            "MORPHMARKET_PROXY_URL must use http, https, socks4, or socks5"
+        )
+    if not parsed.hostname:
+        raise ValueError("MORPHMARKET_PROXY_URL is missing a hostname")
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = f":{parsed.port}" if parsed.port else ""
+    except ValueError as exc:
+        raise ValueError("MORPHMARKET_PROXY_URL has an invalid port") from exc
+    settings = {"server": f"{scheme}://{host}{port}"}
+    if parsed.username is not None:
+        settings["username"] = unquote(parsed.username)
+    if parsed.password is not None:
+        settings["password"] = unquote(parsed.password)
+    return settings
+
+
+class MorphMarketFetcher:
+    """Reuse one real Chromium browser for list and detail requests."""
+
+    def __init__(self) -> None:
+        self.proxy_url = os.environ.get("MORPHMARKET_PROXY_URL", "").strip()
+        self.browser_channel = (
+            os.environ.get("MORPHMARKET_BROWSER_CHANNEL", "chromium").strip()
+            or "chromium"
+        )
+        self.last_status: Optional[int] = None
+        self._using_proxy = False
+        self._playwright = sync_playwright().start()
+        self._browser = None
+        self._context = None
+        self._page = None
+        try:
+            self._launch(use_proxy=False)
+        except Exception:
+            self.close()
+            raise
+
+    def __enter__(self) -> "MorphMarketFetcher":
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        self.close()
+
+    def _launch(self, *, use_proxy: bool) -> None:
+        proxy = _proxy_settings(self.proxy_url) if use_proxy else None
+        try:
+            self._browser = self._playwright.chromium.launch(
+                channel=self.browser_channel,
+                headless=True,
+                proxy=proxy,
+            )
+            self._context = self._browser.new_context(locale="en-US")
+            self._page = self._context.new_page()
+            self._page.set_default_timeout(REQUEST_TIMEOUT_S * 1000)
+            self._using_proxy = use_proxy
+        except PlaywrightError as exc:
+            where = " with MORPHMARKET_PROXY_URL" if use_proxy else ""
+            raise MorphMarketFetchError(
+                f"could not start Chromium{where}; install it with "
+                "'python -m playwright install chromium'"
+            ) from exc
+
+    def _restart_with_proxy(self) -> None:
+        if self._browser is not None:
+            self._browser.close()
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._launch(use_proxy=True)
+
+    def _safe_error(self, exc: Exception) -> str:
+        text = str(exc)
+        if self.proxy_url:
+            text = text.replace(self.proxy_url, "[MORPHMARKET_PROXY_URL]")
+            try:
+                proxy = _proxy_settings(self.proxy_url)
+            except ValueError:
+                proxy = {}
+            for key in ("username", "password"):
+                secret = proxy.get(key)
+                if secret:
+                    text = text.replace(secret, "[redacted]")
+        return text
+
+    def _fetch_bytes(self, url: str) -> bytes:
+        if self._page is None:
+            raise MorphMarketFetchError("Chromium page is not available")
+        try:
+            response = self._page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=REQUEST_TIMEOUT_S * 1000,
+            )
+        except PlaywrightError as exc:
+            route = " through MORPHMARKET_PROXY_URL" if self._using_proxy else ""
+            raise MorphMarketFetchError(
+                f"MorphMarket browser request failed{route}: "
+                f"{self._safe_error(exc)}"
+            ) from exc
+        if response is None:
+            raise MorphMarketFetchError("MorphMarket browser returned no response")
+
+        self.last_status = response.status
+        if response.status == 403 and not self._using_proxy:
+            if not self.proxy_url:
+                raise MorphMarketAccessDeniedError(
+                    "MorphMarket returned HTTP 403. Add a residential or mobile "
+                    "proxy URL as the GitHub Actions secret "
+                    "MORPHMARKET_PROXY_URL. Decodo is not supported."
+                )
+            log(
+                "MorphMarket returned HTTP 403 directly; retrying through "
+                "MORPHMARKET_PROXY_URL"
+            )
+            try:
+                self._restart_with_proxy()
+            except Exception as exc:  # noqa: BLE001
+                raise MorphMarketAccessDeniedError(
+                    "MorphMarket returned HTTP 403 directly and the browser "
+                    "could not start with MORPHMARKET_PROXY_URL: "
+                    f"{self._safe_error(exc)}"
+                ) from exc
+            return self._fetch_bytes(url)
+        if response.status == 403:
+            raise MorphMarketAccessDeniedError(
+                "MorphMarket returned HTTP 403 through MORPHMARKET_PROXY_URL; "
+                "verify that it is an active residential or mobile proxy"
+            )
+        if response.status != 200:
+            route = " through MORPHMARKET_PROXY_URL" if self._using_proxy else ""
+            raise MorphMarketFetchError(
+                f"MorphMarket returned HTTP {response.status}{route}"
+            )
+        try:
+            return response.body()
+        except PlaywrightError as exc:
+            raise MorphMarketFetchError(
+                f"could not read MorphMarket response body: {self._safe_error(exc)}"
+            ) from exc
+
+    def fetch_json(self, url: str) -> dict[str, Any]:
+        raw = self._fetch_bytes(url)
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise MorphMarketFetchError(
+                "MorphMarket returned HTTP 200 with invalid JSON"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise MorphMarketFetchError(
+                "MorphMarket returned HTTP 200 with a non-object JSON payload"
+            )
+        return payload
+
+    def fetch_text(self, url: str) -> str:
+        return self._fetch_bytes(url).decode("utf-8", errors="replace")
+
+    def close(self) -> None:
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except PlaywrightError:
+                pass
+        self._browser = None
+        self._context = None
+        self._page = None
+        if self._playwright is not None:
+            try:
+                self._playwright.stop()
+            except PlaywrightError:
+                pass
+            self._playwright = None
 
 
 def _window_hours() -> int:
@@ -78,7 +281,12 @@ def _max_pages() -> int:
 
 def _detail_sleep() -> float:
     raw = os.environ.get("DETAIL_SLEEP_S", "0.15")
-    return max(0.0, float(raw))
+    return max(MIN_DETAIL_SLEEP_S, float(raw))
+
+
+def _page_sleep() -> float:
+    raw = os.environ.get("PAGE_SLEEP_S", "0.5")
+    return max(MIN_PAGE_SLEEP_S, float(raw))
 
 
 def _min_catalog_writes() -> int:
@@ -86,7 +294,7 @@ def _min_catalog_writes() -> int:
     return max(1, int(raw))
 
 
-def apply_cli_args(argv: Optional[list[str]] = None) -> None:
+def apply_cli_args(argv: Optional[list[str]] = None) -> bool:
     """--mode overrides INGEST_MODE. Env alone is enough for Actions."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -94,9 +302,15 @@ def apply_cli_args(argv: Optional[list[str]] = None) -> None:
         choices=("windowed", "catalog"),
         help="windowed = 7-day first_listed pulse; catalog = full live recrawl",
     )
+    parser.add_argument(
+        "--dry-run-page-one",
+        action="store_true",
+        help="fetch list page 1, print one crested row, and do not write",
+    )
     args, _unknown = parser.parse_known_args(argv)
     if args.mode:
         os.environ["INGEST_MODE"] = args.mode
+    return bool(args.dry_run_page_one)
 
 
 def ingest_mode() -> str:
@@ -157,42 +371,124 @@ def _parse_iso(value: Any) -> Optional[dt.datetime]:
 
 
 def is_crested(item: dict[str, Any]) -> bool:
-    cat = str(item.get("category_name") or "")
-    sci = str(item.get("category_scientific_name") or "")
+    cat = str(item.get("category_name") or "").strip().lower()
+    sci = str(item.get("category_scientific_name") or "").strip().lower()
     path = str(item.get("path") or item.get("share_url") or "")
     cat_obj = item.get("category") or {}
     if isinstance(cat_obj, dict):
-        cat = cat or str(cat_obj.get("name") or cat_obj.get("name_s") or "")
-        sci = sci or str(cat_obj.get("scientific_name") or "")
-    blob = f"{cat} {sci} {path}".lower()
+        cat = cat or str(
+            cat_obj.get("name_s") or cat_obj.get("name") or ""
+        ).strip().lower()
+        sci = sci or str(cat_obj.get("scientific_name") or "").strip().lower()
     return (
-        "crested gecko" in blob
-        or "crested-geckos" in blob
-        or "correlophus ciliatus" in blob
+        cat in {"crested gecko", "crested geckos"}
+        or sci == "correlophus ciliatus"
+        or "/crested-geckos/" in path.lower()
     )
 
 
-def fetch_list_page(page: int) -> dict[str, Any]:
-    resp = SESSION.get(
-        LIST_URL,
-        params={
+def list_page_has_next(payload: dict[str, Any]) -> bool:
+    """Handle both paginated payload shapes seen on the public API."""
+    if "next" in payload:
+        return bool(payload.get("next"))
+    results = payload.get("results") or []
+    return isinstance(results, list) and len(results) >= PAGE_SIZE
+
+
+def fetch_list_page(
+    page: int, fetcher: MorphMarketFetcher
+) -> dict[str, Any]:
+    query = urlencode(
+        {
             "ordering": "-first_posted",
             "page_size": PAGE_SIZE,
             "page": page,
-        },
-        timeout=REQUEST_TIMEOUT_S,
+        }
     )
-    resp.raise_for_status()
-    return resp.json()
+    return fetcher.fetch_json(f"{LIST_URL}?{query}")
 
 
-def fetch_detail(listing_id: str) -> dict[str, Any]:
-    resp = SESSION.get(
-        DETAIL_URL.format(id=listing_id),
-        timeout=REQUEST_TIMEOUT_S,
-    )
-    resp.raise_for_status()
-    return resp.json()
+def fetch_detail(
+    listing_id: str, fetcher: MorphMarketFetcher
+) -> dict[str, Any]:
+    return fetcher.fetch_json(DETAIL_URL.format(id=listing_id))
+
+
+def extract_seller_from_html(html: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract a real store slug and visible name from rendered HTML."""
+    if not html:
+        return None, None
+    match = _SELLER_ANCHOR_RE.search(html)
+    if not match:
+        return None, None
+    slug = html_lib.unescape(match.group("slug")).strip() or None
+    raw_name = _HTML_TAG_RE.sub(" ", match.group("body"))
+    name = " ".join(html_lib.unescape(raw_name).split()) or None
+    return slug, name
+
+
+def seller_identity(
+    detail: dict[str, Any], rendered_html: Optional[str] = None
+) -> tuple[Optional[str], Optional[str]]:
+    """Prefer API owner fields, then a rendered /stores/{slug}/ link."""
+    owner = detail.get("owner") or {}
+    seller_slug = None
+    seller_name = None
+    if isinstance(owner, dict):
+        seller_slug = str(owner.get("id") or "").strip() or None
+        seller_name = str(
+            owner.get("person_name")
+            or owner.get("clean_name")
+            or owner.get("clean_label")
+            or ""
+        ).strip() or None
+    seller_name = seller_name or str(detail.get("store") or "").strip() or None
+    if not seller_slug and rendered_html:
+        html_slug, html_name = extract_seller_from_html(rendered_html)
+        seller_slug = html_slug
+        seller_name = seller_name or html_name
+    return seller_slug, seller_name
+
+
+def _rendered_detail_url(
+    detail: dict[str, Any], item: dict[str, Any]
+) -> Optional[str]:
+    raw = detail.get("share_url") or item.get("path") or item.get("share_url")
+    if not isinstance(raw, str):
+        return None
+    parsed = urlsplit(raw)
+    if parsed.scheme != "https" or parsed.hostname not in {
+        "morphmarket.com",
+        "www.morphmarket.com",
+    }:
+        return None
+    return raw
+
+
+def dry_run_page_one(fetcher: MorphMarketFetcher) -> int:
+    """Prove the list endpoint and crested filter without touching Supabase."""
+    payload = fetch_list_page(1, fetcher)
+    print(f"HTTP {fetcher.last_status} MorphMarket list page 1", flush=True)
+    for item in payload.get("results") or []:
+        listing_id = str(item.get("key") or "").strip()
+        if is_crested(item) and listing_id.isdigit():
+            time.sleep(MIN_DETAIL_SLEEP_S)
+            detail = fetch_detail(listing_id, fetcher)
+            print(
+                f"HTTP {fetcher.last_status} MorphMarket detail {listing_id}",
+                flush=True,
+            )
+            if str(detail.get("id") or "").strip() != listing_id:
+                print("Detail response did not match the list row", flush=True)
+                return 1
+            print(
+                "Crested Gecko "
+                f"listing_id={listing_id} title={item.get('title') or '(untitled)'}",
+                flush=True,
+            )
+            return 0
+    print("No Crested Gecko row with a numeric listing id was found", flush=True)
+    return 1
 
 
 def original_image_urls(detail: dict[str, Any]) -> list[str]:
@@ -224,20 +520,15 @@ def trait_names(detail: dict[str, Any]) -> list[str]:
 
 
 def detail_to_listing_row(
-    detail: dict[str, Any], listed_at: dt.datetime
+    detail: dict[str, Any],
+    listed_at: dt.datetime,
+    rendered_html: Optional[str] = None,
 ) -> dict[str, Any]:
     listing_id = str(detail.get("id") or "").strip()
     names = trait_names(detail)
     images = original_image_urls(detail)
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
-    owner = detail.get("owner") or {}
-    seller_slug = None
-    seller_name = None
-    if isinstance(owner, dict):
-        seller_slug = owner.get("id") or None
-        seller_name = owner.get("person_name") or owner.get("id")
-    seller_name = seller_name or detail.get("store")
-    seller_slug = seller_slug or detail.get("store")
+    seller_slug, seller_name = seller_identity(detail, rendered_html)
 
     state = str(detail.get("state") or "for_sale")
     currency = detail.get("localized_price_currency") or "USD"
@@ -358,15 +649,15 @@ def write_image_and_gallery_rows(
 
 
 def patch_canonical_extras(
-    supabase, listing_id: str, detail: dict[str, Any], listed_at: dt.datetime
+    supabase,
+    listing_id: str,
+    detail: dict[str, Any],
+    listed_at: dt.datetime,
+    seller_slug: Optional[str],
 ) -> None:
     """Fill fields canonical.py cannot see (real seller slug, USD price)."""
     mm_id = f"mm_{listing_id}"
     owner = detail.get("owner") or {}
-    slug = None
-    if isinstance(owner, dict):
-        slug = owner.get("id")
-    slug = slug or detail.get("store")
     patch: dict[str, Any] = {
         # This walk only accepts crested geckos (is_crested gates every row),
         # so the species column can finally say so instead of defaulting to
@@ -383,8 +674,8 @@ def patch_canonical_extras(
         "proven_breeder": bool(detail.get("proven_breeder")),
         "norm_traits": detail.get("norm_traits"),
     }
-    if slug:
-        patch["seller_id"] = slug
+    if seller_slug:
+        patch["seller_id"] = seller_slug
     usd = detail.get("usd_price")
     if usd is not None:
         try:
@@ -524,8 +815,37 @@ def mark_unseen_after_complete_catalog(supabase, run_id: int) -> None:
         log(f"WARN: canonical unseen sync failed: {exc}")
 
 
+def mark_unseen_if_safe(
+    supabase,
+    run_id: int,
+    *,
+    mode: str,
+    complete: bool,
+    succeeded: int,
+    min_writes: int,
+) -> bool:
+    """Run the inactive sweep only after a complete, sufficiently large catalog."""
+    if not should_mark_unseen(
+        mode=mode,
+        complete=complete,
+        succeeded=succeeded,
+        min_writes=min_writes,
+    ):
+        return False
+    mark_unseen_after_complete_catalog(supabase, run_id)
+    return True
+
+
 def main() -> int:
-    apply_cli_args()
+    dry_run = apply_cli_args()
+    if dry_run:
+        try:
+            with MorphMarketFetcher() as fetcher:
+                return dry_run_page_one(fetcher)
+        except Exception as exc:  # noqa: BLE001
+            log(f"DRY RUN FAILED: {exc}")
+            return 1
+
     mode = ingest_mode()
     window_hours = _window_hours()
     # Catalog walks the whole live list; windowed only needs enough
@@ -535,6 +855,7 @@ def main() -> int:
         os.environ["MAX_PAGES"] = default_pages
     max_pages = _max_pages()
     sleep_s = _detail_sleep()
+    page_sleep_s = _page_sleep()
     min_writes = _min_catalog_writes()
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=window_hours)
     cutoff_date = cutoff.date()
@@ -547,8 +868,10 @@ def main() -> int:
     consecutive_empty = 0
     consecutive_fetch_failures = 0
     aborted = False
+    walk_incomplete = False
     saw_natural_end = False
     hit_page_cap = False
+    fetcher: Optional[MorphMarketFetcher] = None
 
     if mode == "catalog":
         log(
@@ -562,24 +885,29 @@ def main() -> int:
         )
 
     try:
+        fetcher = MorphMarketFetcher()
         for page in range(1, max_pages + 1):
             log(f"GET list page {page}")
             try:
-                payload = fetch_list_page(page)
+                payload = fetch_list_page(page, fetcher)
+            except MorphMarketAccessDeniedError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 log(f"ERROR fetching list page {page}: {exc}")
                 failed += 1
+                walk_incomplete = True
                 consecutive_fetch_failures += 1
                 if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
                     raise RuntimeError(
                         f"aborting: {consecutive_fetch_failures} list pages "
                         f"failed in a row; last error: {exc}"
                     ) from exc
+                time.sleep(page_sleep_s)
                 continue
             consecutive_fetch_failures = 0
 
             results = payload.get("results") or []
-            has_next = bool(payload.get("next"))
+            has_next = list_page_has_next(payload)
             if not results:
                 consecutive_empty += 1
                 if consecutive_empty >= EMPTY_PAGE_TOLERANCE:
@@ -593,7 +921,9 @@ def main() -> int:
 
             in_window_on_page = 0
             page_rows: list[dict[str, Any]] = []
-            page_details: list[tuple[str, dict[str, Any], dt.datetime]] = []
+            page_details: list[
+                tuple[str, dict[str, Any], dt.datetime, Optional[str]]
+            ] = []
 
             for item in results:
                 listed_date = _parse_iso(item.get("first_listed"))
@@ -612,12 +942,16 @@ def main() -> int:
                     continue
                 attempted += 1
                 try:
-                    detail = fetch_detail(listing_id)
+                    detail = fetch_detail(listing_id, fetcher)
                     if sleep_s:
                         time.sleep(sleep_s)
+                except MorphMarketAccessDeniedError:
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     log(f"WARN detail {listing_id}: {exc}")
                     failed += 1
+                    if mode == "catalog":
+                        walk_incomplete = True
                     continue
 
                 listed_at = _parse_iso(detail.get("first_listed")) or listed_date
@@ -627,22 +961,45 @@ def main() -> int:
                     continue
                 if not is_crested(detail) and not is_crested(item):
                     continue
-                row = detail_to_listing_row(detail, listed_at)
+                rendered_html = None
+                seller_slug, _seller_name = seller_identity(detail)
+                if not seller_slug:
+                    rendered_url = _rendered_detail_url(detail, item)
+                    if rendered_url:
+                        try:
+                            rendered_html = fetcher.fetch_text(rendered_url)
+                            if sleep_s:
+                                time.sleep(sleep_s)
+                        except Exception as exc:  # noqa: BLE001
+                            log(
+                                f"WARN seller HTML fallback {listing_id}: {exc}"
+                            )
+                row = detail_to_listing_row(
+                    detail,
+                    listed_at,
+                    rendered_html=rendered_html,
+                )
                 if not row.get("listing_id"):
                     failed += 1
                     continue
                 page_rows.append(row)
-                page_details.append((row["listing_id"], detail, listed_at))
+                page_details.append(
+                    (row["listing_id"], detail, listed_at, row.get("seller_slug"))
+                )
 
             if page_rows:
                 consecutive_empty = 0
                 wrote = upsert_listings(supabase, run_id, page_rows)
                 succeeded += wrote
-                for listing_id, detail, listed_at in page_details:
+                for listing_id, detail, listed_at, seller_slug in page_details:
                     images = original_image_urls(detail)
                     write_image_and_gallery_rows(supabase, listing_id, images)
                     patch_canonical_extras(
-                        supabase, listing_id, detail, listed_at
+                        supabase,
+                        listing_id,
+                        detail,
+                        listed_at,
+                        seller_slug,
                     )
                 label = "crested" if mode == "catalog" else "crested in window"
                 log(f"page {page}: {len(page_rows)} {label}, wrote {wrote}")
@@ -683,24 +1040,28 @@ def main() -> int:
                 else:
                     consecutive_empty = 0
 
+            time.sleep(page_sleep_s)
+
         complete = catalog_walk_complete(
-            aborted=aborted,
+            aborted=aborted or walk_incomplete,
             saw_natural_end=saw_natural_end,
             hit_page_cap=hit_page_cap,
         )
-        if should_mark_unseen(
+        marked_unseen = mark_unseen_if_safe(
+            supabase,
+            run_id,
             mode=mode,
             complete=complete,
             succeeded=succeeded,
             min_writes=min_writes,
-        ):
-            mark_unseen_after_complete_catalog(supabase, run_id)
-        elif mode == "catalog":
+        )
+        if not marked_unseen and mode == "catalog":
             log(
                 "skipping mark_unseen_listings_inactive "
                 f"(complete={complete} succeeded={succeeded} "
                 f"min_writes={min_writes} hit_page_cap={hit_page_cap} "
-                f"saw_natural_end={saw_natural_end})"
+                f"saw_natural_end={saw_natural_end} "
+                f"walk_incomplete={walk_incomplete})"
             )
 
         status = "success" if failed == 0 else "partial"
@@ -731,6 +1092,9 @@ def main() -> int:
             error_message=str(exc),
         )
         return 1
+    finally:
+        if fetcher is not None:
+            fetcher.close()
 
 
 if __name__ == "__main__":
