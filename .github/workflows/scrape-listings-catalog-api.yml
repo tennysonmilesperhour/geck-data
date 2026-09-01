@@ -37,10 +37,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
       - name: Run scrape_listings_api.py (catalog recrawl)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
           TRIGGERED_BY: github_action_catalog_api
           INGEST_MODE: catalog
         working-directory: scripts

@@ -101,6 +101,23 @@ MorphMarket JSON API ingest. No Decodo. Two modes:
 `category=crested-geckos` is not a valid list filter. Traits come from
 `cached_traits` names only. Photos are `images[].image` originals.
 
+List and detail requests reuse one Playwright Chromium browser. The browser
+tries the public API directly first. If MorphMarket returns HTTP 403, it
+restarts once with `MORPHMARKET_PROXY_URL`. That secret must contain an active
+residential or mobile proxy URL; the scraper does not use Decodo. If the
+secret is absent, a 403 fails with setup instructions instead of retrying the
+catalog through a blocked runner IP.
+
+Use the read-only page-one check before a workflow change or proxy rotation:
+
+```bash
+python scrape_listings_api.py --dry-run-page-one
+```
+
+It prints the HTTP status and one Crested Gecko row with a numeric listing id.
+It does not initialize Supabase or write any rows. Detail requests pause at
+least 0.15 seconds, and list pages pause at least 0.5 seconds.
+
 Freshness and inactive flags depend on the weekday catalog recrawl.
 The weekly 7-day job is new-ad enrichment.
 
