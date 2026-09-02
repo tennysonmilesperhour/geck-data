@@ -50,6 +50,7 @@ export default async function CrossPlatformPage() {
     .select(
       "id, platform, external_id, title, price, price_usd_equivalent, currency, seller_name, seller_location, url, first_seen_at, last_seen_at",
     )
+    .eq("species", "crested")
     .order("last_seen_at", { ascending: false })
     .limit(1000);
 

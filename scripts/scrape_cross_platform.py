@@ -47,6 +47,7 @@ from lib.cross_platform import (
     CRESTED_SPECIES,
     FEEDLE_CRESTED_CODE,
     OTHER_SPECIES_RE,
+    altitude_item_is_crested,
     exclude_from_combo_arb,
     feedle_air_usd,
     is_crested_text,
@@ -57,6 +58,7 @@ from lib.cross_platform import (
     parse_excerpt_fields,
     shopify_available,
     shopify_price_usd,
+    squarespace_category_labels,
     squarespace_price_usd,
     squarespace_qty,
     traits_csv,
@@ -595,9 +597,14 @@ def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
     data = polite_get(ALTITUDE_SHOP).json()
     items = data.get("items") or []
     log(f"  n={len(items)}")
+    category_labels = squarespace_category_labels(data)
     collected: list[tuple[dict[str, Any], Optional[str]]] = []
+    skipped_non_crested = 0
     for item in items:
         if not isinstance(item, dict):
+            continue
+        if not altitude_item_is_crested(item, category_labels):
+            skipped_non_crested += 1
             continue
         title = str(item.get("title") or "")
         excerpt = str(item.get("excerpt") or "")
@@ -605,20 +612,9 @@ def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
         fields = parse_excerpt_fields(excerpt)
         morph = fields.get("morph") or ""
         blob_parts = [title, excerpt, body, morph]
-        is_gift = "gift card" in title.lower()
         is_hatchling_sku = bool(
             re.search(r"hand-?picked hatchling", title, re.IGNORECASE)
         )
-        if is_merch_text(*blob_parts) and not is_gift:
-            continue
-        if not is_gift and not is_hatchling_sku and not (
-            is_crested_text(*blob_parts) or morph
-        ):
-            # Altitude shop is a crested catalog whose SKU titles are codes.
-            # Morph text in the excerpt is the species signal.
-            continue
-        if OTHER_SPECIES_RE.search(" ".join(blob_parts)) and not morph:
-            continue
         external_id = str(item.get("id") or "")
         if not external_id:
             continue
@@ -629,15 +625,16 @@ def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
         sold_out = qty == 0
         group_lot = is_group_lot_text(*blob_parts)
         skip_combo = (
-            is_gift
-            or is_hatchling_sku
+            is_hatchling_sku
             or exclude_from_combo_arb(*blob_parts)
         )
         image = item.get("assetUrl")
         if not (isinstance(image, str) and image.startswith("http")):
             image = None
         traits_raw = traits_csv([morph, title] if morph else [title])
-        species = "unknown" if is_gift else CRESTED_SPECIES
+        category_ids = item.get("categoryIds")
+        if not isinstance(category_ids, list):
+            category_ids = []
         payload = {
             "sex": fields.get("sex"),
             "size": fields.get("weight"),
@@ -652,6 +649,13 @@ def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
             "morph": morph,
             "excerpt_fields": fields,
             "sku_title": title,
+            "product_type": item.get("productType"),
+            "category_ids": category_ids,
+            "category_labels": [
+                category_labels.get(str(category_id), "")
+                for category_id in category_ids
+                if category_labels.get(str(category_id))
+            ],
         }
         collected.append(
             (
@@ -667,14 +671,17 @@ def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
                     "seller_location": "Colorado US",
                     "url": listing_url,
                     "traits_raw": traits_raw,
-                    "species": species,
+                    "species": CRESTED_SPECIES,
                     "last_seen_at": now_iso(),
                     "payload": payload,
                 },
                 image,
             )
         )
-    log(f"altitude done: rows={len(collected)}")
+    log(
+        f"altitude done: crested rows={len(collected)} "
+        f"skipped non-crested={skipped_non_crested}"
+    )
     return collected
 
 

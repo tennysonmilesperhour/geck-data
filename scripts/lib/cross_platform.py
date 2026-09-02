@@ -38,6 +38,11 @@ MERCH_RE = re.compile(
     re.IGNORECASE,
 )
 
+ALTITUDE_BLOCKED_CATEGORY_RE = re.compile(
+    r"\b(add[\s-]?on(?: item)?|other geckos?|supplies?|merch(?:andise)?)\b",
+    re.IGNORECASE,
+)
+
 # Extra group-lot phrases used by brand shops, on top of the MorphMarket
 # looks_like_group_lot patterns copied above.
 SHOP_GROUP_RE = re.compile(
@@ -197,6 +202,73 @@ def parse_excerpt_fields(excerpt_html: Optional[str]) -> dict[str, str]:
         if value:
             out[key.lower()] = value
     return out
+
+
+def squarespace_category_labels(payload: dict[str, Any]) -> dict[str, str]:
+    """Map Squarespace category IDs to searchable labels and paths."""
+    labels: dict[str, str] = {}
+    nested = payload.get("nestedCategories")
+    if not isinstance(nested, dict):
+        return labels
+
+    def visit(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        category_id = str(node.get("id") or "").strip()
+        parts = [
+            str(node.get(key) or "").strip()
+            for key in ("displayName", "fullSlug", "fullUrl")
+        ]
+        if category_id:
+            labels[category_id] = " ".join(part for part in parts if part)
+        children = node.get("children")
+        if isinstance(children, list):
+            for child in children:
+                visit(child)
+
+    visit(nested.get("all"))
+    categories = nested.get("categories")
+    if isinstance(categories, list):
+        for category in categories:
+            visit(category)
+    return labels
+
+
+def altitude_item_is_crested(
+    item: dict[str, Any],
+    category_labels: Optional[dict[str, str]] = None,
+) -> bool:
+    """Return true only for a physical Altitude crested gecko offer."""
+    if str(item.get("productType") or "") != "1":
+        return False
+
+    title = str(item.get("title") or "")
+    excerpt = str(item.get("excerpt") or "")
+    body = str(item.get("body") or "")
+    raw_category_ids = item.get("categoryIds")
+    category_ids = raw_category_ids if isinstance(raw_category_ids, list) else []
+    labels = category_labels or {}
+    category_text = " ".join(
+        labels.get(str(category_id), "") for category_id in category_ids
+    )
+
+    # Product copy can mention diet or supplies. Classify merchandise from
+    # the product heading and Squarespace categories, not the full body.
+    if is_merch_text(title, excerpt, category_text):
+        return False
+    if ALTITUDE_BLOCKED_CATEGORY_RE.search(category_text):
+        return False
+
+    classification_text = " ".join((title, excerpt, category_text))
+    if OTHER_SPECIES_RE.search(classification_text):
+        return False
+    if is_crested_text(classification_text):
+        return True
+
+    # Altitude's individual animal titles are SKU codes. Their structured
+    # Morph, Weight, and Sex excerpt fields are the fallback animal signal.
+    fields = parse_excerpt_fields(excerpt)
+    return bool(fields.get("morph") and fields.get("weight") and fields.get("sex"))
 
 
 def squarespace_price_usd(item: dict[str, Any]) -> Optional[float]:
