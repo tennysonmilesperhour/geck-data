@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from lib.cross_platform import (  # noqa: E402
+    altitude_item_is_crested,
     exclude_from_combo_arb,
     feedle_air_usd,
     is_crested_text,
@@ -20,6 +21,7 @@ from lib.cross_platform import (  # noqa: E402
     is_merch_text,
     krw_to_usd,
     parse_excerpt_fields,
+    squarespace_category_labels,
     squarespace_price_usd,
 )
 
@@ -58,6 +60,81 @@ class CrestedFilters(unittest.TestCase):
     def test_exclude_combo(self) -> None:
         self.assertTrue(exclude_from_combo_arb("$79 Hand-Picked Hatchling"))
         self.assertTrue(exclude_from_combo_arb("Gift Cards"))
+
+
+class AltitudeFilters(unittest.TestCase):
+    def setUp(self) -> None:
+        self.categories = squarespace_category_labels(
+            {
+                "nestedCategories": {
+                    "all": {
+                        "id": "all",
+                        "displayName": "All Available Crested Geckos",
+                    },
+                    "categories": [
+                        {
+                            "id": "females",
+                            "displayName": "Females",
+                            "fullSlug": "/females",
+                        },
+                        {
+                            "id": "other",
+                            "displayName": "Other Geckos",
+                            "fullSlug": "/other-geckos",
+                        },
+                        {
+                            "id": "addons",
+                            "displayName": "Add On Item",
+                            "fullSlug": "/add-on-item",
+                        },
+                    ],
+                }
+            }
+        )
+
+    def test_keeps_coded_crested_gecko(self) -> None:
+        item = {
+            "title": "24-IM-XP-9-30",
+            "productType": 1,
+            "categoryIds": ["females"],
+            "excerpt": "<p>Morph: AXANTHIC LILLY WHITE</p><p>Weight: 35 GRAMS</p><p>Sex: Female</p>",
+        }
+        self.assertTrue(altitude_item_is_crested(item, self.categories))
+
+    def test_keeps_explicit_crested_hatchling(self) -> None:
+        item = {
+            "title": "$79 Hand-Picked Hatchling",
+            "productType": 1,
+            "categoryIds": ["all"],
+            "excerpt": "A hand-picked crested gecko",
+        }
+        self.assertTrue(altitude_item_is_crested(item, self.categories))
+
+    def test_drops_gift_card(self) -> None:
+        item = {
+            "title": "Gift Cards",
+            "productType": 4,
+            "categoryIds": ["all"],
+        }
+        self.assertFalse(altitude_item_is_crested(item, self.categories))
+
+    def test_drops_add_on_merchandise(self) -> None:
+        item = {
+            "title": "Complete Hatchling Setup",
+            "productType": 1,
+            "categoryIds": ["addons"],
+            "excerpt": "Includes a crested gecko voucher",
+        }
+        self.assertFalse(altitude_item_is_crested(item, self.categories))
+
+    def test_drops_other_gecko_category(self) -> None:
+        item = {
+            "title": "G-42",
+            "productType": 1,
+            "categoryIds": ["other"],
+            "excerpt": "<p>Morph: Red Stripe</p><p>Weight: 35 GRAMS</p><p>Sex: Female</p>",
+        }
+        self.assertFalse(altitude_item_is_crested(item, self.categories))
 
 
 class Prices(unittest.TestCase):
