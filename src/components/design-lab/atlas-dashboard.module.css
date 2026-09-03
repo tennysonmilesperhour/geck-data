@@ -211,6 +211,7 @@
   z-index: 1;
   left: 50%;
   top: 50%;
+  transform: translate(-50%, -50%);
   width: 108px;
   aspect-ratio: 1;
   display: grid;

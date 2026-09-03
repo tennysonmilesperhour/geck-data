@@ -280,7 +280,7 @@ function MorphOrbit({
   return (
     <div className={styles.orbitCanvas} aria-label={`Morph orbit showing ${modeLabel}`}>
       <div className={styles.orbitRings} aria-hidden="true"><span /><span /></div>
-      <svg className={styles.orbitEdges} viewBox="0 0 100 100" aria-hidden="true">
+      <svg className={styles.orbitEdges} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {edges.map((edge) => (
           <line
             key={edge.key}
