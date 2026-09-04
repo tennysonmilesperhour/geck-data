@@ -39,6 +39,8 @@ export function createClient() {
   const key =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const schema = (process.env.NEXT_PUBLIC_SUPABASE_DB_SCHEMA ??
+    "public") as "public";
 
   if (!url || !key) {
     throw new Error(
@@ -51,6 +53,7 @@ export function createClient() {
     key,
     sessionOnly
       ? {
+          db: { schema },
           // Route the auth session through sessionStorage so it dies with
           // the tab. Supabase-JS accepts any Storage-shaped object.
           auth: {
@@ -62,6 +65,6 @@ export function createClient() {
             autoRefreshToken: true,
           },
         }
-      : undefined,
+      : { db: { schema } },
   );
 }

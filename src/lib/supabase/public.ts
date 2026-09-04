@@ -23,6 +23,7 @@ export function createPublicClient() {
   }
 
   return createClient(config.url, config.key, {
+    db: { schema: config.schema },
     auth: {
       autoRefreshToken: false,
       detectSessionInUrl: false,

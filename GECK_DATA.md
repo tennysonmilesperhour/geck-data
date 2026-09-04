@@ -65,7 +65,8 @@ Required values, in addition to the existing Geck Inspect ones in
 
 | Var | Where to find it |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase dashboard > Project Settings > API > Project URL. Should be `https://dhotmtgryuovkmsncdby.supabase.co` for Geck Data. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase dashboard > Project Settings > API > Project URL. Geck Data is consolidated into `https://mmuglfphhwlaluyfyxsp.supabase.co`. |
+| `NEXT_PUBLIC_SUPABASE_DB_SCHEMA` | Use `geck_data` for the consolidated project. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same page, "anon public" key. |
 | `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SERVICE_KEY`) | Same page, "service_role" key. Never expose this. |
 | `DECODO_AUTH` | Decodo dashboard > API > the full "Basic ..." header value. |

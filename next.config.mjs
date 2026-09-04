@@ -27,6 +27,11 @@ const nextConfig = {
         hostname: "dhotmtgryuovkmsncdby.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
+      {
+        protocol: "https",
+        hostname: "mmuglfphhwlaluyfyxsp.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
   // sql.js ships a .wasm file; we load it from its CDN at runtime (see

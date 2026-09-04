@@ -27,6 +27,7 @@ export function createClient() {
 
   const cookieStore = cookies();
   return createServerClient(config.url, config.key, {
+    db: { schema: config.schema },
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -26,6 +26,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
           TRIGGERED_BY: github_action
         working-directory: scripts
         run: python download_images.py

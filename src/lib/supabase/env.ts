@@ -1,6 +1,7 @@
 type PublicSupabaseEnv = {
   url: string;
   key: string;
+  schema: "public";
 };
 
 // Keep public-key discovery consistent across the browser, Node, and Edge
@@ -15,6 +16,10 @@ export function getPublicSupabaseEnv(
     env.SUPABASE_PUBLISHABLE_KEY ??
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
     env.SUPABASE_ANON_KEY;
+  const schema =
+    (env.NEXT_PUBLIC_SUPABASE_DB_SCHEMA ??
+      env.SUPABASE_DB_SCHEMA ??
+      "public") as "public";
 
-  return url && key ? { url, key } : null;
+  return url && key ? { url, key, schema } : null;
 }

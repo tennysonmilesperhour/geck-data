@@ -44,6 +44,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
           MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
           TRIGGERED_BY: github_action_weekly_api
           WINDOW_HOURS: '168'
@@ -58,6 +59,7 @@ jobs:
         with:
           supabase-url: ${{ secrets.SUPABASE_URL }}
           supabase-service-key: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          supabase-db-schema: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
 
       - name: Notify Discord on failure
         if: ${{ failure() || cancelled() }}

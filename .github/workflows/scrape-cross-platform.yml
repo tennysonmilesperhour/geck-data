@@ -37,6 +37,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
           TRIGGERED_BY: github_action_cross_platform
         working-directory: scripts
         run: python scrape_cross_platform.py --source=all

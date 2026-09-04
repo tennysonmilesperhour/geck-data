@@ -18,6 +18,10 @@ inputs:
   supabase-service-key:
     description: Supabase service role key (pass secrets.SUPABASE_SERVICE_KEY)
     required: true
+  supabase-db-schema:
+    description: Exposed Postgres schema containing Geck Data
+    required: false
+    default: public
 
 runs:
   using: composite
@@ -27,6 +31,7 @@ runs:
       env:
         SUPABASE_URL: ${{ inputs.supabase-url }}
         SUPABASE_SERVICE_KEY: ${{ inputs.supabase-service-key }}
+        SUPABASE_DB_SCHEMA: ${{ inputs.supabase-db-schema }}
       run: |
         set -euo pipefail
 
@@ -40,8 +45,8 @@ runs:
           curl -sS -m 300 -o /tmp/rpc.json -w '%{http_code}' \
             -X POST \
             -H "apikey: $SUPABASE_SERVICE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
             -H "Content-Type: application/json" \
+            -H "Content-Profile: ${SUPABASE_DB_SCHEMA:-public}" \
             -d '{}' \
             "$SUPABASE_URL/rest/v1/rpc/$1"
         }

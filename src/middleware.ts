@@ -41,6 +41,7 @@ export async function middleware(request: NextRequest) {
   let user: { id: string } | null = null;
   try {
     const supabase = createServerClient(config.url, config.key, {
+      db: { schema: config.schema },
       cookies: {
         getAll() {
           return request.cookies.getAll();
