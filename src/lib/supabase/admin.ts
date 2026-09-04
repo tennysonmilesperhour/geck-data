@@ -8,6 +8,10 @@ export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  const schema =
+    process.env.SUPABASE_DB_SCHEMA ??
+    process.env.NEXT_PUBLIC_SUPABASE_DB_SCHEMA ??
+    "public";
   if (!url || !key) {
     throw new Error(
       "Supabase admin env vars not set. Expected SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY).",
@@ -26,5 +30,6 @@ export function createAdminClient() {
   }
   return createSupabaseClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: schema as "public" },
   });
 }

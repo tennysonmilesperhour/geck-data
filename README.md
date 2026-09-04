@@ -141,10 +141,12 @@ Open http://localhost:3000 in your browser.
 
 2. Go to https://vercel.com/new → import the repo.
 3. **Framework Preset:** Next.js (auto-detected).
-4. **Environment Variables:** add the same three keys from your `.env.local`:
+4. **Environment Variables:** add the Supabase values from your `.env.local`:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SUPABASE_DB_SCHEMA` (`geck_data` in the consolidated project)
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_DB_SCHEMA` (`geck_data` in the consolidated project)
 5. Click **Deploy**. ~2 minutes later you'll have a live URL like
    `https://geck-inspect.vercel.app`.
 

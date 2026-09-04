@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 from supabase import Client, create_client
+from supabase.lib.client_options import ClientOptions
 
 
 def _load_dotenv_if_present() -> None:
@@ -75,7 +76,8 @@ def get_supabase() -> Client:
             f"ERROR: SUPABASE_URL does not look like a Supabase URL: {url!r}"
         )
 
-    return create_client(url, key)
+    schema = os.environ.get("SUPABASE_DB_SCHEMA", "public")
+    return create_client(url, key, options=ClientOptions(schema=schema))
 
 
 def get_supabase_url() -> str:

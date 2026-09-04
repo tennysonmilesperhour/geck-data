@@ -20,6 +20,7 @@ python-dotenv). The required vars are:
 |---|---|
 | `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) | all |
 | `SUPABASE_SERVICE_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) | all |
+| `SUPABASE_DB_SCHEMA` | all (`geck_data` in the consolidated project; defaults to `public`) |
 | `DECODO_AUTH` | scrape_listings.py, scrape_details.py |
 | `TRIGGERED_BY` | optional label written to scrape_runs |
 

@@ -26,6 +26,7 @@ jobs:
         with:
           supabase-url: ${{ secrets.SUPABASE_URL }}
           supabase-service-key: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          supabase-db-schema: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
 
       - name: Notify Discord on failure
         if: ${{ failure() || cancelled() }}
