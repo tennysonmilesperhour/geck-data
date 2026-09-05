@@ -136,7 +136,7 @@ python scrape_cross_platform.py --source=feedle_air
 |---|---|
 | `feedle_air` / `feedle_kr` | air.feedle.me public `getPetList` server action (same catalog as the homepage infinite scroll). Air stores the displayed USD ask; KR stores native KRW plus a labeled FX conversion. |
 | `tikis` | tikisgeckos.com/products.json (Shopify, paginated) |
-| `altitude` | altitudeexotics.com/shop?format=json (Squarespace) |
+| `altitude` | altitudeexotics.com/shop HTML (Squarespace product context; respects the site's robots.txt block on `?format=json`) |
 | `all` | all of the above (default) |
 
 `--dry-run` prints per-platform counts and a few sample rows. GitHub Action

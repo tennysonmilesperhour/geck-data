@@ -118,7 +118,8 @@ def fetch_canonical_rows(
     while True:
         q = supabase.table("v_morph_training_canonical").select(
             "image_url,listing_id,primary_morph,genetic_traits,"
-            "secondary_traits,base_color,sex,maturity,price,currency,source,split,original_traits"
+            "secondary_traits,base_color,sex,maturity,price,currency,source,split,original_traits,"
+            "seller_name,seller_slug"
         ).order("listing_id").range(offset, offset + PAGE_SIZE - 1)
         if split:
             q = q.eq("split", split)
@@ -186,6 +187,8 @@ def build_gecko_image_row(src: dict[str, Any]) -> dict[str, Any]:
             "geck_data_listing_id": src.get("listing_id"),
             "geck_data_split": src.get("split"),
             "geck_data_source": src.get("source"),
+            "geck_data_seller_name": src.get("seller_name"),
+            "geck_data_seller_slug": src.get("seller_slug"),
             "scraper_traits": src.get("original_traits"),
             "genetic_traits": src.get("genetic_traits") or [],
             "ai_original": None,         # no AI prediction yet; eval can fill this

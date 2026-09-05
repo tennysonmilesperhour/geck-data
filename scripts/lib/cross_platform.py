@@ -7,7 +7,9 @@ module writes to MorphMarket tables.
 from __future__ import annotations
 
 import math
+import json
 import re
+from html.parser import HTMLParser
 from typing import Any, Optional
 
 # Mirror of scripts/lib/canonical.py looks_like_group_lot. Copied so this
@@ -204,6 +206,60 @@ def parse_excerpt_fields(excerpt_html: Optional[str]) -> dict[str, str]:
     return out
 
 
+class _SquarespaceProductContextParser(HTMLParser):
+    """Read Squarespace's public product-list payload from normal HTML."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.context: Optional[dict[str, Any]] = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        if tag != "div" or self.context is not None:
+            return
+        values = dict(attrs)
+        classes = (values.get("class") or "").split()
+        raw = values.get("data-context")
+        if "product-list" not in classes or not raw:
+            return
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
+            self.context = parsed
+
+
+def squarespace_product_payload(html_text: str) -> dict[str, Any]:
+    """Convert a normal Squarespace shop page into the legacy payload shape.
+
+    Altitude's robots.txt blocks ``?format=json``. The same public product
+    records are embedded in the crawlable ``/shop`` HTML for the storefront,
+    so the collector reads that instead.
+    """
+    parser = _SquarespaceProductContextParser()
+    parser.feed(html_text)
+    if parser.context is None:
+        raise ValueError("Squarespace product-list data-context was not found")
+
+    context = parser.context
+    normalized: list[dict[str, Any]] = []
+    for raw in context.get("items") or []:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        item["excerpt"] = item.get("excerpt") or item.get("description") or ""
+        main_image = item.get("mainImage")
+        if isinstance(main_image, dict) and main_image.get("assetUrl"):
+            item["assetUrl"] = main_image["assetUrl"]
+        elif isinstance(item.get("images"), list) and item["images"]:
+            first = item["images"][0]
+            if isinstance(first, dict):
+                item["assetUrl"] = first.get("assetUrl")
+        normalized.append(item)
+
+    return {
+        "items": normalized,
+        "nestedCategories": context.get("nestedCategoryContext") or {},
+    }
+
+
 def squarespace_category_labels(payload: dict[str, Any]) -> dict[str, str]:
     """Map Squarespace category IDs to searchable labels and paths."""
     labels: dict[str, str] = {}
@@ -276,6 +332,10 @@ def squarespace_price_usd(item: dict[str, Any]) -> Optional[float]:
     variants = item.get("variants") or []
     variant = variants[0] if variants and isinstance(variants[0], dict) else {}
     money = variant.get("priceMoney") if isinstance(variant, dict) else None
+    if not isinstance(money, dict) and isinstance(variant.get("price"), dict):
+        money = variant.get("price")
+    if not isinstance(money, dict) and isinstance(item.get("price"), dict):
+        money = item.get("price")
     if isinstance(money, dict) and money.get("value") not in (None, ""):
         try:
             value = float(money["value"])

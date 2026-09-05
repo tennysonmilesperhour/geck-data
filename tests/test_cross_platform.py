@@ -22,6 +22,7 @@ from lib.cross_platform import (  # noqa: E402
     krw_to_usd,
     parse_excerpt_fields,
     squarespace_category_labels,
+    squarespace_product_payload,
     squarespace_price_usd,
 )
 
@@ -135,6 +136,34 @@ class AltitudeFilters(unittest.TestCase):
             "excerpt": "<p>Morph: Red Stripe</p><p>Weight: 35 GRAMS</p><p>Sex: Female</p>",
         }
         self.assertFalse(altitude_item_is_crested(item, self.categories))
+
+    def test_parses_products_from_allowed_shop_html(self) -> None:
+        context = {
+            "items": [{
+                "id": "animal-1",
+                "title": "24-IM-XP-9-30",
+                "description": "<p>Morph: AXANTHIC LILLY WHITE</p>",
+                "productType": 1,
+                "price": {"currency": "USD", "value": "3299.00"},
+                "variants": [{"price": {"currency": "USD", "value": "3299.00"}}],
+                "mainImage": {"assetUrl": "https://images.example/gecko.jpg"},
+            }],
+            "nestedCategoryContext": {
+                "all": {"id": "all", "displayName": "All Available Crested Geckos"},
+                "categories": [],
+            },
+        }
+        import html as html_lib
+        import json
+        markup = (
+            '<div class="product-list" data-context="'
+            + html_lib.escape(json.dumps(context), quote=True)
+            + '"></div>'
+        )
+        payload = squarespace_product_payload(markup)
+        self.assertEqual(payload["items"][0]["excerpt"], "<p>Morph: AXANTHIC LILLY WHITE</p>")
+        self.assertEqual(payload["items"][0]["assetUrl"], "https://images.example/gecko.jpg")
+        self.assertEqual(squarespace_price_usd(payload["items"][0]), 3299.0)
 
 
 class Prices(unittest.TestCase):

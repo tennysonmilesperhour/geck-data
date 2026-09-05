@@ -14,7 +14,7 @@ Sources (public storefront HTML/JSON only):
               air.feedle.me, so there is no separate domestic HTML feed.
               KRW is never written into a USD column.
   tikis       https://tikisgeckos.com/products.json (Shopify, paginated)
-  altitude    https://www.altitudeexotics.com/shop?format=json (Squarespace)
+  altitude    https://www.altitudeexotics.com/shop (Squarespace HTML)
 
 Usage:
   python scrape_cross_platform.py --source=all --dry-run
@@ -59,6 +59,7 @@ from lib.cross_platform import (
     shopify_available,
     shopify_price_usd,
     squarespace_category_labels,
+    squarespace_product_payload,
     squarespace_price_usd,
     squarespace_qty,
     traits_csv,
@@ -74,7 +75,7 @@ IMAGE_BATCH = 50
 FEEDLE_ORIGIN = "https://air.feedle.me"
 FEEDLE_ACTION_FALLBACK = "4040e5c610e74ef64f03558baad393e91853278b2c"
 TIKIS_PRODUCTS = "https://tikisgeckos.com/products.json"
-ALTITUDE_SHOP = "https://www.altitudeexotics.com/shop?format=json"
+ALTITUDE_SHOP = "https://www.altitudeexotics.com/shop"
 FRANKFURTER = "https://api.frankfurter.app/latest"
 
 GETPETLIST_HASH_RE = re.compile(
@@ -557,6 +558,11 @@ def scrape_tikis(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]
                 "tags": tags,
                 "vendor": product.get("vendor"),
                 "handle": handle,
+                # Catalog browsing is documented for agents, but this is not
+                # a license to reuse product photography as ML ground truth.
+                "catalog_access": "agent_read_only",
+                "training_rights": "permission_required",
+                "training_eligible": False,
             }
             collected.append(
                 (
@@ -592,9 +598,9 @@ def scrape_tikis(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]
 
 
 def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
-    del limit_pages  # Squarespace shop?format=json is a single payload.
+    del limit_pages  # Squarespace embeds the full product list in one shop page.
     log(f"GET {ALTITUDE_SHOP}")
-    data = polite_get(ALTITUDE_SHOP).json()
+    data = squarespace_product_payload(polite_get(ALTITUDE_SHOP).text)
     items = data.get("items") or []
     log(f"  n={len(items)}")
     category_labels = squarespace_category_labels(data)
@@ -656,6 +662,9 @@ def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
                 for category_id in category_ids
                 if category_labels.get(str(category_id))
             ],
+            "catalog_access": "robots_allowed_html",
+            "training_rights": "permission_required",
+            "training_eligible": False,
         }
         collected.append(
             (
