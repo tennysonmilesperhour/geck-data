@@ -521,8 +521,9 @@ supports:
 ## Part 4: Handoff prompts
 
 These are written to be pasted into a fresh session of any capable coding
-model with access to this repo, the Supabase MCP (project
-`dhotmtgryuovkmsncdby`), the Vercel deployment, and the GitHub repo.
+model with access to this repo, the Supabase MCP (Geck Inspect project
+`mmuglfphhwlaluyfyxsp`, schema `geck_data`), the Vercel deployment, and the
+GitHub repo.
 Run them in order; each assumes the previous phase landed.
 
 ### Standing preamble (prepend to every prompt)

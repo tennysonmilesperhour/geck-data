@@ -1,118 +1,25 @@
-name: apply-migrations
+name: legacy-migrations-read-only
 
-# Applies new files under supabase/migrations/ to the production Supabase
-# project when they land on main.
-#
-# This repo predates the Supabase CLI's timestamped migration convention and
-# contains duplicate legacy versions, so `supabase db push` cannot safely own
-# its history without a separate reconciliation project. Until that work is
-# done, changed files are applied in filename order through psql. Each file is
-# wrapped in its own transaction so a failure cannot leave that file half
-# applied. Do not manually re-apply a file unless its SQL is known to be safe.
-#
-# Required secrets:
-#   SUPABASE_DB_URL   — postgres:// connection string with DDL permissions.
-#
-# We DO NOT run on PRs / preview branches — DDL only ever lands on main.
+# Geck Data now lives in the `geck_data` schema of the Geck Inspect Supabase
+# project. These files describe the retired standalone database and must not be
+# replayed against the consolidated project: many predate schema qualification
+# and would target `public`. Add future database migrations to the Geck Inspect
+# repository instead.
 
 on:
   push:
     branches: [main]
     paths:
       - "supabase/migrations/**.sql"
-  workflow_dispatch:
-    inputs:
-      file:
-        description: "Single migration file to apply (supabase/migrations/*.sql)"
-        required: false
+  pull_request:
+    paths:
+      - "supabase/migrations/**.sql"
 
 jobs:
-  apply:
+  protect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v7
-        with:
-          # Pushes can contain more than one commit. Full history guarantees
-          # github.event.before is available for the migration diff.
-          fetch-depth: 0
-
-      - name: Install psql
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client
-
-      - name: Determine migrations to apply
-        id: pick
-        env:
-          REQUESTED_FILE: ${{ inputs.file }}
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.event.after }}
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${REQUESTED_FILE:-}" ]; then
-            case "$REQUESTED_FILE" in
-              supabase/migrations/*.sql) ;;
-              *) echo "::error::file must match supabase/migrations/*.sql"; exit 1 ;;
-            esac
-            if [ ! -f "$REQUESTED_FILE" ]; then
-              echo "::error::migration file does not exist: $REQUESTED_FILE"
-              exit 1
-            fi
-            files="$REQUESTED_FILE"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "::error::manual runs require a migration file"
-            exit 1
-          elif [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            echo "::error::cannot determine the previous revision safely"
-            exit 1
-          else
-            changed_existing=$(git diff --name-only --diff-filter=MD "$BEFORE_SHA" "$AFTER_SHA" -- 'supabase/migrations/*.sql' | sort)
-            if [ -n "$changed_existing" ]; then
-              echo "::error::existing migrations are immutable; add a corrective migration instead"
-              echo "$changed_existing"
-              exit 1
-            fi
-            files=$(git diff --name-only --diff-filter=A "$BEFORE_SHA" "$AFTER_SHA" -- 'supabase/migrations/*.sql' | sort)
-          fi
-          echo "Files to apply:"
-          echo "$files"
-          {
-            echo "files<<EOF"
-            echo "$files"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Apply migrations
-        if: steps.pick.outputs.files != ''
-        env:
-          FILES: ${{ steps.pick.outputs.files }}
-          PGURL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set -euo pipefail
-          if [ -z "${PGURL:-}" ]; then
-            echo "::error::SUPABASE_DB_URL secret is not set; cannot apply migrations."
-            exit 1
-          fi
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            case "$f" in
-              supabase/migrations/*.sql) ;;
-              *) echo "::error::refusing unexpected path: $f"; exit 1 ;;
-            esac
-            if [ ! -f "$f" ]; then
-              echo "::error::migration file does not exist: $f"
-              exit 1
-            fi
-            echo "------ applying $f ------"
-            psql "$PGURL" -X -v ON_ERROR_STOP=1 --single-transaction --file "$f"
-          done <<< "$FILES"
-          echo "------ done ------"
-
-      - name: Notify Discord on failure
-        if: ${{ failure() || cancelled() }}
-        uses: ./.github/actions/notify-failure
-        with:
-          webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
-          context: "Migration apply failed. The current file was rolled back; check whether earlier files in this run completed before retrying."
+      - run: |
+          echo "::error::Geck Data migrations are archived. Add the migration to the Geck Inspect repository."
+          exit 1

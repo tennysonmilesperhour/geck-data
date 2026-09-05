@@ -7,8 +7,8 @@ Usage:
   python check_env.py
 
 Exits 0 if everything looks healthy. Non-zero if any critical check
-fails. The output is the source of truth: if it says you are connected
-to "Geck Inspect" instead of "Geck Data", STOP.
+fails. Geck Data now runs from the `geck_data` schema in the Geck Inspect
+project; connecting to the retired standalone Geck Data project is an error.
 """
 from __future__ import annotations
 
@@ -29,8 +29,8 @@ YELLOW = "\033[33m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-GECK_DATA_HOST = "dhotmtgryuovkmsncdby.supabase.co"
-GECK_INSPECT_HOST = "mmuglfphhwlaluyfyxsp.supabase.co"
+RETIRED_GECK_DATA_HOST = "dhotmtgryuovkmsncdby.supabase.co"
+CONSOLIDATED_GECK_INSPECT_HOST = "mmuglfphhwlaluyfyxsp.supabase.co"
 
 
 def ok(msg: str) -> None:
@@ -80,19 +80,20 @@ def check_supabase() -> int:
     print(f"  URL:           {url}")
     print(f"  project_ref:   {project_ref}")
 
-    if host == GECK_DATA_HOST:
-        ok(f'connected to "Geck Data" ({project_ref})')
-    elif host == GECK_INSPECT_HOST:
+    if host == CONSOLIDATED_GECK_INSPECT_HOST:
+        ok(f'connected to consolidated "Geck Inspect" ({project_ref})')
+    elif host == RETIRED_GECK_DATA_HOST:
         fail(
-            'connected to "Geck Inspect", NOT "Geck Data". '
-            "Update SUPABASE_URL in .env.local."
+            'connected to the retired standalone "Geck Data" project. '
+            "Use the Geck Inspect project with SUPABASE_DB_SCHEMA=geck_data."
         )
         failures += 1
     else:
-        warn(
-            f'host {host!r} is not the known Geck Data project. '
-            f"Expected {GECK_DATA_HOST}."
+        fail(
+            f'host {host!r} is not the consolidated Geck Inspect project. '
+            f"Expected {CONSOLIDATED_GECK_INSPECT_HOST}."
         )
+        failures += 1
 
     # Inspect the service role key without printing it.
     key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get(
