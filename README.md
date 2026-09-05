@@ -46,15 +46,12 @@ geck-inspect/
 
 You'll do these once, in order.
 
-### 1. Run the SQL migration in Supabase
+### 1. Use the consolidated Supabase project
 
-1. Open https://supabase.com/dashboard → your project → **SQL Editor**.
-2. Click **New query**.
-3. Paste the contents of `supabase/migrations/0001_init_geck_inspect.sql`.
-4. Click **Run**. You should see "Success. No rows returned."
-
-What this does: creates the `listing_images` table, the two storage buckets,
-and the row-level-security policies so the dashboard can read your data.
+Geck Data runs from the `geck_data` schema in the Geck Inspect project. Do not
+replay this repository's legacy migrations: they describe the retired
+standalone database and many target `public`. Future migrations belong in the
+Geck Inspect repository.
 
 ### 2. Get your Supabase keys
 
@@ -62,9 +59,11 @@ In the same dashboard:
 
 1. Click the **gear icon** (Project Settings) → **API**.
 2. Copy two values:
-   - **Project URL** (looks like `https://dhotmtgryuovkmsncdby.supabase.co`)
+   - **Project URL** (`https://mmuglfphhwlaluyfyxsp.supabase.co`)
    - **anon / public** key (the long `eyJ…` one labeled "anon public")
    - **service_role** key (the second `eyJ…`, labeled "service_role" — **secret**)
+
+Set `NEXT_PUBLIC_SUPABASE_DB_SCHEMA` and `SUPABASE_DB_SCHEMA` to `geck_data`.
 
 ### 3. Install Node.js (if you don't already have it)
 
@@ -154,11 +153,16 @@ Open http://localhost:3000 in your browser.
 
 `git push` to `main` → Vercel auto-deploys. That's it.
 
-Database migrations under `supabase/migrations/` are applied separately from
-the Vercel build. The GitHub `apply-migrations` workflow requires the
-`SUPABASE_DB_URL` repository secret. Until that secret is configured, apply a
-new migration through the connected Supabase tooling in the same session that
-pushes it, then verify the affected function, view, or table in production.
+Database migrations under `supabase/migrations/` are retained as a read-only
+record of the retired standalone Geck Data database. Geck Data now runs from the
+`geck_data` schema in the Geck Inspect Supabase project. Add and apply future
+database migrations from the Geck Inspect repository so schema ownership stays
+in one place. The `legacy-migrations-read-only` workflow blocks accidental SQL
+changes here.
+
+Apply a new Geck Inspect migration through the connected Supabase tooling, push
+it in the same session, then verify the affected function, view, or table in
+production.
 
 ---
 

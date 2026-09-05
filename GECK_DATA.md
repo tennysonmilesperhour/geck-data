@@ -155,7 +155,8 @@ unexpired, and that `GITHUB_REPO` matches exactly. The token needs
 **A scrape ran but the listings table is still empty**
 Look at the `runs` table for the failed row's `error_message`. Most
 common: the GH Actions secret `SUPABASE_URL` points at the wrong
-project. It should be `https://dhotmtgryuovkmsncdby.supabase.co`.
+project. It should be `https://mmuglfphhwlaluyfyxsp.supabase.co`, with
+`SUPABASE_DB_SCHEMA=geck_data`.
 
 **Decodo says rate limited (429)**
 The script retries up to 5 times with exponential backoff. If a whole
