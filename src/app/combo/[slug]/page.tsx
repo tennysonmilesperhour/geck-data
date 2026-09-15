@@ -16,7 +16,7 @@ import { HIGH_VALUE_COMBOS, type CanonicalCombo } from "@/lib/market/combos";
 import { parseFilters, serverHref } from "@/lib/filters/link";
 import { slugifyTrait } from "@/lib/filters/schema";
 import { resolveComboFromSlug } from "@/lib/market/combo-slug";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
@@ -33,7 +33,13 @@ import {
   getSellerVisualMap,
 } from "@/lib/media/market-images";
 
-export const dynamic = "force-dynamic";
+// This page reads searchParams, so it still renders per request. What the
+// segment revalidate does is put every PostgREST GET issued below into
+// Next's Data Cache for 300s, so repeat hits on the same URL stop
+// reaching Postgres. It was "force-dynamic", which pins fetchCache to
+// no-store and made every crawl of this combinatorial page space a full
+// set of uncached market queries.
+export const revalidate = 300;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -142,7 +148,7 @@ export default async function ComboPage({
   // ("lilly-white__axanthic"). For the latter, each half is looked up
   // in v_observed_traits so canonical hyphenation ("Tri-color") is
   // preserved end-to-end.
-  const supabase = createClient();
+  const supabase = createPublicClient();
   const combo = await resolveComboFromSlug(supabase, params.slug);
   if (!combo) notFound();
 

@@ -18,7 +18,7 @@ import {
   resolveTraitName,
   comboSlugFromId,
 } from "@/lib/market/combo-slug";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import { fmtInt, fmtUsd } from "@/lib/format";
 import { Panel, SectionHeader, StatusPill } from "@/components/ui/Panel";
 import KpiCard from "@/components/ui/KpiCard";
@@ -37,7 +37,13 @@ import {
   getSellerVisualMap,
 } from "@/lib/media/market-images";
 
-export const dynamic = "force-dynamic";
+// This page reads searchParams, so it still renders per request. What the
+// segment revalidate does is put every PostgREST GET issued below into
+// Next's Data Cache for 300s, so repeat hits on the same URL stop
+// reaching Postgres. It was "force-dynamic", which pins fetchCache to
+// no-store and made every crawl of this combinatorial page space a full
+// set of uncached market queries.
+export const revalidate = 300;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -99,7 +105,7 @@ export default async function TraitPage({
   if (!/^[a-z0-9-]+$/.test(slug)) notFound();
 
   const filters = parseFilters(searchParams);
-  const supabase = createClient();
+  const supabase = createPublicClient();
 
   // Resolve slug to the trait name as it actually appears in
   // cached_traits. The naive unslug returns "Tri Color" for the slug
