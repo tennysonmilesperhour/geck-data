@@ -41,7 +41,7 @@ export default function ListingImage({
           onError={() => setFailed(true)}
         />
       ) : (
-        <span className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(135deg,rgba(16,185,129,0.08),rgba(15,23,42,0.65))] px-2 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-ink-500">
+        <span className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(135deg,rgba(169,199,155,0.08),rgba(21,18,15,0.65))] px-2 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-ink-500">
           No catalog image
         </span>
       )}

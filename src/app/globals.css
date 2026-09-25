@@ -5,23 +5,22 @@
 :root {
   color-scheme: dark;
   --font-display: var(--font-sans);
-  /* Slate + emerald tokens, matched to the Geck Inspect "Market Analytics"
-     preview so GeckIntellect reads as the same product. Values mirror
-     tailwind.config.ts: ink.* for surfaces and text, claude/clay for
-     accents. Names are unchanged from the old field-guide theme; only the
-     values moved from forest green to slate. */
-  --bg: 2 6 23;              /* ink-950 #020617 — slate-950 */
-  --panel: 15 23 42;         /* ink-850 #0f172a — slate-900 */
-  --card: 19 29 49;          /* ink-800 */
-  --border: 30 41 59;        /* ink-700 #1e293b — slate-800 */
-  --fg: 241 245 249;         /* ink-100 — slate-100 */
-  --muted: 148 163 184;      /* ink-400 — slate-400 */
-  --accent: 16 185 129;      /* claude.DEFAULT — emerald-500 */
-  --accent-glow: 52 211 153; /* claude.glow — emerald-400 */
-  --clay: 245 158 11;        /* clay-500 — amber-500 */
-  --clay-glow: 251 191 36;   /* clay-400 — amber-400 */
-  --parchment: 253 230 138;  /* parchment-200 — soft amber highlight */
-  --ready: 52 211 153;       /* emerald-400 */
+  /* Bark, charcoal and warm ivory, matched to the World Mushroom Foraging
+     "mycelial" theme. Values mirror tailwind.config.ts. */
+  --bg: 5 4 4;               /* ink-950 */
+  --panel: 21 18 15;         /* ink-850 */
+  --card: 28 24 20;          /* ink-800 */
+  --border: 52 44 36;        /* ink-700 */
+  --fg: 239 232 220;         /* ink-100 */
+  --muted: 176 166 151;      /* ink-400 */
+  --accent: 219 200 166;     /* claude.DEFAULT, pale tan */
+  --accent-glow: 239 223 191;/* claude.glow, ivory */
+  --clay: 201 147 90;        /* clay-500 */
+  --clay-glow: 228 199 156;  /* clay-300, spore */
+  --parchment: 239 223 191;  /* parchment-200 */
+  --ready: 169 199 155;      /* sage olive */
+  --edge: 215 193 161;       /* fine glass edge, used at 18 to 30% */
+  --glass: linear-gradient(135deg, rgba(42,35,27,0.86), rgba(21,18,14,0.92) 52%, rgba(5,5,4,0.96));
 }
 
 html, body {
@@ -37,13 +36,20 @@ body {
 }
 
 h1, h2, h3, h4 {
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: "Avenir Next", Avenir, var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.025em;
 }
 
+/* Thin display type, as on the forage map: large headings sit at 300
+   weight. Form labels and small headings keep their stronger weights. */
+:is(h1, h2).font-display {
+  font-weight: 300;
+  letter-spacing: -0.035em;
+}
+
 ::selection {
-  background: rgba(16, 185, 129, 0.28);
-  color: rgb(var(--fg));
+  background: #fbf0dd;
+  color: #14110e;
 }
 
 :focus-visible {
@@ -51,40 +57,39 @@ h1, h2, h3, h4 {
   outline-offset: 3px;
 }
 
-/* Atmospheric wash. The preview is a near-flat slate ground with a single
-   faint emerald bloom at the top; the paper grain and warm clay corner of
-   the old theme are gone. */
+/* Atmospheric wash. A near-black bark ground with a faint warm light
+   falling from the upper left, like the forage map's photographic fades. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: -1;
-  background-image:
-    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px),
-    radial-gradient(circle at 50% -10%, rgba(16,185,129,0.07), transparent 55%);
-  background-size: 56px 56px, 56px 56px, auto;
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(214,191,169,0.08), transparent 55%),
+    radial-gradient(ellipse at 100% 110%, rgba(196,181,206,0.05), transparent 50%),
+    linear-gradient(180deg, #0b0a08, #050404 60%);
 }
 
-/* D3 axis text — slate. */
+/* D3 axis text, warm taupe. */
 .tick text {
   font-size: 11px;
-  fill: rgb(100 116 139);   /* slate-500 */
+  fill: rgb(138 127 112);   /* ink-500 */
 }
 .domain, .tick line {
-  stroke: rgb(51 65 85);    /* slate-700 */
+  stroke: rgb(64 55 45);    /* ink-650 */
 }
 .grid line {
-  stroke: rgb(30 41 59);    /* slate-800 */
+  stroke: rgb(52 44 36);    /* ink-700 */
   stroke-dasharray: 3 3;
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgb(30 41 59); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgb(51 65 85); }
+::-webkit-scrollbar-track { background: #0d0c09; }
+::-webkit-scrollbar-thumb { background: #3a332b; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #655c51; }
+html { scrollbar-color: #655c51 #0d0c09; }
 
 /* Status dot */
 .status-dot {
@@ -93,37 +98,37 @@ body::before {
   height: 7px;
   border-radius: 999px;
   background: rgb(var(--ready));
-  box-shadow: 0 0 0 3px rgba(52,211,153,0.14);
+  box-shadow: 0 0 0 3px rgba(169,199,155,0.16);
 }
-.status-dot.busy { background: rgb(var(--clay-glow)); box-shadow: 0 0 0 3px rgba(251,191,36,0.16); }
-.status-dot.idle { background: #64748b; box-shadow: 0 0 0 3px rgba(100,116,139,0.15); }
-.status-dot.info { background: #38bdf8; box-shadow: 0 0 0 3px rgba(56,189,248,0.16); }
+.status-dot.busy { background: #e0b765; box-shadow: 0 0 0 3px rgba(224,183,101,0.16); }
+.status-dot.idle { background: #8a7f70; box-shadow: 0 0 0 3px rgba(138,127,112,0.15); }
+.status-dot.info { background: #c4b5ce; box-shadow: 0 0 0 3px rgba(196,181,206,0.16); }
 
-/* Card surface — the preview card: a flat slate panel with a hairline ring.
-   No inset paper highlight, no warm bottom glow. */
+/* Card surfaces: dark tinted glass with a fine warm edge and a lightly
+   lit upper edge. Enough tint to read text on; no frosted white. */
 .surface {
-  background: rgb(var(--card));
-  border: 1px solid rgb(var(--border));
-  border-radius: 2px;
+  background: var(--glass);
+  border: 1px solid rgba(var(--edge) / 0.2);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,245,229,0.06), 0 10px 35px rgba(0,0,0,0.19);
 }
 .surface-soft {
-  background: rgba(15,23,42,0.6);   /* slate-900/60 */
-  border: 1px solid rgb(var(--border));
-  border-radius: 2px;
+  background: rgba(21,18,15,0.6);
+  border: 1px solid rgba(var(--edge) / 0.16);
+  border-radius: 8px;
 }
 
-/* Elevated card — the "this matters" tier. A clean emerald edge and a faint
-   emerald top wash, no clay. */
+/* Elevated card, the "this matters" tier. A brighter ivory edge. */
 .surface-elevated {
-  background: rgb(var(--card));
-  border: 1px solid rgba(16,185,129,0.25);
-  border-radius: 2px;
+  background: var(--glass);
+  border: 1px solid rgba(var(--edge) / 0.34);
+  border-radius: 10px;
   box-shadow:
-    inset 0 2px 0 rgba(16,185,129,0.22),
-    0 18px 46px -40px rgba(2,6,23,0.9);
+    inset 0 1px 0 rgba(255,245,229,0.12),
+    0 18px 46px -30px rgba(0,0,0,0.9);
 }
 
-/* Motion primitives. Same shapes; slate/emerald colouring. */
+/* Motion primitives. */
 .hover-lift {
   transition:
     transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -134,8 +139,8 @@ body::before {
 .hover-lift:hover {
   transform: translateY(-1px);
   box-shadow:
-    0 0 0 1px rgba(16,185,129,0.28),
-    0 24px 60px -36px rgba(2,6,23,0.9);
+    0 0 0 1px rgba(239,225,203,0.3),
+    0 24px 60px -36px rgba(0,0,0,0.9);
 }
 
 .row-hover {
@@ -143,7 +148,7 @@ body::before {
   transition: background 150ms ease, color 150ms ease;
 }
 .row-hover:hover {
-  background: rgba(16,185,129,0.06);
+  background: rgba(255,244,226,0.05);
 }
 .row-hover::before {
   content: "";
@@ -166,15 +171,26 @@ body::before {
   animation: pageRise 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Atlas geometry across the product. Preserve fully rounded chips and status
-   dots, but flatten page panels, controls, and cards into a consistent
-   evidence-grid system. */
-.rounded-2xl,
-.rounded-xl,
-.rounded-lg,
+/* Forage-map geometry: buttons, controls and repeated cards use 8px
+   corners; larger glass panels use 10px. Fully rounded chips and status
+   dots keep their shape. */
+.rounded,
 .rounded-md,
-.rounded {
-  border-radius: 2px;
+.rounded-lg {
+  border-radius: 8px;
+}
+.rounded-xl,
+.rounded-2xl {
+  border-radius: 10px;
+}
+
+/* Form controls: faint warm glass fill with a taupe edge. */
+.geck-app :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  border-radius: 7px;
+}
+.geck-app select option {
+  background: #1e1b16;
+  color: rgb(var(--fg));
 }
 
 .geck-app > main {
@@ -186,15 +202,15 @@ body::before {
 }
 
 .geck-app thead {
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(27, 23, 18, 0.9);
 }
 
 .geck-app th {
   color: rgb(var(--muted));
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -210,15 +226,13 @@ body::before {
   }
 }
 
-/* Section break — a plain slate hairline. The old field-guide leaf/diamond
-   ornament and its clay stroke are gone; the divider now matches the quiet
-   rules between sections in the preview. */
+/* Section break, a fine warm hairline. */
 .ornament-rule {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  color: rgb(100 116 139);   /* slate-500 */
+  color: rgb(138 127 112);
   opacity: 0.7;
 }
 .ornament-rule::before,
@@ -229,7 +243,7 @@ body::before {
   background: linear-gradient(
     to var(--ornament-dir, right),
     transparent 0%,
-    rgba(51,65,85,0.9) 100%
+    rgba(215,193,161,0.3) 100%
   );
   max-width: 220px;
 }
@@ -245,9 +259,7 @@ body::before {
 .claude-star { animation: claudePulse 4s ease-in-out infinite; color: rgb(var(--accent)); }
 
 /* =============================================================
-   /market — dashboard scope. In the preview the analytics panels sit on
-   a marginally darker ground than the rest of the app; the surface classes
-   are the flat slate card from the shared primitives.
+   /market dashboard scope. Panels sit on a marginally darker ground.
    ============================================================= */
 .market-theme {
   position: relative;
@@ -259,24 +271,42 @@ body::before {
   inset: -24px -24px 0 -24px;
   pointer-events: none;
   z-index: -1;
-  border-radius: 2px;
+  border-radius: 10px;
   background:
-    radial-gradient(circle at 50% 0%, rgba(16,185,129,0.06), transparent 55%),
-    #020617;
+    radial-gradient(ellipse at 20% 0%, rgba(214,191,169,0.06), transparent 55%),
+    #030303;
 }
 
 .market-theme .forest-surface {
-  background: rgba(15,23,42,0.6);   /* slate-900/60 */
-  border: 1px solid rgb(30,41,59);  /* slate-800 */
-  border-radius: 2px;
+  background: var(--glass);
+  border: 1px solid rgba(var(--edge) / 0.2);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,245,229,0.06);
 }
 .market-theme .forest-surface-soft {
-  background: rgba(15,23,42,0.5);
-  border: 1px solid rgb(30,41,59);
-  border-radius: 2px;
+  background: rgba(21,18,15,0.55);
+  border: 1px solid rgba(var(--edge) / 0.16);
+  border-radius: 8px;
 }
 
-.market-theme .tick text { fill: #94a3b8; }
+.market-theme .tick text { fill: #b0a697; }
 .market-theme .domain,
-.market-theme .tick line { stroke: #334155; }
-.market-theme .grid line { stroke: #1e293b; }
+.market-theme .tick line { stroke: #5a4d3d; }
+.market-theme .grid line { stroke: #342c24; }
+
+/* Glass needs an opaque fallback when the viewer asks for less
+   transparency. */
+@media (prefers-reduced-transparency: reduce) {
+  .surface,
+  .surface-elevated,
+  .market-theme .forest-surface {
+    background: #1c1814;
+  }
+  .backdrop-blur,
+  .backdrop-blur-xl,
+  .backdrop-blur-md,
+  .backdrop-blur-sm {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

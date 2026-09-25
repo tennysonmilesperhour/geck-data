@@ -120,9 +120,9 @@ export default function DropAnalytics({ rows }: { rows: ReadonlyArray<DropPoint>
             const isMild = i < 3;
             const isAggressive = i >= 6;
             const bg = isAggressive
-              ? "linear-gradient(180deg, #f87171, #8e3a32)"
+              ? "linear-gradient(180deg, #ed907e, #8e3a32)"
               : isMild
-                ? "linear-gradient(180deg, #f59e0b, #92400e)"
+                ? "linear-gradient(180deg, #e0b765, #92400e)"
                 : "linear-gradient(180deg, #bda255, #5e5025)";
             const low = i === 0 ? "0" : `${HIST_BIN_EDGES[i]}%`;
             const high =
@@ -209,7 +209,7 @@ export default function DropAnalytics({ rows }: { rows: ReadonlyArray<DropPoint>
           <path
             d={rollingPath}
             fill="none"
-            stroke="#34d399"
+            stroke="#a9c79b"
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"

@@ -6,14 +6,14 @@
 import type { DayPoint } from "./aggregations";
 
 export const PALETTE = {
-  emerald: "#10b981",
+  emerald: "#a9c79b",
   blue: "#3b82f6",
-  amber: "#f59e0b",
+  amber: "#e0b765",
   purple: "#a855f7",
   rose: "#f43f5e",
-  slate: "#64748b",
+  slate: "#8a7f70",
   gridLine: "#1f2937", // matches ink-800-ish for subtle grid
-  axisLabel: "#94a3b8",
+  axisLabel: "#b0a697",
 };
 
 const W = 640;
@@ -281,7 +281,7 @@ export function HBarChart({
               x={labelW + w + 6}
               y={y + rowH / 2 + 4}
               fontSize={11}
-              fill="#e2e8f0"
+              fill="#ddd4c5"
             >
               {r.value.toLocaleString()}
             </text>

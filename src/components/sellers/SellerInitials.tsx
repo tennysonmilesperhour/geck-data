@@ -4,16 +4,16 @@
 // this remains the deterministic, identity-safe fallback.
 
 const PALETTES: ReadonlyArray<readonly [string, string]> = [
-  ["#10b981", "#0ea5e9"], // emerald → sky
-  ["#34d399", "#6366f1"], // mint → indigo
-  ["#22d3ee", "#10b981"], // cyan → emerald
-  ["#84cc16", "#10b981"], // lime → emerald
+  ["#a9c79b", "#0ea5e9"], // emerald → sky
+  ["#a9c79b", "#6366f1"], // mint → indigo
+  ["#22d3ee", "#a9c79b"], // cyan → emerald
+  ["#84cc16", "#a9c79b"], // lime → emerald
   ["#a3e635", "#3b82f6"], // limey → blue
-  ["#f59e0b", "#10b981"], // amber → emerald
+  ["#e0b765", "#a9c79b"], // amber → emerald
   ["#f97316", "#84cc16"], // orange → lime
-  ["#ec4899", "#10b981"], // pink → emerald
+  ["#ec4899", "#a9c79b"], // pink → emerald
   ["#a78bfa", "#22d3ee"], // violet → cyan
-  ["#fbbf24", "#34d399"], // amber → mint
+  ["#e4c79c", "#a9c79b"], // amber → mint
 ];
 
 function djb2(str: string): number {

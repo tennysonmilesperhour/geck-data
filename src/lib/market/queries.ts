@@ -652,7 +652,7 @@ export async function fetchComboDetail(
       .map((d) => ({ t: shortDay(d.day), v: Math.round(Number(d.median_price)) }));
     const priceSeries: MultiSeries[] =
       points.length >= 2
-        ? [{ name: "Median asking price", color: "#34d399", points }]
+        ? [{ name: "Median asking price", color: "#a9c79b", points }]
         : [];
     return ok<ComboDetail>(
       {
@@ -1014,8 +1014,8 @@ export async function fetchSupplyPipeline(
 
 function supplyColor(): (combo: string) => string {
   const palette = [
-    "#34d399", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#fb7185",
-    "#22d3ee", "#c084fc", "#4ade80", "#fde047", "#f97316", "#38bdf8",
+    "#a9c79b", "#60a5fa", "#a78bfa", "#f472b6", "#e4c79c", "#fb7185",
+    "#22d3ee", "#c084fc", "#4ade80", "#fde047", "#f97316", "#c4b5ce",
   ];
   const cache = new Map<string, string>();
   return (combo: string): string => {

@@ -77,17 +77,17 @@ export const ANCHOR_PALETTES: Record<string, AnchorPalette> = {
   },
   Dalmatian: {
     key: "Dalmatian",
-    hex:  "#94a3b8",
-    soft: "rgba(148,163,184,0.20)",
-    text: "#cbd5e1",
-    glow: "#cbd5e1",
+    hex:  "#b0a697",
+    soft: "rgba(176,166,151,0.20)",
+    text: "#c5bcad",
+    glow: "#c5bcad",
   },
   "Super Dalmatian": {
     key: "Super Dalmatian",
-    hex:  "#64748b",
+    hex:  "#8a7f70",
     soft: "rgba(100,116,139,0.22)",
-    text: "#cbd5e1",
-    glow: "#94a3b8",
+    text: "#c5bcad",
+    glow: "#b0a697",
   },
   Tiger: {
     key: "Tiger",
@@ -119,10 +119,10 @@ export const ANCHOR_PALETTES: Record<string, AnchorPalette> = {
   },
   Tangerine: {
     key: "Tangerine",
-    hex:  "#f59e0b",
+    hex:  "#e0b765",
     soft: "rgba(245,158,11,0.18)",
     text: "#fde0a8",
-    glow: "#fbbf24",
+    glow: "#e4c79c",
   },
   Orange: {
     key: "Orange",
@@ -161,10 +161,10 @@ export const ANCHOR_PALETTES: Record<string, AnchorPalette> = {
   },
   Moonglow: {
     key: "Moonglow",
-    hex:  "#cbd5e1",
+    hex:  "#c5bcad",
     soft: "rgba(203,213,225,0.20)",
-    text: "#e2e8f0",
-    glow: "#e2e8f0",
+    text: "#ddd4c5",
+    glow: "#ddd4c5",
   },
   Snowflake: {
     key: "Snowflake",
@@ -189,10 +189,10 @@ export const ANCHOR_PALETTES: Record<string, AnchorPalette> = {
   },
   "Soft Scale": {
     key: "Soft Scale",
-    hex:  "#10b981",
-    soft: "rgba(16,185,129,0.18)",
+    hex:  "#a9c79b",
+    soft: "rgba(169,199,155,0.18)",
     text: "#a7f3d0",
-    glow: "#34d399",
+    glow: "#a9c79b",
   },
 };
 

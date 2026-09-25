@@ -122,7 +122,7 @@ export default function SoldPriceDistribution({
                 style={{
                   height: `${Math.max(2, h)}%`,
                   background: isMidBin
-                    ? "linear-gradient(180deg, #34d399, #10b981)"
+                    ? "linear-gradient(180deg, #a9c79b, #a9c79b)"
                     : "linear-gradient(180deg, #1f7a5e, #0c5841)",
                 }}
               />

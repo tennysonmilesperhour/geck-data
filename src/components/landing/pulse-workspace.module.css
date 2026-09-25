@@ -3,7 +3,7 @@
   --workspace-muted: rgb(var(--muted));
   margin: -20px -16px -20px;
   border-inline: 1px solid var(--workspace-line);
-  background: rgba(2, 6, 23, 0.7);
+  background: rgba(5,4,4, 0.7);
 }
 
 .eyebrow {
@@ -23,9 +23,9 @@
   padding: 30px clamp(24px, 4vw, 58px);
   border-bottom: 1px solid var(--workspace-line);
   background-image:
-    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px),
-    radial-gradient(circle at 22% 10%, rgba(16,185,129,0.08), transparent 36%);
+    linear-gradient(rgba(176,166,151,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(176,166,151,0.025) 1px, transparent 1px),
+    radial-gradient(circle at 22% 10%, rgba(169,199,155,0.08), transparent 36%);
   background-size: 52px 52px, 52px 52px, auto;
 }
 
@@ -53,9 +53,9 @@
 .headerActions > div strong { color: rgb(226 232 240); font-size: 11px; font-weight: 500; }
 .headerActions > button,
 .headerActions > a { min-height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border: 1px solid var(--workspace-line); border-radius: 2px; background: rgb(15 23 42); color: rgb(226 232 240); font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease; }
-.headerActions > button { border-color: rgba(16,185,129,0.55); background: rgba(16,185,129,0.1); color: rgb(167 243 208); }
+.headerActions > button { border-color: rgba(169,199,155,0.55); background: rgba(169,199,155,0.1); color: rgb(167 243 208); }
 .headerActions > button:hover,
-.headerActions > button:focus-visible { border-color: rgb(var(--accent-glow)); background: rgba(16,185,129,0.17); }
+.headerActions > button:focus-visible { border-color: rgb(var(--accent-glow)); background: rgba(169,199,155,0.17); }
 .headerActions > a:hover,
 .headerActions > a:focus-visible { border-color: rgb(71 85 105); background: rgb(19 29 49); }
 
@@ -93,7 +93,7 @@
 .moduleContent :global(.rounded-lg) { border-radius: 2px; }
 
 .customizerLayer { position: fixed; z-index: 60; inset: 0; }
-.customizerBackdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(2,6,23,0.74); backdrop-filter: blur(5px); cursor: default; }
+.customizerBackdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(5,4,4,0.74); backdrop-filter: blur(5px); cursor: default; }
 .customizer { position: absolute; inset: 0 0 0 auto; width: min(520px, 100%); display: flex; flex-direction: column; border-left: 1px solid rgb(51 65 85); background: rgb(10 17 32); box-shadow: -32px 0 80px -48px #000; }
 .customizer > header { min-height: 96px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 26px; border-bottom: 1px solid var(--workspace-line); }
 .customizer > header h2 { margin: 8px 0 0; color: rgb(241 245 249); font-size: 28px; font-weight: 600; }
@@ -107,13 +107,13 @@
 .presets button { min-height: 92px; display: grid; align-content: start; gap: 7px; padding: 12px; border: 1px solid var(--workspace-line); background: rgb(15 23 42); color: rgb(203 213 225); text-align: left; cursor: pointer; }
 .presets button strong { font-size: 12px; }
 .presets button span { color: var(--workspace-muted); font-size: 10px; line-height: 1.4; }
-.presets button[aria-pressed="true"] { border-color: rgb(var(--accent)); background: rgba(16,185,129,0.11); color: rgb(167 243 208); }
+.presets button[aria-pressed="true"] { border-color: rgb(var(--accent)); background: rgba(169,199,155,0.11); color: rgb(167 243 208); }
 
 .metricChoices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 16px; }
 .metricChoices label { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 11px; border: 1px solid var(--workspace-line); background: rgb(15 23 42); color: rgb(203 213 225); font-size: 12px; cursor: pointer; }
 .metricChoices input,
 .moduleChoices input { accent-color: rgb(var(--accent)); }
-.metricChoices label:has(input:checked) { border-color: rgba(16,185,129,0.55); background: rgba(16,185,129,0.08); }
+.metricChoices label:has(input:checked) { border-color: rgba(169,199,155,0.55); background: rgba(169,199,155,0.08); }
 .metricChoices label:has(input:disabled) { opacity: 0.62; cursor: not-allowed; }
 
 .moduleChoices { display: grid; margin-top: 16px; border-top: 1px solid var(--workspace-line); }

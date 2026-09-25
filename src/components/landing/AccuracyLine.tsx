@@ -110,7 +110,7 @@ export default function AccuracyLine({ runs, height = 180 }: Props) {
           <path
             d={path}
             fill="none"
-            stroke="rgb(16,185,129)"
+            stroke="rgb(169,199,155)"
             strokeWidth="2"
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -122,8 +122,8 @@ export default function AccuracyLine({ runs, height = 180 }: Props) {
               cx={xs[i]}
               cy={ys[i]}
               r="3.5"
-              fill={d.status === "success" ? "rgb(16,185,129)" : "rgb(244,63,94)"}
-              stroke="rgb(15,23,42)"
+              fill={d.status === "success" ? "rgb(169,199,155)" : "rgb(244,63,94)"}
+              stroke="rgb(21,18,15)"
               strokeWidth="1.5"
             >
               <title>
