@@ -24,7 +24,7 @@ const innerH = H - M.t - M.b;
 
 export function AreaChart({
   data,
-  color = "#a9c79b",
+  color = "#34d399",
   yFormat = (v) => Math.round(v).toLocaleString(),
   tooltipLabel = "Index",
   height = 240,
@@ -139,11 +139,11 @@ export function AreaChart({
               x2={M.l + innerW}
               y1={y}
               y2={y}
-              stroke="#342c24"
+              stroke="#1e293b"
               strokeDasharray="2 3"
               strokeWidth={1}
             />
-            <text x={M.l - 8} y={y + 3} textAnchor="end" fontSize={10} fill="#8a7f70">
+            <text x={M.l - 8} y={y + 3} textAnchor="end" fontSize={10} fill="#64748b">
               {yFormat(v)}
             </text>
           </g>
@@ -162,7 +162,7 @@ export function AreaChart({
           y={H - 8}
           textAnchor={i === 0 ? "start" : i === data.length - 1 ? "end" : "middle"}
           fontSize={10}
-          fill="#8a7f70"
+          fill="#64748b"
         >
           {data[i]!.t}
         </text>
@@ -179,7 +179,7 @@ export function AreaChart({
             stroke="#34d39966"
             strokeWidth={1}
           />
-          <circle cx={hover.x} cy={hover.y} r={4} fill="#ddd4c5" stroke={color} strokeWidth={2} />
+          <circle cx={hover.x} cy={hover.y} r={4} fill="#e2e8f0" stroke={color} strokeWidth={2} />
           <g transform={`translate(${tooltipX}, ${tooltipY})`}>
             <rect
               x={-52}
@@ -187,13 +187,13 @@ export function AreaChart({
               width={104}
               height={40}
               rx={6}
-              fill="#15120f"
-              stroke="#342c24"
+              fill="#0f172a"
+              stroke="#1e293b"
             />
-            <text x={0} y={-16} textAnchor="middle" fontSize={10} fill="#b0a697">
+            <text x={0} y={-16} textAnchor="middle" fontSize={10} fill="#94a3b8">
               {active.t}
             </text>
-            <text x={0} y={2} textAnchor="middle" fontSize={13} fontWeight={600} fill="#ddd4c5">
+            <text x={0} y={2} textAnchor="middle" fontSize={13} fontWeight={600} fill="#e2e8f0">
               {tooltipLabel}: {yFormat(active.v)}
             </text>
           </g>

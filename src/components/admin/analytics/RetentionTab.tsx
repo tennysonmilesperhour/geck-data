@@ -81,7 +81,7 @@ export default function RetentionTab({ data }: { data: DataBundle | null }) {
                     <td
                       key={i}
                       className="px-3 py-2 text-center font-mono text-xs tabular-nums text-ink-100"
-                      style={{ backgroundColor: `rgba(169,199,155, ${alpha})` }}
+                      style={{ backgroundColor: `rgba(16, 185, 129, ${alpha})` }}
                       title={`${c.active}/${c.size} active`}
                     >
                       {c.pct}%

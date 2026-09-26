@@ -5,84 +5,105 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Bark, charcoal and warm ivory, matched to the World Mushroom
-        // Foraging "mycelial" theme (utah-forage-map DESIGN.md). Token
-        // names are unchanged so every existing class shifts palette
-        // without a rewrite.
+        // Naturalist field-guide palette. Backgrounds are deeper and
+        // more saturated than the previous low-chroma greys, so the
+        // hierarchy actually reads on a dark surface. Text tones stay
+        // near-neutral but with a faint green warmth.
         ink: {
-          950: "#050404",   // page bg, near-black bark
-          900: "#0b0a08",   // app bg
-          850: "#15120f",   // panel bg
-          800: "#1c1814",   // card bg
-          750: "#262019",   // hover
-          700: "#342c24",   // border strong
-          650: "#40372d",   // border
-          600: "#5a4d3d",   // muted border
-          500: "#8a7f70",   // muted fg
-          400: "#b0a697",   // dim fg
-          300: "#c5bcad",   // secondary fg
-          200: "#ddd4c5",   // primary fg-dim
-          100: "#efe8dc",   // primary fg
-          50:  "#f6f1e7",   // brightest fg, warm ivory
+          // Retuned to the Geck Inspect "Market Analytics" slate scale so
+          // GeckIntellect reads as the same product surface. Token names are
+          // unchanged; only the values moved from forest green to slate, so
+          // every existing class shifts palette without a rewrite.
+          950: "#020617",   // page bg — slate-950
+          900: "#0a1120",   // app bg — lifted slate
+          850: "#0f172a",   // panel bg — slate-900
+          800: "#131d31",   // card bg — slate-900/lifted
+          750: "#1a2438",   // hover
+          700: "#1e293b",   // border strong — slate-800
+          650: "#273349",   // border
+          600: "#334155",   // muted border — slate-700
+          500: "#64748b",   // muted fg — slate-500
+          400: "#94a3b8",   // dim fg — slate-400
+          300: "#cbd5e1",   // secondary fg — slate-300
+          200: "#e2e8f0",   // primary fg-dim — slate-200
+          100: "#f1f5f9",   // primary fg — slate-100
+          50:  "#f8fafc",   // brightest fg — slate-50
         },
-        // /market scope. Same bark scale, a shade deeper at the bottom.
+        // /market layers the deeper "forest" tones on top. Mirrors
+        // ink-* so per-surface search-and-replace stays clean.
         forest: {
-          975: "#020202",
-          950: "#050404",
-          900: "#0b0a08",
-          850: "#15120f",
-          800: "#1c1814",
-          750: "#262019",
-          700: "#342c24",
-          650: "#40372d",
-          600: "#5a4d3d",
-          500: "#8a7f70",
-          400: "#b0a697",
-          300: "#c5bcad",
-          200: "#ddd4c5",
-          100: "#efe8dc",
-          50:  "#f6f1e7",
+          // /market scope. Same slate scale as ink, a shade deeper at the
+          // bottom so the dashboard reads a touch darker than the rest of
+          // the app, matching the Market Analytics panel ground.
+          975: "#010409",   // deepest wash
+          950: "#020617",
+          900: "#0a1120",
+          850: "#0f172a",   // forest-surface bg — slate-900
+          800: "#131d31",
+          750: "#1a2438",
+          700: "#1e293b",
+          650: "#273349",
+          600: "#334155",
+          500: "#64748b",
+          400: "#94a3b8",
+          300: "#cbd5e1",
+          200: "#e2e8f0",
+          100: "#f1f5f9",
+          50:  "#f8fafc",
         },
-        // Primary action: pale ivory over dark text, like the forage
-        // map's primary buttons. Kept under `claude` so classes compile.
+        // Primary CTA / accent. Slightly more pigment than the
+        // previous flat emerald so it reads as a chosen ink rather
+        // than a Tailwind default. Kept under `claude` so the rest of
+        // the codebase compiles unchanged.
         claude: {
-          DEFAULT: "#dbc8a6",
-          soft:    "#bca17b",
-          glow:    "#efdfbf",
+          // Primary accent, retuned to the Market Analytics emerald so the
+          // CTA / link / highlight colour matches the preview exactly.
+          DEFAULT: "#10b981",  // emerald-500
+          soft:    "#059669",  // emerald-600
+          glow:    "#34d399",  // emerald-400 — hover / focus / link text
         },
-        // Warm spore accent for eyebrows and highlights. Never a CTA.
+        // Warm terracotta — the field-guide accent. Used for "rising"
+        // momentum, important highlights, and ornament strokes. NOT a
+        // CTA color; pair with emerald for primary actions.
         clay: {
-          50:  "#fbf3e6",
-          100: "#f5e4c9",
-          200: "#efd2a8",
-          300: "#e4c79c",
-          400: "#dcae78",
-          500: "#c9935a",
-          600: "#a8773f",
-          700: "#876744",
-          800: "#5f4830",
-          900: "#3d2e1f",
+          // Warm accent, retuned from terracotta to the Market Analytics
+          // amber. Used for eyebrows, "preview" notes and warm highlights;
+          // never a CTA. Kept under `clay` so existing classes compile.
+          50:  "#fffbeb",
+          100: "#fef3c7",
+          200: "#fde68a",
+          300: "#fcd34d",   // amber-300 — eyebrow text
+          400: "#fbbf24",   // amber-400
+          500: "#f59e0b",   // amber-500 — primary
+          600: "#d97706",
+          700: "#b45309",
+          800: "#92400e",
+          900: "#78350f",
         },
+        // Parchment cream — for paper-warm highlights, tooltip
+        // surfaces, ornamental hairlines. Use sparingly.
         parchment: {
-          50:  "#fbf5ea",
-          100: "#f4e8d2",
-          200: "#efdfbf",
-          300: "#e1d2b7",
-          400: "#d6bfa9",
+          // Highlight surface, retuned to soft amber so warm accents read
+          // against the slate ground instead of as printed cream.
+          50:  "#fffbeb",
+          100: "#fef3c7",
+          200: "#fde68a",
+          300: "#fcd34d",
+          400: "#fbbf24",
         },
-        // Status tokens keep their meaning in muted field tones: olive
-        // sage for healthy/rising, safety amber, smoky plum for info,
-        // and the forage map's soft danger red.
-        ready: "#a9c79b",
-        busy:  "#e0b765",
-        info:  "#c4b5ce",
-        danger:"#ed907e",
-        // Legacy gecko tokens, existing components reference these.
+        // Status tokens. `ready` (sage) keeps the field-guide warmth.
+        // `busy` shifts toward clay so amber doesn't compete with the
+        // primary accent.
+        ready: "#34d399",     // emerald-400 — healthy / rising
+        busy:  "#f59e0b",     // amber-500 — attention / degraded
+        info:  "#38bdf8",     // sky-400 — informational / scraped source
+        danger:"#f87171",     // red-400 — error / falling
+        // Legacy gecko tokens — existing components reference these.
         gecko: {
-          DEFAULT: "#a9c79b",
-          light:   "#c6ded1",
-          dark:    "#7d9a70",
-          accent:  "#e0b765",
+          DEFAULT: "#34d399",  // emerald-400
+          light:   "#6ee7b7",  // emerald-300
+          dark:    "#059669",  // emerald-600
+          accent:  "#f59e0b",  // amber-500
         },
       },
       fontFamily: {
@@ -94,8 +115,6 @@ const config: Config = {
         // 43 `font-display` headings across the app render sans without an
         // edit to each one.
         display: [
-          "Avenir Next",
-          "Avenir",
           "var(--font-sans)",
           "ui-sans-serif",
           "system-ui",
@@ -104,8 +123,6 @@ const config: Config = {
           "sans-serif",
         ],
         sans: [
-          "Avenir Next",
-          "Avenir",
           "var(--font-sans)",
           "ui-sans-serif",
           "-apple-system",
@@ -123,13 +140,15 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        // Glass panels: a fine warm edge plus a faint lit top edge.
-        panel: "0 0 0 1px rgba(215,193,161,0.18), inset 0 1px 0 rgba(255,245,229,0.06)",
-        glow:  "0 0 0 1px rgba(239,223,191,0.35), 0 10px 35px -14px rgba(0,0,0,0.6)",
+        // Panels in the preview are a flat slate card with a hairline ring,
+        // no atmospheric glow. `panel` is that ring; `glow` stays emerald for
+        // the rare focused/elevated element.
+        panel: "0 0 0 1px rgba(30,41,59,0.8)",
+        glow:  "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.30)",
         "forest-panel":
-          "0 0 0 1px rgba(215,193,161,0.18), inset 0 1px 0 rgba(255,245,229,0.06), 0 12px 40px -30px rgba(0,0,0,0.8)",
+          "0 0 0 1px rgba(30,41,59,0.8), 0 12px 40px -30px rgba(2,6,23,0.8)",
         "forest-glow":
-          "0 0 0 1px rgba(239,223,191,0.35), 0 10px 35px -14px rgba(0,0,0,0.6)",
+          "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.30)",
       },
     },
   },

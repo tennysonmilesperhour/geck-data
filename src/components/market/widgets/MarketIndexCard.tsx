@@ -102,7 +102,7 @@ export default function MarketIndexCard({
       <div className="mt-5">
         <AreaChart
           data={data.series}
-          color="#a9c79b"
+          color="#34d399"
           tooltipLabel="Index"
           height={260}
         />

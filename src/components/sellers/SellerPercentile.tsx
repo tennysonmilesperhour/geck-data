@@ -42,10 +42,10 @@ export default function SellerPercentile({
 
   const toneColor =
     tier.tone === "warn"
-      ? "#e0b765"
+      ? "#f59e0b"
       : tier.tone === "positive"
-        ? "#a9c79b"
-        : "#c4b5ce";
+        ? "#34d399"
+        : "#38bdf8";
 
   // Map prices onto the bar's 0–100 range, clamped to the visible
   // window (p10 → p90) so the tick never floats far off the chart

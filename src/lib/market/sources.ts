@@ -20,7 +20,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect sales",
     short: "GI sales",
     kind: "internal",
-    color: "#a9c79b",
+    color: "#10b981",
     description: "Confirmed sale events from Geck Inspect users' transaction logs.",
   },
   {
@@ -28,7 +28,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect listings",
     short: "GI listings",
     kind: "internal",
-    color: "#879f7a",
+    color: "#34d399",
     description: "Live and recently closed listings captured by the Geck Inspect ingest.",
   },
   {
@@ -36,7 +36,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect breeding",
     short: "GI breeding",
     kind: "internal",
-    color: "#c6ded1",
+    color: "#6ee7b7",
     description: "Forward-looking supply from user-tracked breeding pairs & clutches.",
   },
   {
@@ -44,7 +44,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "MorphMarket",
     short: "MM",
     kind: "external",
-    color: "#9fb4c7",
+    color: "#60a5fa",
     description: "Prices observed from MorphMarket listings and sold badges.",
   },
   {
@@ -52,7 +52,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Pangea",
     short: "Pangea",
     kind: "external",
-    color: "#c4b5ce",
+    color: "#38bdf8",
     description: "Pangea Reptile retail pricing — skews toward retail establishment pricing.",
   },
   {
@@ -60,7 +60,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Breeder direct",
     short: "Breeder",
     kind: "breeder",
-    color: "#a99bc0",
+    color: "#a78bfa",
     description: "Prices volunteered by breeders for their own projects / pairings.",
   },
   {
@@ -68,7 +68,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Fauna Classifieds",
     short: "Fauna",
     kind: "external",
-    color: "#e4c79c",
+    color: "#fbbf24",
     description: "Fauna Classifieds ads. Noisy but covers older / niche combos.",
   },
   {
@@ -76,7 +76,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Kijiji",
     short: "Kijiji",
     kind: "external",
-    color: "#d9a0a8",
+    color: "#f472b6",
     description: "Kijiji listings, primarily Canadian market signal.",
   },
   {
@@ -84,7 +84,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Feedle Air",
     short: "Feedle",
     kind: "external",
-    color: "#e7a58d",
+    color: "#fb7185",
     description:
       "Korean Feedle Air USD asks. Scheduled import lots, not MorphMarket click-buy.",
   },
@@ -122,7 +122,7 @@ const UNKNOWN_META: SourceMeta = {
   label: "Other source",
   short: "Other",
   kind: "external",
-  color: "#b0a697",
+  color: "#94a3b8",
   description:
     "Source not in the canonical catalog. Probably a legacy ingest value — see normalizeSourceId in src/lib/market/sources.ts.",
 };

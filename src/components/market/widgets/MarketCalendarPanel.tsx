@@ -60,7 +60,7 @@ export default function MarketCalendarPanel({
 
 function Dot({ kind }: { kind: CalendarEntry["kind"] }) {
   // Color code: expo = amber (event on a fixed date), release = rose (drop).
-  const bg = kind === "expo" ? "#e4c79c" : "#f472b6";
+  const bg = kind === "expo" ? "#fbbf24" : "#f472b6";
   return (
     <span
       aria-label={kind}

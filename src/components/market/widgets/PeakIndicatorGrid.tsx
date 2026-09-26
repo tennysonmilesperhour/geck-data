@@ -18,7 +18,7 @@ const TIER_META: Record<
     label: "ABOVE RANGE",
     tint: "bg-busy/10 border-busy/40",
     text: "text-busy",
-    marker: "#e4c79c",
+    marker: "#fbbf24",
   },
   "Within recent range": {
     label: "WITHIN RANGE",
@@ -30,7 +30,7 @@ const TIER_META: Record<
     label: "BELOW RANGE",
     tint: "bg-ready/10 border-ready/40",
     text: "text-ready",
-    marker: "#a9c79b",
+    marker: "#34d399",
   },
 };
 

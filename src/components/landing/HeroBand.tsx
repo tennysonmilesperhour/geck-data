@@ -199,7 +199,7 @@ function KpiTile({
     <div
       className={`group relative overflow-hidden rounded-xl border bg-ink-850/60 px-4 py-3.5 backdrop-blur transition hover:bg-ink-800 ${
         accent
-          ? "border-emerald-500/40 shadow-[0_0_0_1px_rgba(169,199,155,0.06)]"
+          ? "border-emerald-500/40 shadow-[0_0_0_1px_rgba(16,185,129,0.06)]"
           : "border-ink-700"
       }`}
     >

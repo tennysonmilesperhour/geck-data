@@ -158,11 +158,11 @@ export default function Header({
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#ecddc347] bg-[linear-gradient(105deg,#241f19f5,#120f0cf7_65%,#29241df5)] backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-ink-700 bg-ink-950/95 backdrop-blur-xl">
       <div className="mx-auto flex min-h-[58px] w-full max-w-[1600px] items-center gap-3 px-4 sm:gap-6 sm:px-6 lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2 text-ink-50">
           <Logo size={28} />
-          <span className="font-display text-[16px] font-normal tracking-[-0.02em]">
+          <span className="font-display text-[16px] font-semibold tracking-[-0.02em]">
             Geck Inspect
           </span>
           <span className="ml-2 hidden border-l border-ink-700 pl-3 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-500 sm:inline">
@@ -249,11 +249,11 @@ export default function Header({
               <Link
                 key={t.href}
                 href={t.href}
-                className={`relative flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-normal transition ${
+                className={`relative flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-medium transition ${
                   startsGroup ? "border-l border-l-ink-600" : ""
                 } ${
                   isActive(t.href)
-                    ? "bg-[#d5c09d24] text-ink-50 shadow-[inset_0_-2px_0_#e4c79c]"
+                    ? "bg-ink-800 text-ink-50 shadow-[inset_0_-2px_0_#10b981]"
                     : "text-ink-400 hover:bg-ink-850 hover:text-ink-100"
                 }`}
               >
@@ -267,7 +267,7 @@ export default function Header({
               href={t.href}
               className={`flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-medium ${
                 isActive(t.href)
-                  ? "bg-[#d5c09d24] text-ink-50 shadow-[inset_0_-2px_0_#e4c79c]"
+                  ? "bg-ink-800 text-ink-50 shadow-[inset_0_-2px_0_#10b981]"
                   : "text-ink-400 hover:bg-ink-850 hover:text-ink-100"
               }`}
             >
@@ -385,7 +385,7 @@ export default function Header({
                 <Link
                   href="/login"
                   onClick={() => setMenuOpen(false)}
-                  className="block rounded-md bg-claude px-3 py-2 text-center text-sm text-ink-950 font-medium shadow-glow hover:bg-claude-glow"
+                  className="block rounded-md bg-claude px-3 py-2 text-center text-sm text-ink-50 shadow-glow hover:bg-claude-glow"
                 >
                   Log in
                 </Link>

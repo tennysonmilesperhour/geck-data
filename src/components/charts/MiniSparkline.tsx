@@ -34,10 +34,10 @@ export function slopeOf(daily: ReadonlyArray<number>): SlopeKind {
 }
 
 const SLOPE_COLOR: Record<SlopeKind, string> = {
-  rising:  "#a9c79b", // claude.glow
-  cooling: "#ed907e", // danger
-  new:     "#c4b5ce", // info ocean
-  flat:    "#8a7f70", // ink-500
+  rising:  "#34d399", // claude.glow
+  cooling: "#f87171", // danger
+  new:     "#38bdf8", // info ocean
+  flat:    "#64748b", // ink-500
 };
 
 export default function MiniSparkline({

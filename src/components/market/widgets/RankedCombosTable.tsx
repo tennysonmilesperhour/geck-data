@@ -134,7 +134,7 @@ export default function RankedCombosTable({
                             aria-hidden
                             className="inline-block h-3 w-3 shrink-0 rounded-sm"
                             style={{
-                              background: palette?.hex ?? "#5a4d3d",
+                              background: palette?.hex ?? "#334155",
                               opacity: 0.9,
                             }}
                             title={palette?.key ?? "unclassified"}

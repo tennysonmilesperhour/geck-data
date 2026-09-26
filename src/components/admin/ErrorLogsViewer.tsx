@@ -354,7 +354,7 @@ function ErrorDetailDialog({
           <button
             type="button"
             onClick={onToggleResolved}
-            className="rounded-md bg-claude px-3 py-1.5 text-xs text-ink-950 font-medium shadow-glow hover:bg-claude-glow"
+            className="rounded-md bg-claude px-3 py-1.5 text-xs text-ink-50 shadow-glow hover:bg-claude-glow"
           >
             {row.resolved ? "Mark unresolved" : "Mark resolved"}
           </button>

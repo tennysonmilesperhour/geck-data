@@ -46,7 +46,7 @@ export default async function WatchlistPage() {
           </p>
           <Link
             href="/login?next=/watchlist"
-            className="mt-3 inline-flex rounded-md bg-claude px-3 py-1.5 text-sm text-ink-950 font-medium hover:bg-claude-glow"
+            className="mt-3 inline-flex rounded-md bg-claude px-3 py-1.5 text-sm text-ink-50 hover:bg-claude-glow"
           >
             Sign in
           </Link>
