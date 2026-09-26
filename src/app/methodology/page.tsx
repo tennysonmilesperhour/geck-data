@@ -1,505 +1,182 @@
-// Methodology. Plain-language explanation of every derived number on the
-// site, including the ones we cannot currently produce.
-//
-// Rewritten 2026-08-29. The previous version was last reviewed 2026-05-22 and
-// described a pipeline that no longer exists: a daily scrape, a browser
-// extension feeding live events, a 14 day sold-inference rule that was never
-// what the code did, a twelve-combo market view, and pHash cross-platform
-// arbitrage that no live page runs. Every one of those has been corrected
-// here rather than quietly dropped, because a visitor who read the old page
-// was told something specific and wrong.
-//
-// Headings keep their stable ids so other pages can deep-link
-// (e.g. /methodology#combo-index).
+// How prices work, in plain language. Every number on the site traces back
+// to one of the sections below.
 import Link from "next/link";
-import { SectionHeader, Panel } from "@/components/ui/Panel";
+import { PageIntro } from "@/components/simple/ui";
 
 export const metadata = {
-  title: "Methodology - Geck Inspect Market",
+  title: "How prices work - Geck Inspect Market",
   description:
-    "How every number on the Geck Inspect Market dashboard is computed, what it is measured over, and where the gaps are.",
+    "Where Geck Inspect Market prices come from, how the value estimate is built, and what the numbers can and cannot tell you.",
 };
+
+const SECTIONS: Array<{ title: string; body: React.ReactNode }> = [
+  {
+    title: "Where the prices come from",
+    body: (
+      <>
+        <p>
+          Every price comes from a public crested gecko listing on MorphMarket. A
+          scraper reads the listings and records the price, morphs, sex, age, weight
+          and seller. Each listing card on this site shows when it was last checked.
+        </p>
+        <p>
+          Prices are in US dollars. The small share of listings in other currencies is
+          left out of price math so a Canadian price is never mixed in as if it were
+          USD.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "Asking price versus sold price",
+    body: (
+      <>
+        <p>
+          An <strong>asking price</strong> is what a seller listed the gecko for. Most
+          numbers on the site are asking prices, because every listing has one.
+        </p>
+        <p>
+          A <strong>sold price</strong> is the last asking price we saw before a
+          listing came down. It is not a confirmed payment: a buyer may have negotiated,
+          and a few listings come down for other reasons. The sales history covers May
+          and June 2026.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "How the value estimate works",
+    body: (
+      <>
+        <p>The price check narrows from any crested gecko to one described animal:</p>
+        <ol className="list-decimal space-y-1 pl-5">
+          <li>
+            If at least 5 listings match the morphs, age and sex exactly, the estimate
+            is the middle half of their asking prices.
+          </li>
+          <li>
+            If fewer match, it starts from all listings with those morphs and adjusts
+            for age and sex using how much age and sex move prices across the whole
+            crested market. A car pricing guide adjusts a base value for options the
+            same way.
+          </li>
+          <li>With no age or sex picked, it uses all listings with those morphs.</li>
+        </ol>
+        <p>The page always says which of these it used and how many listings it rests on.</p>
+      </>
+    ),
+  },
+  {
+    title: "Value by age and sex",
+    body: (
+      <p>
+        Each box is the middle asking price for one stage of growth and one sex, with the
+        middle half of prices underneath. Age comes from the listing: MorphMarket&apos;s
+        &quot;Baby&quot; is shown as Hatchling. A box with fewer than 5 listings says
+        &quot;Too few&quot; instead of showing a number that could swing on one gecko.
+      </p>
+    ),
+  },
+  {
+    title: "How value grows",
+    body: (
+      <p>
+        The growth chart groups listings by weight (under 5 grams up to 50 grams and
+        over) and draws the middle asking price for females, males and unsexed geckos.
+        A point is only drawn when at least 6 listings back it. When a morph has too few
+        weights listed, the chart shows all crested geckos and says so.
+      </p>
+    ),
+  },
+  {
+    title: "What one more trait adds",
+    body: (
+      <p>
+        For the morphs you picked, each row is the middle asking price of listings that
+        also carry one more trait, next to the price without it. Only traits on at least
+        5 such listings are shown. This is a comparison, not a guarantee: geckos with more
+        traits often come from stronger lines, so part of the difference is the breeding
+        behind them.
+      </p>
+    ),
+  },
+  {
+    title: "Compared with a typical crested",
+    body: (
+      <p>
+        &quot;2.1×&quot; means the morph&apos;s middle asking price is 2.1 times the
+        middle asking price of every crested gecko listing we have seen. It puts every
+        morph on one scale so any two can be compared.
+      </p>
+    ),
+  },
+  {
+    title: "Genes, patterns and colors",
+    body: (
+      <p>
+        Morphs are grouped by how they are passed on. Genes (Lilly White, Axanthic,
+        Cappuccino, Sable, Phantom, Empty Back, and the emerging Soft Scale and Hypo)
+        follow predictable inheritance. Patterns and colors are line-bred over
+        generations. The genetics follow the{" "}
+        <a href="https://geckinspect.com/GeneticsGuide" className="underline hover:text-ink-50">
+          Geck Inspect genetics guide
+        </a>
+        . &quot;Emerging&quot; means only a few breeders have documented it so far.
+      </p>
+    ),
+  },
+  {
+    title: "What gets filtered out",
+    body: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Seller questionnaire labels that are not morphs, such as &quot;Diet: Meal
+          Replacement&quot; or &quot;Proven breeder: No&quot;.
+        </li>
+        <li>Prices of zero or over $100,000, which are placeholders or typos.</li>
+        <li>Group lots, from the sold price bands.</li>
+        <li>Species other than crested geckos.</li>
+      </ul>
+    ),
+  },
+  {
+    title: "What the numbers cannot tell you",
+    body: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Pattern quality, color intensity, structure and lineage move real prices a lot,
+          and listings rarely describe them in a way that can be measured.
+        </li>
+        <li>
+          About 4 in 10 listings carry no morph tags, so they count toward the whole
+          market but not toward any morph.
+        </li>
+        <li>
+          Not every listing is rechecked every week. The{" "}
+          <Link href="/status" className="underline hover:text-ink-50">
+            data status
+          </Link>{" "}
+          page shows how current the catalog is.
+        </li>
+      </ul>
+    ),
+  },
+];
 
 export default function MethodologyPage() {
   return (
-    <div className="page-rise space-y-8">
-      <SectionHeader
-        eyebrow="Trust"
-        title="Methodology"
-        description="What each number means, what it is measured over, and what it cannot tell you. If a chart says something this page does not back up, the chart is wrong."
-      />
-
-      <section id="coverage" className="scroll-mt-16">
-        <Panel tone="soft" title="Read this first: coverage">
-          <p className="text-sm text-ink-300">
-            Everything on this site is built from observations of MorphMarket
-            listings. We can only describe the market on days we actually
-            looked at it, and collection has not been continuous.
-          </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-300">
-            <li>
-              <strong className="text-ink-100">
-                There is a 78 day hole, 2026-06-10 to 2026-08-26.
-              </strong>{" "}
-              The scraper stopped and nothing was recorded. That period is
-              absent from every chart, drawn as a break rather than as zero,
-              because a market we did not watch is not a market with no
-              activity.
-            </li>
-            <li>
-              <strong className="text-ink-100">The feed is weekly.</strong> A
-              MorphMarket API ingest runs on Mondays. It is not daily, and this
-              page used to say daily.
-            </li>
-            <li>
-              <strong className="text-ink-100">
-                Most listings marked live have not been re-checked recently.
-              </strong>{" "}
-              A listing stays flagged live until something tells us otherwise,
-              and the last full pass covered a small share of the catalogue.
-              Pages that quote a live count or a current median say which
-              population they mean: re-confirmed recently, or last confirmed
-              months ago.
-            </li>
-            <li>
-              <strong className="text-ink-100">
-                Sales stopped being observed on 2026-06-07.
-              </strong>{" "}
-              Anything about demand, velocity or time to sell is history, not a
-              current reading, and several such widgets now decline to render
-              rather than imply otherwise.
-            </li>
-          </ul>
-          <p className="mt-3 text-sm text-ink-300">
-            The live state of all of this is on{" "}
-            <Link href="/status" className="underline">
-              /status
-            </Link>
-            , and the header shows the same verdict on every page.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="data-sources" className="scroll-mt-16">
-        <Panel title="Where the data comes from">
-          <ul className="list-disc space-y-2 pl-5 text-sm text-ink-300">
-            <li>
-              <strong className="text-ink-100">MorphMarket listings.</strong>{" "}
-              The only feed currently running. A weekly job reads MorphMarket&apos;s
-              public JSON API for crested geckos listed in the previous seven
-              days and records price, traits, seller and dates.
-            </li>
-            <li>
-              <strong className="text-ink-100">
-                The older scrape archive.
-              </strong>{" "}
-              A denser HTML scrape ran from 2026-05-09 to 2026-06-09 and then
-              failed permanently. Most of the catalogue and nearly all of the
-              sales history come from that month.
-            </li>
-            <li>
-              <strong className="text-ink-100">
-                The Eye in the Sky extension.
-              </strong>{" "}
-              A browser extension that reported listing events. It has sent
-              nothing since 2026-05-14. Numbers that depend on it are frozen at
-              that date and are labelled where they appear.
-            </li>
-            <li>
-              <strong className="text-ink-100">Cross-platform listings.</strong>{" "}
-              Feedle Air (Korean USD import asks), native Feedle KRW, TikisGeckos,
-              and Altitude Exotics upsert into{" "}
-              <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">
-                cross_platform_listings
-              </code>
-              . They do not enter MorphMarket medians,{" "}
-              <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">
-                combo_index_daily
-              </code>
-              , or whats-hot. See{" "}
-              <Link href="/cross-platform" className="underline">
-                /cross-platform
-              </Link>{" "}
-              and <a href="#source-asks" className="underline">source-axis asks</a>.
-            </li>
-          </ul>
-        </Panel>
-      </section>
-
-      <section id="prices" className="scroll-mt-16">
-        <Panel title="What a price on this site is">
-          <p className="text-sm text-ink-300">
-            Every price here is an <strong className="text-ink-100">asking
-            price</strong> that we observed on a listing. MorphMarket does not
-            publish what an animal actually changed hands for, and we have no
-            way to see a negotiated price. When a page says a gecko &quot;sold
-            for&quot; an amount, it means that was the last asking price we saw
-            before the listing went away.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            Prices are compared in USD. Where a listing is in another currency
-            we use the USD equivalent recorded at ingest, and rows without one
-            are excluded from price statistics rather than mixed in at face
-            value.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            Multi-animal listings (lots, packs, pairs, trios, group sales) are
-            flagged and excluded from per-animal medians and from the
-            comparisons described under{" "}
-            <Link href="#comparables" className="text-claude-glow hover:underline">
-              asking under comparables
-            </Link>
-            , because their price covers several animals. They stay visible
-            when browsing.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="median-ask" className="scroll-mt-16">
-        <Panel title="Median ask">
-          <p className="text-sm text-ink-300">
-            The 50th percentile of observed asking prices. Median rather than
-            mean, because the distribution has a long tail and a single $20,000
-            animal moves a mean noticeably while barely touching a median. Any
-            panel quoting a median also shows the sample size it came from.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            <strong className="text-ink-100">One listing, one vote.</strong>{" "}
-            The same listing is often re-observed many times, up to fourteen
-            times in a single day. Feeding every observation into a median lets
-            a frequently re-scraped listing outweigh an identical one seen
-            once, so cross-sectional medians first reduce to one observation
-            per listing per period. Panels report unique listings as the sample
-            size, separately from the raw observation count.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="sold" className="scroll-mt-16">
-        <Panel title="Sold data, and its two definitions">
-          <p className="text-sm text-ink-300">
-            There are two separate pools of sales, and they are never added
-            together, because they are different kinds of evidence.
-          </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-300">
-            <li>
-              <strong className="text-ink-100">Captured events.</strong> The
-              pipeline watched a listing change to sold. There are 92 of these
-              in total, all observed between 2026-05-11 and 2026-05-14.
-            </li>
-            <li>
-              <strong className="text-ink-100">Inferred sales.</strong> A
-              listing stopped appearing in the catalogue walk, so we infer it
-              sold. There are about 2,840 of these, dated 2026-05-17 to
-              2026-06-07. A listing can leave for other reasons, including the
-              seller pulling it, so this pool is suggestive rather than
-              certain.
-            </li>
-          </ul>
-          <p className="mt-3 text-sm text-ink-300">
-            The previous version of this page described the inference as
-            &quot;the scraper has not seen a listing for 14 or more days and
-            the seller has not relisted&quot;. That was never the rule in the
-            code. The job flagged everything not seen since the run began, with
-            no grace period, and it no longer runs at all.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="days-to-sell" className="scroll-mt-16">
-        <Panel title="Days to sell">
-          <p className="text-sm text-ink-300">
-            The gap between when we first saw a listing and when it sold. This
-            is only meaningful when we actually watched that interval elapse.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            For 84 of the 92 captured events, the first sighting and the sale
-            were written by the same bulk import, so the apparent duration is
-            zero. That is a fact about our import, not about how fast the
-            animal sold, and it is why this site once advertised a median time
-            to sell of zero days. Where first sighting and sale land within an
-            hour of each other the duration is now null, and medians are
-            computed only over the rows that remain, with that count shown.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="combo-index" className="scroll-mt-16">
-        <Panel title="Combos and the per-combo index">
-          <p className="text-sm text-ink-300">
-            A combo is a pair of traits observed together on listings. Pairs
-            are discovered from the trait tags themselves, not from a curated
-            list. Two filters run before a pair is charted:
-          </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-300">
-            <li>
-              <strong className="text-ink-100">
-                Pairs that are really one trait are excluded.
-              </strong>{" "}
-              Extreme Harlequin with Harlequin, Dalmatian with Super Dalmatian,
-              Axanthic with Het Axanthic, Red with Red Base: these are one
-              trait described at a different expression level, a zygosity
-              state, or under an overlapping label. They are not a pairing a
-              breeder can make, and charting them as combos invents an economic
-              relationship. Cappuccino, Sable and Frappuccino are treated as
-              one family for the same reason.
-            </li>
-            <li>
-              <strong className="text-ink-100">
-                A pair needs more than one seller behind it.
-              </strong>{" "}
-              One breeder listing a project repeatedly is that breeder&apos;s
-              pricing, not a market. Panels show the unique listing and unique
-              seller counts so you can judge the evidence yourself.
-            </li>
-          </ul>
-          <p className="mt-3 text-sm text-ink-300">
-            The per-combo index is the daily median observed asking price for
-            each combo. It is built from asking-price observations, not from
-            confirmed sales, because the sales stream is far too thin to
-            support a daily series. That is the same choice Zillow makes with
-            its home value index, and it is only honest if we say so: this
-            tracks what sellers ask, not what buyers pay.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="deltas" className="scroll-mt-16">
-        <Panel title="Why a change can read as unavailable">
-          <p className="text-sm text-ink-300">
-            A 7, 30 or 90 day change needs an observation at both ends. Ours
-            are anchored to each combo&apos;s own most recent observation, not
-            to today&apos;s date, and the earlier end has to fall inside the
-            window being claimed.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            When no observation exists at the far end, the cell reads{" "}
-            <strong className="text-ink-100">no baseline</strong>. When the
-            combo has not been seen recently at all, it reads{" "}
-            <strong className="text-ink-100">stale</strong>. Neither is a
-            measured zero. Before this rule existed the page compared a combo
-            against its own latest row and published &quot;+0.0%&quot; for over
-            a thousand combos, which reads as a flat market rather than as
-            missing data.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            Because of the 78 day collection gap, no combo currently has a 7 or
-            30 day baseline. The 90 day column does have real comparisons in
-            it, between observations at the end of May and the end of August.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="market-index" className="scroll-mt-16">
-        <Panel title="Market index and anchor sub-indices">
-          <p className="text-sm text-ink-300">
-            The composite index is a weekly basket across anchor morph
-            families, rebased so the first week in the window is 1000. Anchors
-            are coarse groupings: Lilly White, Axanthic, Harlequin, and the
-            Cappuccino family. A listing can count toward more than one anchor.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            The sub-indices rest on a handful of observed weeks spread across
-            four months, not on a continuous series. Where a chart would have
-            to draw a straight line across months nobody observed, it breaks
-            instead, and the observed-week count is shown next to it. The
-            headline composite index needs at least two weeks of sold-based
-            data to compute and currently has one, so it renders an empty state
-            rather than a number.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="temperature" className="scroll-mt-16">
-        <Panel title="Market temperature">
-          <p className="text-sm text-ink-300">
-            A 0 to 100 composite of sold price, sell-through and time to sell,
-            ranked against the preceding year. It only means something while
-            sales are being observed.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            It used to fill missing components with zero, which made every
-            component land at the neutral midpoint and produced a confident
-            &quot;50, Warm&quot; out of no evidence at all. It now requires a
-            minimum number of recent captured sales and a baseline with real
-            spread, and returns no score with a stated reason when those are
-            not met. Today it returns no score.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="adjustments" className="scroll-mt-16">
-        <Panel title="Price bands on What's it worth">
-          <p className="text-sm text-ink-300">
-            <Link href="/whats-it-worth" className="underline">
-              /whats-it-worth
-            </Link>{" "}
-            takes the percentile band of past listings carrying the traits you
-            select, then applies multiplicative adjustments for age, sex,
-            weight and proven-breeder status.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            The band draws on both sold pools described above, with the counts
-            reported separately so you can see whether it rests on watched
-            transitions or on inferred ones. Because both pools are last
-            observed asking prices, the output is an asking-price range, not an
-            appraisal, and every comp in it is currently from May or June 2026.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="confidence" className="scroll-mt-16">
-        <Panel title="Confidence and sample size">
-          <p className="text-sm text-ink-300">
-            Confidence chips are a statement about sample size and nothing
-            else. They scale with the number of observations behind a figure
-            and reach the top of the range only in the low hundreds. They do
-            not account for how old the data is, which is what the coverage
-            note at the top of this page is for. A high confidence chip on a
-            three month old number still means a three month old number.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="comparables" className="scroll-mt-16">
-        <Panel title="Asking under comparables">
-          <p className="text-sm text-ink-300">
-            The landing page lists live ads asking at least 25% below the
-            median ask of the ads they are comparable to. Comparable is defined
-            narrowly, because the loose version of this list was wrong. It
-            previously measured each ad against its trait combo&apos;s median
-            across the whole 365 day catalogue, which pooled babies with
-            adults, freshly confirmed asks with asks last seen in spring, and
-            auctions and wholesale lots with single animals. The deepest
-            &quot;discounts&quot; that produced were not discounts: they were
-            young animals priced like young animals sitting next to a median
-            that carried adults. Age is the largest single price factor in this
-            dataset, and the medians separate hard.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            A comparison set is now one trait pair at one maturity, built only
-            from live single animals re-confirmed in the current ingest cycle,
-            with auctions excluded on both sides because an auction price is a
-            standing bid rather than an ask. A set has to hold at least five
-            such ads from at least three distinct sellers before it may price
-            anything, so one seller&apos;s price list cannot become the market
-            everything else is under. Trait pairs that are really one trait,
-            such as Extreme Harlequin with Harlequin, are refused outright.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            Most ads match several trait pairs. Each is measured against the
-            cheapest set it belongs to, so the percentage shown is the
-            smallest one the data supports rather than the largest one we could
-            have chosen. Very few sets clear all of this at once: of roughly
-            1,900 combo-and-age cells in the catalogue, about 34 currently
-            qualify, and an ad with no qualifying set for its own age class is
-            simply not listed. An empty panel means no claim is supported, not
-            that nothing is cheap.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            What this does not do is tell you whether something is worth
-            buying. Sex, weight, structure, lineage, health and pet-only
-            grading all move crested gecko prices and none of them are in this
-            dataset. Both sides of the comparison are asking prices, so a gap
-            can equally mean an underpriced animal, a flaw the photos show and
-            we cannot read, or a seller who is simply more motivated.
-          </p>
-        </Panel>
-      </section>
-
-      <section id="regions" className="scroll-mt-16">
-        <Panel title="Regions">
-          <p className="text-sm text-ink-300">
-            Region comes from parsing a free-text seller location, and roughly
-            85% of listings have no location at all. What can be mapped is
-            almost entirely US. There is not enough here to compare regions or
-            to claim an arbitrage opportunity between them, so the regional
-            filters are disabled rather than left to return the same rows under
-            a different label.
-          </p>
-          <p className="mt-2 text-sm text-ink-300">
-            The previous version of this page described matching the same
-            animal across marketplaces by image hash to flag arbitrage. No live
-            page does that. Combo-level Feedle Air vs MorphMarket asks are a
-            different comparison; see{" "}
-            <a href="#source-asks" className="underline">
-              source-axis asks
-            </a>
-            .
-          </p>
-        </Panel>
-      </section>
-
-      <section id="source-asks" className="scroll-mt-16">
-        <Panel title="Source-axis asks (Feedle Air vs MorphMarket)">
-          <p className="text-sm text-ink-300">
-            The Market tab&apos;s Arbitrage source axis compares median{" "}
-            <strong className="text-ink-100">asking prices</strong> for the
-            same canonical combo on two labeled sources. It is not a sold
-            comparison and it is not a recommendation to buy or sell.
-          </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-300">
-            <li>
-              <strong className="text-ink-100">KR side:</strong> Feedle Air
-              listings in <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">cross_platform_listings</code>{" "}
-              with platform=feedle_air, currency=USD, a positive price, crested,
-              not a group lot. Air is a scheduled Korea-to-US import lot, not a
-              MorphMarket click-buy. Native KRW rows (feedle_kr) stay out of
-              this table.
-            </li>
-            <li>
-              <strong className="text-ink-100">US side:</strong> MorphMarket{" "}
-              <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">market_listings</code>{" "}
-              with current_status=live, not a group lot. We do not require a
-              48-hour last_seen_at window: that column is only fresh for the
-              recent API recrawl, and catalogue leftovers still dominate the
-              live flag. The attribution note says so.
-            </li>
-            <li>
-              Matching is the same HIGH_VALUE_COMBOS trait set used elsewhere,
-              on cached_traits / traits_raw / title. Not pHash. These are
-              different animals with similar morph labels.
-            </li>
-            <li>
-              A combo needs at least 3 priced asks on each side. Altitude
-              Exotics and TikisGeckos can show on /cross-platform; they are not
-              mixed into this KR vs US table. AU/JP regional claims are not
-              turned on here.
-            </li>
-          </ul>
-        </Panel>
-      </section>
-
-      <section id="known-gaps" className="scroll-mt-16">
-        <Panel tone="soft" title="Known gaps we have not closed">
-          <ul className="list-disc space-y-2 pl-5 text-sm text-ink-400">
-            <li>
-              Trait vocabulary is still messy. Tags come from sellers, and
-              synonyms, misspellings and house names are not fully reconciled.
-            </li>
-            <li>
-              A listing marked live has not necessarily been re-checked. Until
-              a full catalogue pass runs again, live counts describe what we
-              last saw rather than what is for sale today.
-            </li>
-            <li>
-              Monthly reports are computed when you open them, from current
-              data, rather than frozen at month end. A month can therefore read
-              differently on two visits.
-            </li>
-            <li>
-              Breeding and lineage data is not collected, so nothing here can
-              tell you what a pairing is likely to produce.
-            </li>
-          </ul>
-        </Panel>
-      </section>
-
-      <p className="text-xs text-ink-500">
-        Last reviewed: 2026-08-30. Every claim on this page maps to a query or
-        a view in the codebase. If a chart says something this page does not
-        back up, that is a bug in the chart, and we would like to know.
-      </p>
+    <div className="mx-auto max-w-3xl space-y-10">
+      <PageIntro title="How prices work">
+        Where every number on this site comes from, and what it can and cannot tell you.
+      </PageIntro>
+      <div className="space-y-8">
+        {SECTIONS.map((s) => (
+          <section key={s.title} className="space-y-3">
+            <h2 className="text-xl font-semibold text-ink-50">{s.title}</h2>
+            <div className="space-y-3 text-base leading-7 text-ink-300">{s.body}</div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }

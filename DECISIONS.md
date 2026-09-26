@@ -7,6 +7,56 @@ deferred.
 
 ---
 
+## 2026-09-26: Value report built around how geckos are actually priced
+
+Context: after the four-page cut, Tennyson asked for sex and age back in
+the price check and for a deeper rethink of how the market is organized
+and presented, drawing on other fields.
+
+### Research that shaped it
+
+- Livestock auction reports (USDA AMS) price live animals by sex and
+  weight class, not as one number. Crested geckos behave the same way:
+  across 6,376 listings the middle ask climbs from about $145 under 5g
+  to $422 over 50g, and females pull ahead once sexed ($495 vs $375 at
+  50g and up).
+- Hagerty (condition #1 to #4) and PriceCharting (loose, boxed, graded)
+  show one value per grade side by side. That became the age x sex grid.
+- Kelley Blue Book adjusts a base value for options. That became "what
+  one more trait adds" (Lilly White $399, with Axanthic $1,200) and the
+  fallback estimate (morph base x market-wide age and sex ratio).
+- Zillow and Discogs show a range plus how much data backs it. Every
+  estimate states its basis and listing count.
+- Card Ladder and market indices compare against a benchmark. Every morph
+  is shown as "x times a typical crested" ($280).
+
+### Shipped
+
+- Price check (home) is a value report: morphs, sex and age in the URL;
+  headline range with its basis; age x sex grid that doubles as a picker;
+  growth curve by weight and sex (falls back to all crested geckos when
+  a morph has too few weights); trait upgrades with the dollar gain;
+  matching listings filtered by sex and age.
+- Morphs grouped by inheritance (genes, line-bred patterns, line-bred
+  colors) using the Geck Inspect genetics catalog, each with its
+  multiple of the typical crested. Morph pages add the grid, growth
+  curve, "pairings worth the most" and an inheritance note.
+- Listings gained an age filter; cards show weight.
+- /methodology rewritten in plain language for the new model.
+- SQL: value_grid (with "any" roll-ups via grouping sets),
+  growth_curve, trait_upgrades, market_baseline, and a faster real-trait
+  filter (one join instead of ~1,900 is_training_trait calls; identical
+  output, morph_summary 1.4s to 0.08s, trait_upgrades 2s to 0.15s).
+- Estimate logic lives in src/lib/simple/estimate.ts with unit tests.
+
+### Deliberately not claimed
+
+- Time to sell: only 65 rows carry it, so it is not shown.
+- Trait upgrades are comparisons, not causes; the page says geckos with
+  more traits often come from stronger lines.
+
+---
+
 ## 2026-09-26: Cut the site down to four pages
 
 Context: Tennyson found the site too big and confusing to use. Twelve

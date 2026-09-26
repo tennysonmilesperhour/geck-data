@@ -22,6 +22,8 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
   const status = one(searchParams?.status) === "sold" ? "sold" : "for-sale";
   const sexRaw = one(searchParams?.sex);
   const sex = sexRaw === "male" || sexRaw === "female" ? sexRaw : null;
+  const ageRaw = one(searchParams?.age);
+  const age = ["hatchling", "juvenile", "subadult", "adult"].includes(ageRaw) ? ageRaw : null;
   const maxRaw = Number(one(searchParams?.max));
   const maxPrice = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.round(maxRaw) : null;
   const sortRaw = one(searchParams?.sort);
@@ -42,6 +44,7 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
     traits: selected.map((m) => m.trait),
     status,
     sex,
+    age,
     maxPrice,
     sort,
     seller,
@@ -55,6 +58,7 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
       status: status === "sold" ? "sold" : null,
       t: tValue || null,
       sex,
+      age,
       max: maxPrice,
       sort: sort === "newest" ? null : sort,
       seller,
@@ -99,7 +103,7 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
       <form
         method="get"
         action="/listings"
-        className="grid grid-cols-2 gap-3 rounded-xl border border-ink-700 bg-ink-850 p-4 md:grid-cols-[2fr_1fr_1fr_1fr_auto] md:items-end"
+        className="grid grid-cols-2 gap-3 rounded-xl border border-ink-700 bg-ink-850 p-4 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] md:items-end"
       >
         {status === "sold" ? <input type="hidden" name="status" value="sold" /> : null}
         {seller ? <input type="hidden" name="seller" value={seller} /> : null}
@@ -123,6 +127,16 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
             <option value="">Any</option>
             <option value="female">Female</option>
             <option value="male">Male</option>
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-sm text-ink-400">Age</span>
+          <select name="age" defaultValue={age ?? ""} className={inputCls}>
+            <option value="">Any</option>
+            <option value="hatchling">Hatchling</option>
+            <option value="juvenile">Juvenile</option>
+            <option value="subadult">Subadult</option>
+            <option value="adult">Adult</option>
           </select>
         </label>
         <label className="space-y-1">
@@ -160,8 +174,8 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
           {selected.length ? ` with ${selected.map((m) => m.trait).join(" + ")}` : ""}
           {seller ? ` from ${rows[0]?.sellerName ?? seller}` : ""}
         </span>
-        {selected.length || sex || maxPrice || seller ? (
-          <Link href={params({ t: null, sex: null, max: null, seller: null })} className="hover:text-ink-100">
+        {selected.length || sex || age || maxPrice || seller ? (
+          <Link href={params({ t: null, sex: null, age: null, max: null, seller: null })} className="hover:text-ink-100">
             Clear filters
           </Link>
         ) : null}

@@ -14,6 +14,7 @@ import "server-only";
 
 import { createPublicClient } from "@/lib/supabase/public";
 import { slugifyTrait } from "@/lib/filters/schema";
+import type { SexClass, ValueGrid } from "./estimate";
 
 export type Morph = {
   trait: string;
@@ -51,6 +52,7 @@ export type Listing = {
   url: string | null;
   sellerSlug: string | null;
   sellerName: string | null;
+  weight: number | null;
   lastSeenAt: string | null;
   soldAt: string | null;
 };
@@ -179,6 +181,8 @@ export type ListingQuery = {
   traits?: string[];
   status?: "for-sale" | "sold";
   sex?: "male" | "female" | null;
+  /** hatchling | juvenile | subadult | adult */
+  age?: string | null;
   maxPrice?: number | null;
   sort?: "newest" | "price-low" | "price-high";
   seller?: string | null;
@@ -187,7 +191,7 @@ export type ListingQuery = {
 };
 
 const LISTING_COLUMNS =
-  "listing_id, name, price, currency, sex, maturity, trait_array, primary_image_url, listing_url, seller_slug, seller_name, last_seen_at, sold_at";
+  "listing_id, name, price, currency, sex, maturity, trait_array, primary_image_url, listing_url, seller_slug, seller_name, weight_grams, last_seen_at, sold_at";
 
 function toListing(r: Record<string, unknown>): Listing {
   return {
@@ -204,6 +208,7 @@ function toListing(r: Record<string, unknown>): Listing {
     url: (r.listing_url as string | null) ?? null,
     sellerSlug: (r.seller_slug as string | null) ?? null,
     sellerName: decodeEntities(r.seller_name as string | null),
+    weight: num(r.weight_grams),
     lastSeenAt: (r.last_seen_at as string | null) ?? null,
     soldAt: (r.sold_at as string | null) ?? null,
   };
@@ -226,6 +231,10 @@ export async function getListings(
         : query.eq("is_active", true).is("sold_at", null);
     if (q.traits && q.traits.length) query = query.contains("trait_array", q.traits);
     if (q.sex) query = query.ilike("sex", q.sex);
+    if (q.age) {
+      const maturity = q.age === "hatchling" ? "Baby" : q.age[0].toUpperCase() + q.age.slice(1);
+      query = query.ilike("maturity", maturity);
+    }
     if (q.maxPrice) query = query.lte("price", q.maxPrice);
     if (q.seller) query = query.eq("seller_slug", q.seller);
 
@@ -246,34 +255,6 @@ export async function getListings(
     };
   } catch {
     return { rows: [], total: 0 };
-  }
-}
-
-/** Which other morphs show up alongside this one, most common first. */
-export async function getPairings(
-  trait: string,
-  realTraits: Set<string>,
-): Promise<Array<{ trait: string; count: number }>> {
-  try {
-    const { data, error } = await createPublicClient()
-      .from("listings")
-      .select("trait_array")
-      .or(CRESTED)
-      .contains("trait_array", [trait])
-      .limit(2000);
-    if (error || !data) return [];
-    const counts = new Map<string, number>();
-    for (const r of data as Array<{ trait_array: string[] | null }>) {
-      for (const t of r.trait_array ?? []) {
-        if (t === trait || !realTraits.has(t)) continue;
-        counts.set(t, (counts.get(t) ?? 0) + 1);
-      }
-    }
-    return [...counts]
-      .map(([t, count]) => ({ trait: t, count }))
-      .sort((a, b) => b.count - a.count);
-  } catch {
-    return [];
   }
 }
 
@@ -335,5 +316,78 @@ export async function getDataAsOf(): Promise<string | null> {
     return (data as { last_seen_at: string | null } | null)?.last_seen_at ?? null;
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Value report: age x sex grid, growth curve, trait upgrades, baseline.
+// ---------------------------------------------------------------------
+
+
+export async function getValueGrid(traits: string[]): Promise<ValueGrid> {
+  const grid: ValueGrid = new Map();
+  try {
+    const { data, error } = await createPublicClient().rpc("value_grid", { p_traits: traits });
+    if (error || !data) return grid;
+    for (const r of data as Array<Record<string, unknown>>) {
+      grid.set(`${r.age_class}|${r.sex_class}`, {
+        n: Number(r.n ?? 0),
+        p25: num(r.p25),
+        p50: num(r.p50),
+        p75: num(r.p75),
+      });
+    }
+  } catch {
+    /* empty grid renders as "not enough data" */
+  }
+  return grid;
+}
+
+export type GrowthPoint = { bucket: number; label: string; sex: "all" | SexClass; n: number; p50: number | null };
+
+export async function getGrowthCurve(traits: string[]): Promise<GrowthPoint[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("growth_curve", { p_traits: traits });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      bucket: Number(r.bucket),
+      label: String(r.label),
+      sex: String(r.sex_class) as GrowthPoint["sex"],
+      n: Number(r.n ?? 0),
+      p50: num(r.p50),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type Upgrade = { trait: string; n: number; p50: number; baseN: number; baseP50: number };
+
+export async function getTraitUpgrades(traits: string[]): Promise<Upgrade[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("trait_upgrades", { p_traits: traits });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>)
+      .map((r) => ({
+        trait: String(r.trait),
+        n: Number(r.n ?? 0),
+        p50: Number(r.p50),
+        baseN: Number(r.base_n ?? 0),
+        baseP50: Number(r.base_p50),
+      }))
+      .filter((u) => Number.isFinite(u.p50) && Number.isFinite(u.baseP50) && u.baseP50 > 0);
+  } catch {
+    return [];
+  }
+}
+
+export async function getBaseline(): Promise<{ n: number; p50: number | null }> {
+  try {
+    const { data, error } = await createPublicClient().rpc("market_baseline");
+    const r = (data as Array<Record<string, unknown>> | null)?.[0];
+    if (error || !r) return { n: 0, p50: null };
+    return { n: Number(r.n ?? 0), p50: num(r.p50) };
+  } catch {
+    return { n: 0, p50: null };
   }
 }

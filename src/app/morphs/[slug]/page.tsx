@@ -1,26 +1,31 @@
-// One morph: what it lists and sells for, how asking prices spread out,
-// which morphs it is usually paired with, current listings, recent sales
-// and the breeders who list it most.
+// One morph: what it is genetically, what it is worth at each age and sex,
+// how its value grows, which pairings are worth the most, and real
+// listings, sales and breeders.
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getAskingPrices,
+  getBaseline,
   getBreeders,
+  getGrowthCurve,
   getListings,
   getMorphs,
-  getPairings,
+  getTraitUpgrades,
+  getValueGrid,
 } from "@/lib/simple/data";
+import { traitInfo } from "@/lib/simple/genetics";
 import {
   ButtonLink,
-  Chip,
+  Card,
   Empty,
   ListingGrid,
-  PageIntro,
   Section,
   Stat,
   TextLink,
   fmtShortDate,
 } from "@/components/simple/ui";
+import { UpgradeList, ValueGridTable } from "@/components/simple/value";
+import GrowthChart from "@/components/simple/GrowthChart";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 1800;
@@ -30,7 +35,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const name = morph?.trait ?? "Morph";
   return {
     title: `${name} crested gecko prices - Geck Inspect`,
-    description: `What ${name} crested geckos list and sell for, with current listings and common pairings.`,
+    description: `What ${name} crested geckos are worth by age and sex, how their value grows, and which pairings add the most.`,
   };
 }
 
@@ -40,7 +45,7 @@ function histogram(prices: number[]) {
   return BUCKETS.map((lo, i) => {
     const hi = BUCKETS[i + 1] ?? Infinity;
     return {
-      label: hi === Infinity ? `${fmtUsd(lo)}+` : `${fmtUsd(lo)} to ${fmtUsd(hi)}`,
+      label: hi === Infinity ? `${fmtUsd(lo)} and up` : `${fmtUsd(lo)} to ${fmtUsd(hi)}`,
       short: hi === Infinity ? `${fmtUsd(lo)}+` : fmtUsd(lo),
       count: prices.filter((p) => p >= lo && p < hi).length,
     };
@@ -53,22 +58,28 @@ export default async function MorphPage({ params }: { params: { slug: string } }
   const morph = morphs.find((m) => m.slug === params.slug);
   if (!morph) notFound();
 
-  const realTraits = new Set(morphs.map((m) => m.trait));
-  const [prices, pairings, forSale, sold, breeders] = await Promise.all([
+  const traits = [morph.trait];
+  const [baseline, grid, growth, upgrades, prices, forSale, sold, breeders] = await Promise.all([
+    getBaseline(),
+    getValueGrid(traits),
+    getGrowthCurve(traits),
+    getTraitUpgrades(traits),
     getAskingPrices(morph.trait),
-    getPairings(morph.trait, realTraits),
-    getListings({ traits: [morph.trait], status: "for-sale", sort: "newest", limit: 8 }),
-    getListings({ traits: [morph.trait], status: "sold", sort: "newest", limit: 4 }),
+    getListings({ traits, status: "for-sale", sort: "newest", limit: 8 }),
+    getListings({ traits, status: "sold", sort: "newest", limit: 4 }),
     getBreeders(),
   ]);
 
+  const info = traitInfo(morph.trait);
+  const ratio = baseline.p50 && morph.askMid ? morph.askMid / baseline.p50 : null;
   const bins = histogram(prices);
   const maxBin = Math.max(...bins.map((b) => b.count), 1);
   const slugOf = new Map(morphs.map((m) => [m.trait, m.slug]));
   const topBreeders = breeders.filter((b) => b.topTraits.includes(morph.trait)).slice(0, 6);
+  const growthEnough = growth.filter((p) => p.sex !== "all" && p.n >= 6).length >= 3;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-10">
+    <div className="mx-auto max-w-5xl space-y-12">
       <div className="text-sm text-ink-400">
         <Link href="/morphs" className="hover:text-ink-100">
           Morphs
@@ -76,46 +87,89 @@ export default async function MorphPage({ params }: { params: { slug: string } }
         / {morph.trait}
       </div>
 
-      <PageIntro
-        title={morph.trait}
-        action={
-          <ButtonLink href={`/?t=${morph.slug}`}>Price check a {morph.trait}</ButtonLink>
-        }
-      >
-        Crested geckos listed with the {morph.trait} trait on MorphMarket.
-      </PageIntro>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900 px-3 py-1 text-xs text-ink-300">
+            {info.kind}
+            {info.confidence === "emerging" ? (
+              <span className="rounded-full bg-busy/15 px-1.5 text-busy">emerging</span>
+            ) : null}
+          </div>
+          <h1 className="text-3xl font-semibold tracking-tight text-ink-50 sm:text-4xl">
+            {morph.trait}
+          </h1>
+          <p className="mt-3 text-base leading-7 text-ink-300">{info.note}</p>
+        </div>
+        <ButtonLink href={`/?t=${morph.slug}`}>Price a {morph.trait}</ButtonLink>
+      </header>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat
+          label="Typical asking price"
+          value={fmtUsd(morph.askMid)}
+          hint={
+            morph.askLow != null ? `Most ${fmtUsd(morph.askLow)} to ${fmtUsd(morph.askHigh)}` : undefined
+          }
+        />
+        <Stat
+          label="Versus a typical crested"
+          value={ratio ? `${ratio.toFixed(1)}×` : "no data"}
+          hint={baseline.p50 ? `Typical crested ${fmtUsd(baseline.p50)}` : undefined}
+        />
         <Stat
           label="Listed"
           value={fmtInt(morph.forSale)}
           hint={`Last checked ${fmtShortDate(morph.lastSeenAt)}`}
         />
         <Stat
-          label="Typical asking price"
-          value={fmtUsd(morph.askMid)}
-          hint={
-            morph.askLow != null
-              ? `Most list between ${fmtUsd(morph.askLow)} and ${fmtUsd(morph.askHigh)}`
-              : undefined
-          }
-        />
-        <Stat
           label="Typical sold price"
-          value={morph.sold >= 3 ? fmtUsd(morph.soldMid) : "Too few sales"}
+          value={morph.sold >= 3 ? fmtUsd(morph.soldMid) : "Too few"}
           hint={`${fmtInt(morph.sold)} sales, spring 2026`}
         />
       </div>
 
+      <Section
+        title="Value by age and sex"
+        note={`Typical asking price for ${morph.trait} at each stage. Tap a box to price that gecko.`}
+      >
+        <ValueGridTable
+          grid={grid}
+          age={null}
+          sex={null}
+          hrefFor={(a, s) => `/?t=${morph.slug}&sex=${s}&age=${a}`}
+        />
+      </Section>
+
+      {growthEnough ? (
+        <Section title="How value grows" note="Middle asking price by weight.">
+          <Card>
+            <GrowthChart points={growth} />
+          </Card>
+        </Section>
+      ) : null}
+
+      {upgrades.length ? (
+        <Section
+          title="Pairings worth the most"
+          note={`Typical asking price when a ${morph.trait} also has the trait. Tap one to price that combination.`}
+        >
+          <UpgradeList
+            upgrades={upgrades}
+            hrefFor={(t) => {
+              const s = slugOf.get(t);
+              return s ? `/?t=${morph.slug},${s}` : null;
+            }}
+          />
+        </Section>
+      ) : null}
+
       {prices.length ? (
         <Section title="How asking prices spread out" note={`${fmtInt(prices.length)} current listings in USD.`}>
-          <div className="rounded-xl border border-ink-700 bg-ink-850 p-5">
-            <div className="flex h-40 items-end gap-1.5 sm:gap-2">
+          <Card>
+            <div className="flex h-40 items-end gap-1.5 sm:gap-2" role="img" aria-label={bins.map((b) => `${b.label}: ${b.count}`).join(", ")}>
               {bins.map((b) => (
                 <div key={b.label} className="flex h-full flex-1 flex-col justify-end" title={`${b.label}: ${b.count}`}>
-                  <div className="mb-1 text-center text-[11px] tabular-nums text-ink-400">
-                    {b.count || ""}
-                  </div>
+                  <div className="mb-1 text-center text-[11px] tabular-nums text-ink-400">{b.count || ""}</div>
                   <div
                     className="rounded-t bg-claude/70"
                     style={{ height: `${(b.count / maxBin) * 100}%`, minHeight: b.count ? 2 : 0 }}
@@ -130,25 +184,7 @@ export default async function MorphPage({ params }: { params: { slug: string } }
                 </div>
               ))}
             </div>
-          </div>
-        </Section>
-      ) : null}
-
-      {pairings.length ? (
-        <Section
-          title="Often paired with"
-          note={`Tap a pairing to price check ${morph.trait} with it.`}
-        >
-          <div className="flex flex-wrap gap-2">
-            {pairings.slice(0, 12).map((p) => {
-              const other = slugOf.get(p.trait);
-              return other ? (
-                <Chip key={p.trait} href={`/?t=${morph.slug},${other}`}>
-                  {p.trait} <span className="text-ink-500">{fmtInt(p.count)}</span>
-                </Chip>
-              ) : null;
-            })}
-          </div>
+          </Card>
         </Section>
       ) : null}
 

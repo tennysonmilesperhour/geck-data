@@ -168,11 +168,11 @@ body::before {
   border-collapse: collapse;
 }
 
-.geck-app thead {
+.geck-app table:not(.plain) thead {
   background: rgba(15, 23, 42, 0.72);
 }
 
-.geck-app th {
+.geck-app table:not(.plain) th {
   color: rgb(var(--muted));
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;

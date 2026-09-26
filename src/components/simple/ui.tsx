@@ -253,7 +253,9 @@ const sexLabel = (s: string | null) => {
 
 export function ListingCard({ listing }: { listing: Listing }) {
   const sold = Boolean(listing.soldAt);
-  const details = [sexLabel(listing.sex), listing.maturity].filter(Boolean).join(", ");
+  const maturity = listing.maturity === "Baby" ? "Hatchling" : listing.maturity;
+  const weight = listing.weight ? `${Math.round(listing.weight)}g` : null;
+  const details = [sexLabel(listing.sex), maturity, weight].filter(Boolean).join(", ");
   const inner = (
     <>
       <ListingImage
