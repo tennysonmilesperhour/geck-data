@@ -1,296 +1,137 @@
-// Seller directory. Editorial header + featured top-six + location
-// distribution + the full ranked table. Charts (scatter / bubble /
-// treemap / geo) stay driven by ChartGrid; the table below is page-
-// owned because it's the navigational entry point.
+// Breeders: who lists crested geckos, how many, at what typical price and
+// which morphs they focus on. Search by name or place; each card opens the
+// breeder's page.
 import Link from "next/link";
-import { type Seller } from "@/components/charts/SellerLeaderboardScatter";
-import ChartGrid from "@/components/charts/ChartGrid";
-import DataTable, { type Column } from "@/components/ui/DataTable";
-import KpiCard from "@/components/ui/KpiCard";
-import { SectionHeader } from "@/components/ui/Panel";
-import { createClient } from "@/lib/supabase/server";
+import { getBreeders } from "@/lib/simple/data";
+import { Avatar, Empty, PageIntro } from "@/components/simple/ui";
 import { fmtInt, fmtUsd } from "@/lib/format";
-import FeaturedSellerCard, {
-  type FeaturedSeller,
-} from "@/components/sellers/FeaturedSellerCard";
-import LocationDistribution from "@/components/sellers/LocationDistribution";
-import SellerAvatar from "@/components/media/SellerAvatar";
-import MiniSparkline from "@/components/charts/MiniSparkline";
-import DataFreshness from "@/components/ui/DataFreshness";
-import { getSellerDailyActivity } from "@/lib/sellers/activity";
-import { parseFilters } from "@/lib/filters/link";
-import { resolveComboFromSlug } from "@/lib/market/combo-slug";
-import CsvDownloadButton from "@/components/ui/CsvDownloadButton";
-import SourceFootnote from "@/components/ui/SourceFootnote";
-import { getSellerVisualMap } from "@/lib/media/market-images";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 1800;
 
-type SellerRow = Seller & {
-  total_listings: number | null;
-  avg_price: number | null;
-  seller_rating_score: number | null;
-  avatar_url: string | null;
-  recent_listing_image_url: string | null;
+export const metadata = {
+  title: "Crested gecko breeders - Geck Inspect",
+  description: "Crested gecko breeders on MorphMarket, what they list and at what prices.",
 };
 
-export default async function SellersPage({
-  searchParams,
-}: {
-  searchParams?: Record<string, string | string[] | undefined>;
-}) {
-  const filters = parseFilters(searchParams);
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("market_sellers")
-    .select(
-      "seller_id, seller_name, seller_location, membership, feedback_count, seller_rating_score, total_listings, avg_price, five_star_rating",
-    )
-    .order("total_listings", { ascending: false, nullsFirst: false })
-    .limit(1000);
+type SearchParams = Record<string, string | string[] | undefined>;
+const PAGE_SIZE = 30;
 
-  if (error) {
-    return (
-      <div className="rounded-md border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
-        Failed to load sellers: {error.message}
-      </div>
-    );
-  }
+export default async function BreedersPage({ searchParams }: { searchParams?: SearchParams }) {
+  const qRaw = searchParams?.q;
+  const q = (Array.isArray(qRaw) ? qRaw[0] : qRaw ?? "").trim().slice(0, 60);
+  const pageRaw = searchParams?.page;
+  const page = Math.max(1, Number(Array.isArray(pageRaw) ? pageRaw[0] : pageRaw) || 1);
 
-  let rows = (data ?? []) as SellerRow[];
-
-  // market_sellers carries no timestamp column, so the honest freshness
-  // stamp for the directory is "when did we last see any listing" - the
-  // directory's ranks and averages derive from listing activity.
-  const { data: newestListing } = await supabase
-    .from("market_listings")
-    .select("last_seen_at")
-    .order("last_seen_at", { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
-  const dataAsOf =
-    (newestListing as { last_seen_at: string | null } | null)?.last_seen_at ??
-    null;
-
-  // When the user arrived here from a combo entity page (or any link
-  // that passed &combos=...), narrow to sellers who currently list at
-  // least one matching listing. Both legacy short ids and the new
-  // auto-discovered slug form (axanthic__lilly-white) resolve through
-  // the same helper; unknown slugs degrade to no-op.
-  const focusedCombos = (
-    await Promise.all(
-      filters.combos.map((slug) => resolveComboFromSlug(supabase, slug)),
-    )
-  ).filter((c): c is NonNullable<typeof c> => Boolean(c));
-
-  let filterSummary: string | null = null;
-  if (focusedCombos.length > 0) {
-    const sellerIds = new Set<string>();
-    for (const combo of focusedCombos) {
-      let q = supabase
-        .from("market_listings")
-        .select("seller_id")
-        .eq("current_status", "live")
-        .not("seller_id", "is", null)
-        .limit(5000);
-      for (const t of combo.traits) {
-        q = q.ilike("cached_traits", `%${t}%`);
-      }
-      const { data: matches } = await q;
-      for (const m of (matches ?? []) as Array<{ seller_id: string | null }>) {
-        if (m.seller_id) sellerIds.add(m.seller_id);
-      }
-    }
-    rows = rows.filter((r) => sellerIds.has(r.seller_id));
-    filterSummary = `Filtered to sellers carrying ${focusedCombos.map((c) => c.display).join(" or ")}`;
-  }
-  const totalInv = rows.reduce((a, r) => a + (r.total_listings ?? 0), 0);
-  const avgPriceAll =
-    rows.reduce((a, r) => a + (r.avg_price ?? 0) * (r.total_listings ?? 0), 0) /
-    Math.max(1, totalInv);
-  const sellerVisuals = await getSellerVisualMap(
-    supabase,
-    rows.map((row) => row.seller_id),
-    { includeRecentListing: true },
-  );
-  rows = rows.map((row) => {
-    const visual = sellerVisuals.get(row.seller_id);
-    return {
-      ...row,
-      avatar_url: visual?.avatarUrl ?? null,
-      recent_listing_image_url: visual?.recentListingImageUrl ?? null,
-    };
-  });
-  const featured = rows.slice(0, 6) as FeaturedSeller[];
-
-  // Chronological per-seller activity for the top ~60 (covers the
-  // featured cards + visible table window). Limiting to a known set
-  // keeps the query bounded; sellers off the top of the list render
-  // without a sparkline rather than burning a query.
-  const sparkTargetIds = rows.slice(0, 60).map((r) => r.seller_id);
-  const sellerActivity = await getSellerDailyActivity(sparkTargetIds);
-
-  const columns: Column<SellerRow>[] = [
-    {
-      key: "name",
-      header: "Seller",
-      render: (s) => (
-        <Link
-          href={`/sellers/${s.seller_id}`}
-          className="group inline-flex items-center gap-3"
-        >
-          <SellerAvatar
-            name={s.seller_name ?? s.seller_id}
-            imageUrl={s.avatar_url}
-            size={30}
-          />
-          <span className="font-medium text-ink-100 transition group-hover:text-claude-glow">
-            {s.seller_name ?? s.seller_id}
-          </span>
-        </Link>
-      ),
-    },
-    { key: "loc", header: "Location", render: (s) => s.seller_location ?? "no data" },
-    {
-      key: "activity",
-      header: "30d",
-      render: (s) => {
-        const daily = sellerActivity.get(s.seller_id);
-        if (!daily || daily.every((v) => v === 0)) {
-          return <span className="text-ink-600">—</span>;
-        }
-        return (
-          <span className="hidden sm:inline-block">
-            <MiniSparkline values={daily} width={80} height={20} />
-          </span>
-        );
-      },
-    },
-    { key: "mem", header: "Plan", render: (s) => s.membership ?? "no data" },
-    {
-      key: "listings",
-      header: "Listings",
-      align: "right",
-      render: (s) => (
-        <span className="font-mono tabular-nums">{fmtInt(s.total_listings)}</span>
-      ),
-    },
-    {
-      key: "avg",
-      header: "Avg price",
-      align: "right",
-      render: (s) => (
-        <span className="font-mono tabular-nums">{fmtUsd(s.avg_price)}</span>
-      ),
-    },
-    {
-      key: "fb",
-      header: "Feedback",
-      align: "right",
-      render: (s) => (
-        <span className="font-mono tabular-nums text-ink-300">
-          {fmtInt(s.feedback_count)}
-        </span>
-      ),
-    },
-    {
-      key: "rating",
-      header: "Rating",
-      align: "right",
-      render: (s) =>
-        s.seller_rating_score != null ? (
-          <span className="font-mono tabular-nums">
-            {s.seller_rating_score.toFixed(2)}
-          </span>
-        ) : (
-          <span className="text-ink-500">—</span>
-        ),
-    },
-  ];
+  const all = await getBreeders();
+  const needle = q.toLowerCase();
+  const matches = needle
+    ? all.filter(
+        (b) =>
+          b.name.toLowerCase().includes(needle) ||
+          (b.location ?? "").toLowerCase().includes(needle) ||
+          b.topTraits.some((t) => t.toLowerCase().includes(needle)),
+      )
+    : all.filter((b) => b.forSale > 0 || b.sold > 0);
+  const pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
+  const shown = matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const href = (p: number) => {
+    const s = new URLSearchParams();
+    if (q) s.set("q", q);
+    if (p > 1) s.set("page", String(p));
+    const str = s.toString();
+    return str ? `/sellers?${str}` : "/sellers";
+  };
 
   return (
-    <div className="page-rise space-y-10">
-      <SectionHeader
-        eyebrow="Directory"
-        title="Seller directory"
-        description={
-          filterSummary
-            ? `${filterSummary}. ${fmtInt(rows.length)} sellers match.`
-            : `${fmtInt(rows.length)} sellers tracked across the catalog. The top six are spotlighted below; the rest are sortable in the table. Click any name for their full history.`
-        }
-        right={<DataFreshness updatedAt={dataAsOf} window="30 days" />}
-      />
+    <div className="mx-auto max-w-5xl space-y-8">
+      <PageIntro title="Breeders">
+        Breeders selling crested geckos on MorphMarket, sorted by how many they have
+        listed.
+      </PageIntro>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label="Sellers" value={rows.length} />
-        <KpiCard label="Combined inventory" value={fmtInt(totalInv)} />
-        <KpiCard label="Market avg price" value={fmtUsd(avgPriceAll)} />
-        <KpiCard
-          label="Top seller"
-          value={rows[0]?.seller_name ?? "no data"}
-          sub={rows[0] ? `${fmtInt(rows[0].total_listings)} listings` : undefined}
+      <form method="get" action="/sellers" className="flex gap-2">
+        <input
+          name="q"
+          defaultValue={q}
+          placeholder="Search by name, place or morph"
+          className="w-full rounded-lg border border-ink-700 bg-ink-900 px-4 py-2.5 text-sm text-ink-100 focus:border-claude focus:outline-none"
         />
+        <button
+          type="submit"
+          className="rounded-lg bg-claude px-5 py-2 text-sm font-medium text-ink-950 hover:bg-claude-glow"
+        >
+          Search
+        </button>
+      </form>
+
+      <div className="text-sm text-ink-400">
+        {fmtInt(matches.length)} breeders{q ? ` matching "${q}"` : ""}
       </div>
 
-      {featured.length > 0 ? (
-        <section>
-          <div className="mb-4 flex items-baseline justify-between">
-            <h2 className="font-display text-[22px] font-medium tracking-tight text-ink-50">
-              Featured breeders
-            </h2>
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-500">
-              ranked by inventory
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {featured.map((s) => (
-              <FeaturedSellerCard
-                key={s.seller_id}
-                seller={s}
-                daily={sellerActivity.get(s.seller_id)}
-              />
-            ))}
-          </div>
-        </section>
+      {shown.length ? (
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {shown.map((b) => (
+            <li key={b.slug}>
+              <Link
+                href={`/sellers/${b.slug}`}
+                className="flex h-full gap-4 rounded-xl border border-ink-700 bg-ink-850 p-4 transition hover:border-ink-500"
+              >
+                <Avatar name={b.name} src={b.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-ink-50">{b.name}</div>
+                  <div className="truncate text-sm text-ink-400">
+                    {b.location ?? "Location not listed"}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-300">
+                    <span>
+                      <span className="tabular-nums text-ink-100">{fmtInt(b.forSale)}</span> listed
+                    </span>
+                    {b.askMid != null ? (
+                      <span>
+                        typical <span className="tabular-nums text-ink-100">{fmtUsd(b.askMid)}</span>
+                      </span>
+                    ) : null}
+                    {b.sold ? (
+                      <span>
+                        <span className="tabular-nums text-ink-100">{fmtInt(b.sold)}</span> sold
+                      </span>
+                    ) : null}
+                  </div>
+                  {b.topTraits.length ? (
+                    <div className="mt-2 text-xs text-ink-500">
+                      Mostly {b.topTraits.join(", ")}
+                    </div>
+                  ) : null}
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Empty>No breeders match that search.</Empty>
+      )}
+
+      {pages > 1 ? (
+        <nav className="flex items-center justify-between text-sm" aria-label="Pages">
+          {page > 1 ? (
+            <Link href={href(page - 1)} className="rounded-lg border border-ink-700 px-4 py-2 text-ink-200 hover:border-ink-500">
+              Previous
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="text-ink-400">
+            Page {page} of {pages}
+          </span>
+          {page < pages ? (
+            <Link href={href(page + 1)} className="rounded-lg border border-ink-700 px-4 py-2 text-ink-200 hover:border-ink-500">
+              Next
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
       ) : null}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ChartGrid page="sellers" ctx={{ sellers: rows }} />
-        </div>
-        <LocationDistribution rows={rows} />
-      </div>
-
-      <section>
-        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-          <h2 className="font-display text-[22px] font-medium tracking-tight text-ink-50">
-            All sellers
-          </h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-ink-400">{fmtInt(rows.length)} rows</span>
-            <CsvDownloadButton
-              rows={rows.map((r) => ({
-                seller_id: r.seller_id,
-                seller_name: r.seller_name,
-                seller_location: r.seller_location,
-                membership: r.membership,
-                total_listings: r.total_listings,
-                avg_price: r.avg_price,
-                feedback_count: r.feedback_count,
-                seller_rating_score: r.seller_rating_score,
-              }))}
-              filename={`sellers-${new Date().toISOString().slice(0, 10)}`}
-            />
-          </div>
-        </div>
-        <DataTable columns={columns} rows={rows} rowKey={(s) => s.seller_id} />
-      </section>
-
-      <SourceFootnote
-        sources={["MorphMarket sellers", "Eye in the Sky extension"]}
-        n={rows.length}
-        methodologyAnchor="confidence"
-      />
     </div>
   );
 }

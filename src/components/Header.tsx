@@ -1,94 +1,33 @@
 "use client";
-// Claude Code-styled top navigation with a leading asterisk wordmark,
-// grouped section tabs, and a compact auth/session cluster. The full tab
-// row shows inline on large screens; below `lg` it collapses into a
-// hamburger that opens a slide-in drawer so the header stays one line on
-// phones instead of wrapping into five stacked rows.
+// Site header. Four destinations and nothing else:
+//   Price check (home), Morphs, Listings, Breeders.
+// Account links sit on the right. On phones the four links drop to a
+// second row instead of hiding behind a menu, so nothing is ever more
+// than one tap away.
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import SettingsDrawer from "@/components/settings/SettingsDrawer";
 import Logo from "@/components/ui/Logo";
-import type {
-  FeedLevel,
-  FeedVerdict,
-  OptionalSections,
-} from "@/lib/market/freshness";
 
-// The pip used to be a hardcoded "Ready" while /status reported Lagging,
-// Down and Stale on the same page load. It now renders whatever verdict the
-// server hands down, and renders no claim at all when it is handed none:
-// a header that says nothing is better than a header that says Ready over a
-// catalogue nobody has re-observed since June.
-//
-// `ready` (green) is reserved for a passed coverage gate. Anything unmeasured
-// gets the neutral dot.
-const STATUS_DOT: Record<FeedLevel, string> = {
-  ok: "",
-  partial: "busy",
-  limited: "busy",
-  stale: "idle",
-  unknown: "info",
-};
+const NAV = [
+  { href: "/", label: "Price check" },
+  { href: "/morphs", label: "Morphs" },
+  { href: "/listings", label: "Listings" },
+  { href: "/sellers", label: "Breeders" },
+] as const;
 
-type Group = "core" | "analysis" | "ops";
-// `needs` names an optional section this tab depends on. A tab carrying one is
-// only rendered when that section has rows behind it. Shows stays hidden
-// until show_mentions has rows; Cross-platform unhides when
-// cross_platform_listings does.
-type Tab = {
-  href: string;
-  label: string;
-  group?: Group;
-  needs?: keyof OptionalSections;
-};
-
-const TABS: Tab[] = [
-  { href: "/",                label: "Pulse",         group: "core" },
-  { href: "/whats-it-worth",  label: "What's it worth?", group: "core" },
-  { href: "/sold",            label: "Sold",          group: "core" },
-  { href: "/sellers",         label: "Sellers",       group: "core" },
-  { href: "/market",          label: "Market",        group: "analysis" },
-  { href: "/indices",         label: "Indices",       group: "analysis" },
-  { href: "/trends",          label: "Trends",        group: "analysis" },
-  { href: "/compare",         label: "Compare",       group: "analysis" },
-  { href: "/reports",         label: "Reports",       group: "analysis" },
-  { href: "/shows",           label: "Shows",         group: "ops", needs: "shows" },
-  { href: "/cross-platform",  label: "Cross-platform", group: "ops", needs: "crossPlatform" },
-  { href: "/price-drops",     label: "Drops",         group: "ops", needs: "priceDrops" },
-];
-
-const GROUP_LABELS: Record<Group, string> = {
-  core: "Core",
-  analysis: "Analysis",
-  ops: "Operations",
-};
-
-export default function Header({
-  feed,
-  sections,
-}: {
-  feed?: FeedVerdict | null;
-  sections?: OptionalSections | null;
-}) {
-  // No section data (the read failed, or a caller that does not pass it) means
-  // show everything. Hiding a real section is the worse error.
-  const visibleTabs = TABS.filter(
-    (t) => !t.needs || !sections || sections[t.needs],
-  );
+export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     let active = true;
-
     supabase.auth.getUser().then(async ({ data }) => {
       if (!active) return;
       setUser(data.user ?? null);
@@ -102,298 +41,83 @@ export default function Header({
         if (active) setRole((profile?.role as string) ?? null);
       }
     });
-
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (!session?.user) setRole(null);
     });
-
     return () => {
       active = false;
       sub.subscription.unsubscribe();
     };
   }, [supabase]);
 
-  // Close the mobile drawer whenever the route changes, and lock body
-  // scroll / wire up Escape while it's open (mirrors SettingsDrawer).
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [menuOpen]);
-
   async function logout() {
-    const supabase = createClient();
     await supabase.auth.signOut();
     router.refresh();
     router.push("/");
   }
 
-  function isActive(href: string): boolean {
-    if (href === "/") return pathname === "/";
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 
-  // Extra links that depend on session/role, surfaced both inline (lg+)
-  // and inside the mobile drawer.
-  const sessionTabs: Tab[] = [];
-  if (loaded && user) {
-    sessionTabs.push({ href: "/watchlist", label: "Watchlist" });
-    sessionTabs.push({ href: "/alerts", label: "Alerts" });
-  }
-  if (loaded && role === "admin") {
-    sessionTabs.push({ href: "/admin/analytics", label: "Analytics" });
-  }
+  const navLinks = NAV.map((item) => (
+    <Link
+      key={item.href}
+      href={item.href}
+      aria-current={isActive(item.href) ? "page" : undefined}
+      className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
+        isActive(item.href)
+          ? "bg-ink-800 text-ink-50"
+          : "text-ink-300 hover:bg-ink-850 hover:text-ink-50"
+      }`}
+    >
+      {item.label}
+    </Link>
+  ));
 
   return (
-    <header className="sticky top-0 z-30 border-b border-ink-700 bg-ink-950/95 backdrop-blur-xl">
-      <div className="mx-auto flex min-h-[58px] w-full max-w-[1600px] items-center gap-3 px-4 sm:gap-6 sm:px-6 lg:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-2 text-ink-50">
+    <header className="sticky top-0 z-30 border-b border-ink-700 bg-ink-950/90 backdrop-blur">
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-6 px-4 sm:px-6">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5 text-ink-50">
           <Logo size={28} />
-          <span className="font-display text-[16px] font-semibold tracking-[-0.02em]">
-            Geck Inspect
-          </span>
-          <span className="ml-2 hidden border-l border-ink-700 pl-3 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-500 sm:inline">
-            market intelligence
+          <span className="text-base font-semibold tracking-tight">
+            Geck Inspect <span className="font-normal text-ink-400">Market</span>
           </span>
         </Link>
 
-        <div className="flex-1" />
+        <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+          {navLinks}
+        </nav>
 
-        <div className="flex items-center gap-2 text-[13px] sm:gap-3">
-          <Link
-            href="/status"
-            title={feed ? feed.detail : "Pipeline status"}
-            className="hidden items-center gap-1.5 text-ink-400 hover:text-ink-200 md:inline-flex"
-          >
-            {feed ? <span className={`status-dot ${STATUS_DOT[feed.level]}`} /> : null}
-            <span className="font-mono text-[11px] uppercase tracking-wider">
-              {feed ? feed.headline : "Status"}
-            </span>
-          </Link>
-          <SettingsDrawer />
+        <div className="ml-auto flex items-center gap-3 text-sm">
           {loaded && user ? (
             <>
-              <Link
-                href="/upload"
-                className="hidden rounded-md border border-ink-700 bg-ink-850 px-2.5 py-1.5 text-ink-200 hover:border-ink-600 hover:text-ink-50 sm:inline-block"
-              >
-                Upload data
+              <Link href="/watchlist" className="hidden text-ink-300 hover:text-ink-50 sm:inline">
+                Watchlist
               </Link>
-              <span className="hidden text-ink-400 md:inline">{user.email}</span>
-              <button
-                onClick={logout}
-                className="hidden text-ink-400 hover:text-ink-100 sm:inline"
-                type="button"
-              >
+              {role === "admin" ? (
+                <Link href="/data-admin" className="hidden text-ink-300 hover:text-ink-50 sm:inline">
+                  Admin
+                </Link>
+              ) : null}
+              <button type="button" onClick={logout} className="text-ink-400 hover:text-ink-50">
                 Log out
               </button>
             </>
           ) : loaded ? (
-            <Link
-              href="/login"
-            className="border border-claude bg-claude px-3 py-1.5 font-medium text-ink-950 hover:bg-claude-glow"
-            >
+            <Link href="/login" className="text-ink-300 hover:text-ink-50">
               Log in
             </Link>
           ) : null}
-
-          {/* Hamburger, small screens only. */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open navigation menu"
-            aria-expanded={menuOpen}
-            className="border border-ink-700 bg-ink-850 p-1.5 text-ink-300 hover:border-ink-600 hover:text-ink-50 lg:hidden"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-5 w-5"
-              aria-hidden="true"
-            >
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
         </div>
       </div>
 
-      <nav className="hidden border-t border-ink-700/80 lg:block" aria-label="Primary navigation">
-        <div className="mx-auto flex min-h-[44px] w-full max-w-[1600px] items-stretch overflow-x-auto px-8">
-          <span className="flex min-w-[150px] items-center border-x border-ink-700/80 px-4 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-500">
-            Market workspace
-          </span>
-          {visibleTabs.map((t, index) => {
-            const prev = visibleTabs[index - 1];
-            const startsGroup = !prev || prev.group !== t.group;
-            return (
-              <Link
-                key={t.href}
-                href={t.href}
-                className={`relative flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-medium transition ${
-                  startsGroup ? "border-l border-l-ink-600" : ""
-                } ${
-                  isActive(t.href)
-                    ? "bg-ink-800 text-ink-50 shadow-[inset_0_-2px_0_#10b981]"
-                    : "text-ink-400 hover:bg-ink-850 hover:text-ink-100"
-                }`}
-              >
-                {t.label}
-              </Link>
-            );
-          })}
-          {sessionTabs.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={`flex min-w-max items-center border-r border-ink-700/80 px-3.5 text-[12px] font-medium ${
-                isActive(t.href)
-                  ? "bg-ink-800 text-ink-50 shadow-[inset_0_-2px_0_#10b981]"
-                  : "text-ink-400 hover:bg-ink-850 hover:text-ink-100"
-              }`}
-            >
-              {t.label}
-            </Link>
-          ))}
-        </div>
+      <nav
+        className="flex gap-1 overflow-x-auto border-t border-ink-800 px-3 py-2 md:hidden"
+        aria-label="Main"
+      >
+        {navLinks}
       </nav>
-
-      {/* Mobile navigation drawer. */}
-      {menuOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden="true"
-          />
-          <aside
-            role="dialog"
-            aria-label="Navigation"
-            className="absolute right-0 top-0 flex h-full w-full max-w-xs flex-col border-l border-ink-700 bg-ink-900 shadow-2xl"
-          >
-            <header className="flex items-center justify-between border-b border-ink-700 px-4 py-3">
-              <span className="flex items-center gap-2 text-ink-50">
-                <Logo size={24} />
-                <span className="font-display text-sm font-medium tracking-tight">
-                  Geck Inspect
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setMenuOpen(false)}
-                className="text-ink-400 hover:text-ink-100"
-                aria-label="Close navigation menu"
-              >
-                ✕
-              </button>
-            </header>
-
-            <div className="flex-1 overflow-y-auto px-3 py-4">
-              {(["core", "analysis", "ops"] as Group[]).map((group) => (
-                <div key={group} className="mb-5">
-                  <p className="px-2 pb-1.5 text-[10px] font-mono uppercase tracking-wider text-ink-500">
-                    {GROUP_LABELS[group]}
-                  </p>
-                  <div className="flex flex-col">
-                    {visibleTabs.filter((t) => t.group === group).map((t) => (
-                      <Link
-                        key={t.href}
-                        href={t.href}
-                        onClick={() => setMenuOpen(false)}
-                        className={`rounded-md px-2.5 py-2.5 text-sm ${
-                          isActive(t.href)
-                            ? "bg-ink-800 text-ink-50"
-                            : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
-                        }`}
-                      >
-                        {t.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {sessionTabs.length > 0 ? (
-                <div className="mb-5">
-                  <p className="px-2 pb-1.5 text-[10px] font-mono uppercase tracking-wider text-ink-500">
-                    You
-                  </p>
-                  <div className="flex flex-col">
-                    {sessionTabs.map((t) => (
-                      <Link
-                        key={t.href}
-                        href={t.href}
-                        onClick={() => setMenuOpen(false)}
-                        className={`rounded-md px-2.5 py-2.5 text-sm ${
-                          isActive(t.href)
-                            ? "bg-ink-800 text-ink-50"
-                            : "text-ink-300 hover:bg-ink-850 hover:text-ink-100"
-                        }`}
-                      >
-                        {t.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            <footer className="border-t border-ink-700 px-3 py-3">
-              {loaded && user ? (
-                <div className="flex flex-col gap-2">
-                  {user.email ? (
-                    <span className="truncate px-2 text-xs text-ink-400">{user.email}</span>
-                  ) : null}
-                  <Link
-                    href="/upload"
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-md border border-ink-700 bg-ink-850 px-2.5 py-2 text-center text-sm text-ink-200 hover:border-ink-600 hover:text-ink-50"
-                  >
-                    Upload data
-                  </Link>
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      logout();
-                    }}
-                    type="button"
-                    className="rounded-md px-2.5 py-2 text-center text-sm text-ink-400 hover:bg-ink-850 hover:text-ink-100"
-                  >
-                    Log out
-                  </button>
-                </div>
-              ) : loaded ? (
-                <Link
-                  href="/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="block rounded-md bg-claude px-3 py-2 text-center text-sm text-ink-50 shadow-glow hover:bg-claude-glow"
-                >
-                  Log in
-                </Link>
-              ) : null}
-            </footer>
-          </aside>
-        </div>
-      ) : null}
     </header>
   );
 }

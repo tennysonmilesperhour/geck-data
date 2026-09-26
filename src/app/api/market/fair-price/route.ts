@@ -13,7 +13,7 @@
 //
 // Returns the per-combo p10..p90 distribution from v_combo_price_distribution
 // AND the same band scaled by the gecko's individual attributes
-// (price_adjustment_factors). Consumers can show either — the morph-classifier
+// (price_adjustment_factors). Consumers can show either. The morph-classifier
 // card in Geck Inspect uses `adjusted`, the /whats-it-worth page shows both.
 //
 // The `note` field carries the disclaimer text. Front-ends should render
@@ -32,6 +32,11 @@ import {
 } from "@/lib/market/price-adjust";
 
 export const runtime = "nodejs";
+
+// Sold history begins May 2026 and the feed of new sales is paused, so a
+// 180-day window would start returning nothing in November. Two years keeps
+// the band available; newest_sold_at / oldest_sold_at say how old it is.
+const SOLD_LOOKBACK_DAYS = 730;
 export const dynamic = "force-dynamic";
 
 type DistRow = {
@@ -143,7 +148,7 @@ async function lookupTraitBand(traits: string[]) {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("sold_price_band", {
     p_traits: traits,
-    p_lookback_days: 180,
+    p_lookback_days: SOLD_LOOKBACK_DAYS,
     p_include_inferred: true,
   });
   if (error) return { admin, error: error.message, row: null };
@@ -207,7 +212,7 @@ async function buildResponse(opts: {
         applied: null,
         confidence: "low" as const,
         note: DISCLAIMER,
-        message: "No sold data in the 180-day window for this combo.",
+        message: "No sold data on record for this combo.",
       },
     };
   }
@@ -287,7 +292,7 @@ async function buildTraitResponse(opts: {
         message:
           opts.traits.length === 0
             ? "Pick at least one trait."
-            : `No sold listings in the last 180 days contain all of: ${opts.traits.join(", ")}. Try fewer traits or broader synonyms.`,
+            : `No sold listings on record contain all of: ${opts.traits.join(", ")}. Try fewer traits or broader synonyms.`,
       },
     };
   }
@@ -309,7 +314,7 @@ async function buildTraitResponse(opts: {
     const { data } = await admin.rpc("f_recent_sales_for_traits", {
       p_traits: opts.traits,
       p_limit: opts.recentSalesN,
-      p_lookback_days: 180,
+      p_lookback_days: SOLD_LOOKBACK_DAYS,
     });
     recentSales = ((data ?? []) as RecentSale[]).slice(0, opts.recentSalesN);
   }
@@ -349,7 +354,7 @@ export async function GET(req: NextRequest) {
     10,
   );
 
-  // Free-form trait mode — preferred. Any number of traits, no whitelist.
+  // Free-form trait mode, preferred. Any number of traits, no whitelist.
   if (traitsParam) {
     const traits = traitsParam
       .split(",")
@@ -368,7 +373,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(out.body, { headers: corsHeaders });
   }
 
-  // Legacy combo-id mode — kept for the Geck Inspect classifier card
+  // Legacy combo-id mode, kept for the Geck Inspect classifier card
   // which still passes canonical combo ids derived from the morph model.
   if (!comboId) {
     return NextResponse.json(
@@ -430,7 +435,7 @@ export async function POST(req: NextRequest) {
     10,
   );
 
-  // Trait-set mode (default) — always answers, not limited to 12 combos.
+  // Trait-set mode (default): always answers, not limited to 12 combos.
   // Also report whether the traits happened to match one of the canonical
   // combos so the Geck Inspect card can show "Lilly White × Axanthic" as
   // a name when applicable.

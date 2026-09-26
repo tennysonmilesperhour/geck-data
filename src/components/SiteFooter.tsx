@@ -1,27 +1,26 @@
 import Link from "next/link";
 
 const FOOTER_LINKS = [
-  { href: "/methodology", label: "Methodology" },
+  { href: "/methodology", label: "How prices work" },
   { href: "/status", label: "Data status" },
   { href: "/api-docs", label: "API" },
-  { href: "/settings", label: "Settings" },
 ] as const;
 
 export default function SiteFooter() {
   return (
-    <footer className="border-t border-ink-700/80 bg-ink-950/80">
-      <div className="mx-auto grid min-h-[96px] w-full max-w-[1600px] grid-cols-1 items-center gap-5 px-4 py-5 sm:px-6 md:grid-cols-[minmax(0,1fr)_auto] lg:px-8">
-        <div>
-          <p className="m-0 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-clay-300">
-            Geck Inspect / Market intelligence
-          </p>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-ink-500">
-            Asking prices, observed listings, and completed-sale records are kept as separate evidence layers. Every analytical page states its source window and known coverage limits.
-          </p>
-        </div>
-        <nav className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink-400" aria-label="Supporting information">
+    <footer className="mt-16 border-t border-ink-800">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-8 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <p className="max-w-xl text-ink-500">
+          Prices come from public MorphMarket listings. Sold prices are the last asking
+          price before a listing came down. Part of{" "}
+          <a href="https://geckinspect.com" className="text-ink-300 hover:text-ink-50">
+            Geck Inspect
+          </a>
+          .
+        </p>
+        <nav className="flex flex-wrap gap-x-5 gap-y-2 text-ink-400" aria-label="Footer">
           {FOOTER_LINKS.map((item) => (
-            <Link key={item.href} href={item.href} className="hover:text-claude-glow">
+            <Link key={item.href} href={item.href} className="hover:text-ink-50">
               {item.label}
             </Link>
           ))}

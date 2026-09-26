@@ -46,27 +46,26 @@ export default async function StaleDataBanner() {
     verdict.level !== "limited"
   ) return null;
 
-  // Observed days say something coverage percentages cannot: how many
-  // distinct days in the window produced any observation at all.
-  const observed =
-    coverage.observedDays30 === null
-      ? null
-      : `${coverage.observedDays30} of the last 30 days produced observations.`;
+  // One plain sentence: how current the prices are, with the real date.
+  const lastCheck = coverage.newestObservationAt
+    ? new Date(coverage.newestObservationAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+  const message =
+    verdict.level === "stale"
+      ? `Prices are out of date${lastCheck ? `: listings were last checked ${lastCheck}` : ""}.`
+      : `Some prices are out of date. Not every listing has been rechecked recently${lastCheck ? ` (latest check ${lastCheck})` : ""}.`;
 
   return (
     <FreshnessBannerView
       className={`border-b px-4 py-2 text-center text-sm ${TONE[verdict.level]}`}
     >
-      <span className="font-medium">{verdict.headline}.</span>{" "}
-      <span className="opacity-90">
-        {verdict.level === "limited"
-          ? "A fresh listing batch landed, but it did not revisit the whole catalogue. "
-          : "The market feed is a weekly pulse, not a daily refresh. "}
-        {verdict.detail} {observed ? `${observed} ` : ""}
-        Current asking-price views use recent observations; broader catalogue views may include older records.
-      </span>{" "}
+      {message}{" "}
       <Link href="/status" className="underline decoration-dotted hover:opacity-80">
-        Pipeline status
+        Details
       </Link>
     </FreshnessBannerView>
   );

@@ -10,17 +10,17 @@
      tailwind.config.ts: ink.* for surfaces and text, claude/clay for
      accents. Names are unchanged from the old field-guide theme; only the
      values moved from forest green to slate. */
-  --bg: 2 6 23;              /* ink-950 #020617 — slate-950 */
-  --panel: 15 23 42;         /* ink-850 #0f172a — slate-900 */
+  --bg: 2 6 23;              /* ink-950 #020617, slate-950 */
+  --panel: 15 23 42;         /* ink-850 #0f172a, slate-900 */
   --card: 19 29 49;          /* ink-800 */
-  --border: 30 41 59;        /* ink-700 #1e293b — slate-800 */
-  --fg: 241 245 249;         /* ink-100 — slate-100 */
-  --muted: 148 163 184;      /* ink-400 — slate-400 */
-  --accent: 16 185 129;      /* claude.DEFAULT — emerald-500 */
-  --accent-glow: 52 211 153; /* claude.glow — emerald-400 */
-  --clay: 245 158 11;        /* clay-500 — amber-500 */
-  --clay-glow: 251 191 36;   /* clay-400 — amber-400 */
-  --parchment: 253 230 138;  /* parchment-200 — soft amber highlight */
+  --border: 30 41 59;        /* ink-700 #1e293b, slate-800 */
+  --fg: 241 245 249;         /* ink-100, slate-100 */
+  --muted: 148 163 184;      /* ink-400, slate-400 */
+  --accent: 16 185 129;      /* claude.DEFAULT, emerald-500 */
+  --accent-glow: 52 211 153; /* claude.glow, emerald-400 */
+  --clay: 245 158 11;        /* clay-500, amber-500 */
+  --clay-glow: 251 191 36;   /* clay-400, amber-400 */
+  --parchment: 253 230 138;  /* parchment-200, soft amber highlight */
   --ready: 52 211 153;       /* emerald-400 */
 }
 
@@ -51,23 +51,17 @@ h1, h2, h3, h4 {
   outline-offset: 3px;
 }
 
-/* Atmospheric wash. The preview is a near-flat slate ground with a single
-   faint emerald bloom at the top; the paper grain and warm clay corner of
-   the old theme are gone. */
+/* A single faint emerald glow at the top of the page. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: -1;
-  background-image:
-    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px),
-    radial-gradient(circle at 50% -10%, rgba(16,185,129,0.07), transparent 55%);
-  background-size: 56px 56px, 56px 56px, auto;
+  background: radial-gradient(circle at 50% -10%, rgba(16,185,129,0.06), transparent 55%);
 }
 
-/* D3 axis text — slate. */
+/* D3 axis text, slate. */
 .tick text {
   font-size: 11px;
   fill: rgb(100 116 139);   /* slate-500 */
@@ -99,7 +93,7 @@ body::before {
 .status-dot.idle { background: #64748b; box-shadow: 0 0 0 3px rgba(100,116,139,0.15); }
 .status-dot.info { background: #38bdf8; box-shadow: 0 0 0 3px rgba(56,189,248,0.16); }
 
-/* Card surface — the preview card: a flat slate panel with a hairline ring.
+/* Card surface, the preview card: a flat slate panel with a hairline ring.
    No inset paper highlight, no warm bottom glow. */
 .surface {
   background: rgb(var(--card));
@@ -112,7 +106,7 @@ body::before {
   border-radius: 2px;
 }
 
-/* Elevated card — the "this matters" tier. A clean emerald edge and a faint
+/* Elevated card, the "this matters" tier. A clean emerald edge and a faint
    emerald top wash, no clay. */
 .surface-elevated {
   background: rgb(var(--card));
@@ -166,19 +160,8 @@ body::before {
   animation: pageRise 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Atlas geometry across the product. Preserve fully rounded chips and status
-   dots, but flatten page panels, controls, and cards into a consistent
-   evidence-grid system. */
-.rounded-2xl,
-.rounded-xl,
-.rounded-lg,
-.rounded-md,
-.rounded {
-  border-radius: 2px;
-}
-
 .geck-app > main {
-  min-height: calc(100vh - 104px);
+  min-height: calc(100vh - 200px);
 }
 
 .geck-app table {
@@ -210,7 +193,7 @@ body::before {
   }
 }
 
-/* Section break — a plain slate hairline. The old field-guide leaf/diamond
+/* Section break, a plain slate hairline. The old field-guide leaf/diamond
    ornament and its clay stroke are gone; the divider now matches the quiet
    rules between sections in the preview. */
 .ornament-rule {
@@ -245,7 +228,7 @@ body::before {
 .claude-star { animation: claudePulse 4s ease-in-out infinite; color: rgb(var(--accent)); }
 
 /* =============================================================
-   /market — dashboard scope. In the preview the analytics panels sit on
+   /market, dashboard scope. In the preview the analytics panels sit on
    a marginally darker ground than the rest of the app; the surface classes
    are the flat slate card from the shared primitives.
    ============================================================= */

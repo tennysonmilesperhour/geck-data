@@ -7,6 +7,60 @@ deferred.
 
 ---
 
+## 2026-09-26: Cut the site down to four pages
+
+Context: Tennyson found the site too big and confusing to use. Twelve
+nav tabs, a Pulse dashboard with a dozen panels, and three overlapping
+market-direction pages (Market, Indices, Trends) answered questions a
+buyer or breeder does not ask, on a sold history that stops in June.
+
+### Shipped
+
+- **Four destinations**: Price check (home), Morphs, Listings, Breeders.
+  Header has only those plus account links; Methodology, Data status and
+  API moved to the footer.
+- **Price check is the home page**: pick morphs as chips (state in the
+  URL, `/?t=lilly-white,cappuccino`), get the typical sale range, the
+  sold band next to the current asking band on one axis, a plain
+  confidence line, then matching listings and recent sales.
+- **Morphs**: one row per real trait with listed count, asking range and
+  typical sold price; `/morphs/[slug]` adds a price histogram, common
+  pairings (each opens a price check), listings, sales and top breeders.
+- **Listings**: one grid with Listed now / Sold tabs and a plain GET
+  form (morph, sex, max price, sort). Cards open the MorphMarket listing.
+- **Breeders**: searchable cards; `/sellers/[id]` shows stats, main
+  morphs, listings and sales.
+- **SQL (migration 20260926000000)**: read-only `morph_summary()`,
+  `asking_price_band(text[])`, `breeder_summary()` over
+  `geck_data.listings`. Real traits only (via `is_training_trait`), so
+  "Diet: ..." and "Proven breeder: ..." noise never shows. "For sale"
+  means active and not marked sold.
+- **Sold lookback widened to 730 days** in the new pages and in
+  `/api/market/fair-price`. Sold history starts May 2026, so the old
+  180-day window would have returned nothing from November on.
+- **Retired routes redirect (307)**: /market, /indices, /trends,
+  /compare, /reports, /shows, /cross-platform, /price-drops, /daily-log,
+  /region/* go to /morphs; /whats-it-worth to /; /sold to
+  /listings?status=sold; /trait/:slug to /morphs/:slug; /combo/a__b opens
+  the price check with both morphs.
+- About 90 component and lib files that only those pages used were
+  deleted, with the five tests that covered them.
+
+### Kept as is
+
+- All API routes (the Geck Inspect app and the extension depend on
+  them), /embed/market-temperature, /listings/[id], /status,
+  /methodology, /api-docs, account pages, admin, design-lab.
+
+### Known data limits the UI now states plainly
+
+- Only 565 listings were rechecked in late August; about 6,900 were last
+  seen in early June. Listing cards say "Last checked <date>".
+- Sold prices are the last asking price before a listing came down and
+  all date from May to June 2026.
+
+---
+
 ## 2026-07-07: Phase R (Resuscitate) from ROADMAP.md
 
 Context: the July 2026 audit (see ROADMAP.md Part 1) found the scrape

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { getMorphs } from "@/lib/simple/data";
 
 const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://geck-data.vercel.app"
@@ -6,27 +7,28 @@ const SITE_URL = (
 
 const PUBLIC_ROUTES = [
   "",
-  "/api-docs",
-  "/compare",
-  "/cross-platform",
-  "/daily-log",
-  "/indices",
-  "/market",
-  "/methodology",
-  "/price-drops",
-  "/reports",
+  "/morphs",
+  "/listings",
   "/sellers",
-  "/shows",
-  "/sold",
+  "/methodology",
   "/status",
-  "/trends",
-  "/whats-it-worth",
+  "/api-docs",
 ] as const;
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  return PUBLIC_ROUTES.map((path) => ({
-    url: `${SITE_URL}${path}`,
-    changeFrequency: path === "" || path === "/sold" ? "daily" : "weekly",
-    priority: path === "" ? 1 : 0.7,
-  }));
+export const revalidate = 86400;
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const morphs = await getMorphs();
+  return [
+    ...PUBLIC_ROUTES.map((path) => ({
+      url: `${SITE_URL}${path}`,
+      changeFrequency: "weekly" as const,
+      priority: path === "" ? 1 : 0.7,
+    })),
+    ...morphs.map((m) => ({
+      url: `${SITE_URL}/morphs/${m.slug}`,
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    })),
+  ];
 }
