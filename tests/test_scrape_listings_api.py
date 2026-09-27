@@ -168,3 +168,65 @@ class ProxySettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _FakeQuery:
+    """Records the filters close_abandoned_runs applies."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = []
+
+    def update(self, payload):
+        self.calls.append(("update", payload))
+        return self
+
+    def eq(self, col, val):
+        self.calls.append(("eq", col, val))
+        return self
+
+    def lt(self, col, val):
+        self.calls.append(("lt", col, val))
+        return self
+
+    def execute(self):
+        class _Res:
+            pass
+
+        res = _Res()
+        res.data = self.rows
+        return res
+
+
+class _FakeSupabase:
+    def __init__(self, rows):
+        self.query = _FakeQuery(rows)
+
+    def table(self, name):
+        assert name == "scrape_runs"
+        return self.query
+
+
+class AbandonedRunTests(unittest.TestCase):
+    def test_only_closes_stale_running_rows_of_the_type(self) -> None:
+        fake = _FakeSupabase([{"id": 717}])
+        closed = api.close_abandoned_runs(fake, "listings")
+        self.assertEqual(closed, 1)
+        calls = fake.query.calls
+        self.assertIn(("eq", "scrape_type", "listings"), calls)
+        self.assertIn(("eq", "status", "running"), calls)
+        lt = [c for c in calls if c[0] == "lt"]
+        self.assertEqual(lt[0][1], "started_at")
+        cutoff = dt.datetime.fromisoformat(lt[0][2])
+        age = dt.datetime.now(dt.timezone.utc) - cutoff
+        self.assertGreaterEqual(age, dt.timedelta(hours=api.ABANDONED_AFTER_HOURS - 0.01))
+        update = [c for c in calls if c[0] == "update"][0][1]
+        self.assertEqual(update["status"], "failed")
+        self.assertIn("abandoned", update["error_message"])
+
+    def test_database_error_does_not_stop_the_run(self) -> None:
+        class Broken:
+            def table(self, _name):
+                raise RuntimeError("network down")
+
+        self.assertEqual(api.close_abandoned_runs(Broken()), 0)

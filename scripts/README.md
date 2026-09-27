@@ -4,6 +4,13 @@ Python pipeline for the Geck Data MorphMarket scraper. Each script is
 designed to be safe to run multiple times: every write is an UPSERT, and
 incremental scripts skip work that has already been done.
 
+## Daily scrape from a Mac
+
+MorphMarket blocks GitHub's servers, so the daily catalog scrape runs from a
+Mac: `scripts/local/setup_mac.sh` sets it up once. See
+[docs/SCRAPER_SETUP.md](../docs/SCRAPER_SETUP.md) for the plain-language
+guide and the paid proxy alternative.
+
 ## Setup (local Mac)
 
 ```bash
@@ -52,11 +59,11 @@ parses the JSON-LD product blocks from each card, and upserts a summary
 row per listing into `public.listings`. Appends one row per listing to
 `public.listings_history` keyed to the current `scrape_runs.id`.
 
-**Working Decodo recipe (load-bearing — don't drop any of these):**
+**Working Decodo recipe (load-bearing, don't drop any of these):**
 
 | Knob | Value | Why |
 |---|---|---|
-| URL param | `?ordering=-first_posted&page=N` | Server-side Django REST ordering — this is what drives SSR pagination. The React app's `?sort=search-newest` is client-side only; SSR will return the same first 24 listings on every page=N if you use it. |
+| URL param | `?ordering=-first_posted&page=N` | Server-side Django REST ordering, this is what drives SSR pagination. The React app's `?sort=search-newest` is client-side only; SSR will return the same first 24 listings on every page=N if you use it. |
 | `proxy_pool` | `"premium"` | Default residential tier gets soft-throttled into returning page-1 content for every `page=N` call. Premium tier hands back the actual paginated HTML. |
 | `browser_actions` | `[wait 5s, scroll_to_bottom, wait 3s]` | MorphMarket's React grid needs hydration time. Without these post-render steps Decodo snapshots before the listing cards are laid out. |
 | `headless` | `"html"` | Standard JS render. Required (the page is React). |
@@ -167,12 +174,12 @@ Weekly per-seller scrape. Reads the `sellers_needing_scrape` view to
 get the subset of seller slugs that are linked from at least one
 active listing and haven't been refreshed in the last 7 days. Fetches
 each `https://www.morphmarket.com/stores/{slug}` page through Decodo
-(same recipe as `scrape_listings.py` — premium proxy + browser_actions
+(same recipe as `scrape_listings.py`, premium proxy + browser_actions
 wait/scroll/wait) and upserts a row into `public.sellers`.
 
 Seller slugs are populated by `scrape_details.py`, which extracts them
 from each listing's JSON-LD `seller.url`. So a brand-new listing won't
-have a slug — and therefore won't seed a seller scrape — until the
+have a slug, and therefore won't seed a seller scrape, until the
 next weekly details run touches it.
 
 Captured fields (per the "bare minimum" choice we landed on):

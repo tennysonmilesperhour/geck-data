@@ -25,22 +25,45 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      # MorphMarket blocks GitHub-hosted runners (HTTP 403 on every run
+      # since 2026-08-31). Without a residential proxy this job cannot
+      # succeed, so it skips with a notice instead of writing a failed
+      # scrape_runs row every day. The daily scrape runs from Tennyson's
+      # Mac instead (scripts/local/setup_mac.sh, docs/SCRAPER_SETUP.md).
+      # Adding the MORPHMARKET_PROXY_URL secret turns this job back on.
+      - name: Check MorphMarket access route
+        id: route
+        env:
+          PROXY: ${{ secrets.MORPHMARKET_PROXY_URL }}
+        run: |
+          if [ -z "$PROXY" ]; then
+            echo "::notice title=Skipped::MorphMarket blocks GitHub-hosted runners. The scrape runs on the Mac schedule (docs/SCRAPER_SETUP.md). Add the MORPHMARKET_PROXY_URL secret to run it here."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check out repo
+        if: steps.route.outputs.run == 'true'
         uses: actions/checkout@v7
 
       - name: Set up Python
+        if: steps.route.outputs.run == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip
 
       - name: Install dependencies
+        if: steps.route.outputs.run == 'true'
         run: pip install -r scripts/requirements.txt
 
       - name: Install Chromium
+        if: steps.route.outputs.run == 'true'
         run: python -m playwright install --with-deps chromium
 
       - name: Run scrape_listings_api.py (catalog recrawl)
+        if: steps.route.outputs.run == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -52,6 +75,7 @@ jobs:
         run: python scrape_listings_api.py --mode=catalog
 
       - name: Refresh and verify combo_index_daily
+        if: steps.route.outputs.run == 'true'
         uses: ./.github/actions/refresh-indices
         with:
           supabase-url: ${{ secrets.SUPABASE_URL }}

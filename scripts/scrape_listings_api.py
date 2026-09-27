@@ -269,6 +269,47 @@ class MorphMarketFetcher:
             self._playwright = None
 
 
+# A run killed from outside (a CI timeout, a laptop going to sleep, a
+# closed terminal) never reaches finalise_scrape_run and sits on
+# 'running' forever, which reads as "a scrape is in progress" on the
+# status page. Anything still 'running' after this long is closed out.
+ABANDONED_AFTER_HOURS = 6
+
+
+def close_abandoned_runs(supabase, scrape_type: str = "listings") -> int:
+    """Mark stale 'running' scrape_runs rows of this type as failed."""
+    cutoff = (
+        dt.datetime.now(dt.timezone.utc)
+        - dt.timedelta(hours=ABANDONED_AFTER_HOURS)
+    ).isoformat()
+    try:
+        res = (
+            supabase.table("scrape_runs")
+            .update(
+                {
+                    "status": "failed",
+                    "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    "error_message": (
+                        "abandoned: still marked running after "
+                        f"{ABANDONED_AFTER_HOURS}h (the process was stopped "
+                        "before it could record a result)"
+                    ),
+                }
+            )
+            .eq("scrape_type", scrape_type)
+            .eq("status", "running")
+            .lt("started_at", cutoff)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN could not close abandoned runs: {exc}")
+        return 0
+    closed = len(res.data or [])
+    if closed:
+        log(f"closed {closed} abandoned '{scrape_type}' run(s)")
+    return closed
+
+
 def _window_hours() -> int:
     raw = os.environ.get("WINDOW_HOURS", "168")
     return max(1, int(raw))
@@ -861,6 +902,7 @@ def main() -> int:
     cutoff_date = cutoff.date()
 
     supabase = get_supabase()
+    close_abandoned_runs(supabase)
     run_id = start_scrape_run(supabase)
     attempted = 0
     succeeded = 0
