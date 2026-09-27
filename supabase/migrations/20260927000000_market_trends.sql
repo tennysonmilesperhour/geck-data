@@ -108,6 +108,9 @@ as $$
   order by f.week;
 $$;
 
+-- market_trend runs as the caller and uses the group-lot check, which the
+-- public role could not execute before.
+grant execute on function geck_data._looks_like_group_lot(text, boolean) to anon, authenticated;
 grant execute on function geck_data.market_trend(text) to anon, authenticated;
 
 create or replace function geck_data.listing_price_history(p_listing_id text)
