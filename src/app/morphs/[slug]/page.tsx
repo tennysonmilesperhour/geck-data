@@ -9,6 +9,7 @@ import {
   getBreeders,
   getGrowthCurve,
   getListings,
+  getMarketTrend,
   getMorphs,
   getTraitUpgrades,
   getValueGrid,
@@ -26,6 +27,7 @@ import {
 } from "@/components/simple/ui";
 import { UpgradeList, ValueGridTable } from "@/components/simple/value";
 import GrowthChart from "@/components/simple/GrowthChart";
+import { PriceTrendChart } from "@/components/simple/TrendCharts";
 import { BreederCard } from "@/components/simple/breeder";
 import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
@@ -61,7 +63,7 @@ export default async function MorphPage({ params }: { params: { slug: string } }
   if (!morph) notFound();
 
   const traits = [morph.trait];
-  const [baseline, grid, growth, upgrades, prices, forSale, sold, breeders] = await Promise.all([
+  const [baseline, grid, growth, upgrades, prices, forSale, sold, breeders, trend] = await Promise.all([
     getBaseline(),
     getValueGrid(traits),
     getGrowthCurve(traits),
@@ -70,6 +72,7 @@ export default async function MorphPage({ params }: { params: { slug: string } }
     getListings({ traits, status: "for-sale", sort: "value", limit: 8 }),
     getListings({ traits, status: "sold", sort: "newest", limit: 4 }),
     getBreeders(),
+    getMarketTrend(morph.trait),
   ]);
 
   const info = traitInfo(morph.trait);
@@ -158,6 +161,18 @@ export default async function MorphPage({ params }: { params: { slug: string } }
         <Section title="How value grows" note="Middle asking price by weight.">
           <Card>
             <GrowthChart points={growth} />
+          </Card>
+        </Section>
+      ) : null}
+
+      {trend.filter((w) => w.p50 != null).length >= 2 ? (
+        <Section
+          title="Price over time"
+          note="Middle asking price each tracked week."
+          action={<TextLink href={`/trends?t=${morph.slug}`}>Full history</TextLink>}
+        >
+          <Card>
+            <PriceTrendChart weeks={trend} label={morph.trait} />
           </Card>
         </Section>
       ) : null}

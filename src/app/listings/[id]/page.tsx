@@ -8,6 +8,7 @@ import {
   getBreeders,
   getComparablePrices,
   getListing,
+  getListingPriceHistory,
   getListings,
   getMorphs,
 } from "@/lib/simple/data";
@@ -46,7 +47,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
   const l = await getListing(params.id);
   if (!l) notFound();
 
-  const [morphs, comps, similar, breeders] = await Promise.all([
+  const [morphs, comps, similar, breeders, history] = await Promise.all([
     getMorphs(),
     getComparablePrices({ trait: l.comparedTrait, ageClass: l.ageClass, sexClass: l.sexClass, basis: l.basis }),
     getListings({
@@ -58,6 +59,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
       limit: 9,
     }),
     l.sellerSlug ? getBreeders() : Promise.resolve([]),
+    getListingPriceHistory(l.id),
   ]);
   const slugOf = new Map(morphs.map((m) => [m.trait, m.slug]));
   const breeder = breeders.find((b) => b.slug === l.sellerSlug) ?? null;
@@ -209,6 +211,48 @@ export default async function ListingPage({ params }: { params: { id: string } }
               {l.basis === "trait_age_sex" || l.basis === "market_age_sex" ? ", age and sex" : l.basis === "trait_age" ? " and age" : ""}.
               Listings don&apos;t measure pattern quality, color or lineage, which move real
               prices a lot, so a low price can also mean a plainer gecko.
+            </p>
+          </Card>
+        </Section>
+      ) : null}
+
+      {history.length ? (
+        <Section
+          title="Price history"
+          note={
+            history.length > 1
+              ? `The asking price changed ${history.length - 1} ${history.length === 2 ? "time" : "times"} while we tracked it.`
+              : "The asking price has not changed while we tracked it."
+          }
+        >
+          <Card>
+            <ol className="space-y-2">
+              {history.map((p, i) => {
+                const prev = history[i - 1];
+                const diff = prev && prev.currency === p.currency ? p.price - prev.price : null;
+                return (
+                  <li key={p.at} className="flex flex-wrap items-baseline gap-x-3 text-ink-200">
+                    <span className="w-28 text-sm text-ink-400">{fmtShortDate(p.at)}</span>
+                    <span className="font-medium tabular-nums">
+                      {fmtUsd(p.price)}
+                      {p.currency && p.currency !== "USD" ? ` ${p.currency}` : ""}
+                    </span>
+                    <span className="text-sm text-ink-400">
+                      {i === 0
+                        ? "first price seen"
+                        : diff == null || diff === 0
+                          ? "price changed"
+                          : diff < 0
+                            ? `cut ${fmtUsd(-diff)}`
+                            : `raised ${fmtUsd(diff)}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <p className="mt-3 text-sm text-ink-500">
+              Last checked {fmtShortDate(l.lastSeenAt)}. A cut followed by a raise a week later is usually a
+              temporary sale price.
             </p>
           </Card>
         </Section>

@@ -10,6 +10,7 @@ const PUBLIC_ROUTES = [
   "/morphs",
   "/listings",
   "/sellers",
+  "/trends",
   "/methodology",
   "/status",
   "/api-docs",

@@ -148,6 +148,33 @@ const SECTIONS: Array<{ title: string; body: React.ReactNode }> = [
     ),
   },
   {
+    title: "Trends over time",
+    body: (
+      <>
+        <p>
+          Every time the scraper reads a listing it records the price. The{" "}
+          <Link href="/trends" className="underline hover:text-ink-50">
+            trends
+          </Link>{" "}
+          page groups those records by week and shows the middle asking price, how many listings
+          cut or raised their price since the check before, and how many listings went up or came
+          down.
+        </p>
+        <p>
+          Weeks the scraper did not run are left blank, never shown as zero. A week that checked
+          less than half the market is marked partial, because its price rests on a small sample.
+          New and came-down counts only appear when the week before was also a full check, so a
+          restart after a gap is never mistaken for a wave of new geckos.
+        </p>
+        <p>
+          The scraper skips re-reading a listing whose price has not changed since a recent full
+          read, and still reads every listing in full at least every six days. That keeps each
+          listing in every week of the history without re-downloading the same details daily.
+        </p>
+      </>
+    ),
+  },
+  {
     title: "Genes, patterns and colors",
     body: (
       <p>

@@ -7,6 +7,53 @@ deferred.
 
 ---
 
+## 2026-09-27: Weekly history and a scraper that skips unchanged listings
+
+Context: Tennyson asked for the scraper to skip unchanged listings and for
+a way to see trends and changes over time.
+
+### Scraper
+
+- A known live listing is skipped (no detail fetch) when the list page
+  shows the same price and currency we stored and its details were read
+  less than REFETCH_AFTER_DAYS (default 6) ago. Skipped listings only get
+  last_seen_at bumped in listings and market_listings, which keeps them out
+  of the end-of-walk "came down" sweep and counts toward its write floor.
+- The six-day ceiling means every listing is still read in full, and gets
+  a price_history row, at least once per calendar week. The weekly history
+  depends on that.
+- The list payload's price field is not documented and cannot be checked
+  from the sandbox. When a list row has no usable price the listing is
+  read in full, so the worst case is the old behavior. Each run logs the
+  list row's keys once, and warns if no row carried a price.
+- SKIP_UNCHANGED=0 turns it off.
+
+### History
+
+- geck_data.market_trend(trait) returns one row per tracked week: middle
+  asking price and middle half, price cuts and raises since the previous
+  observation, new listings and listings that came down.
+- Untracked weeks are absent, and the charts draw them as hatched "Not
+  tracked" space at true time scale. A week that checked under half the
+  busiest week's listings (market-wide) is "partial" and drawn hollow.
+  New and came-down counts are null unless the week before was a full
+  check, so the initial backfill and the August restart do not read as
+  floods of new listings.
+- The history surfaced a real pattern: the week of May 18 (scraped the
+  Sunday before Memorial Day) had 1,217 cuts at a typical 37%, and the next
+  week 1,001 raises. The page detects a week with over twice the normal
+  cuts and says whether it rebounded, instead of calling it a falling market.
+- New /trends page (also in the nav), a "Price over time" section on each
+  morph page, and a price history list on each listing page.
+
+### Fixed along the way
+
+- price_history stores "mm_123" while listings uses "123". The first_price
+  join in listing_market_mv never matched, so price_cut was always empty.
+  The view now strips the prefix and only compares matching currencies.
+
+---
+
 ## 2026-09-27: Every listing and breeder priced in context
 
 Context: Tennyson asked for the same treatment on Breeders and every

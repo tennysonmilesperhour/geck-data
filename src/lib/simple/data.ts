@@ -524,3 +524,70 @@ export async function getComparablePrices(opts: {
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// History. One row per tracked week. Weeks with no scrape are absent, never
+// zero; the page draws them as gaps. `partial` marks a week where only part
+// of the catalog was checked, so its middle price rests on a small sample.
+// `newListings` and `cameDown` are null when the week before was not a full
+// check, because the count would span the gap or the initial backfill.
+
+export type TrendWeek = {
+  week: string;
+  seen: number;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  cuts: number;
+  raises: number;
+  medianCut: number | null;
+  newListings: number | null;
+  cameDown: number | null;
+  afterGap: boolean;
+  partial: boolean;
+};
+
+export async function getMarketTrend(trait: string | null): Promise<TrendWeek[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("market_trend", { p_trait: trait });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      week: String(r.week),
+      seen: Number(r.seen ?? 0),
+      p25: num(r.p25),
+      p50: num(r.p50),
+      p75: num(r.p75),
+      cuts: Number(r.cuts ?? 0),
+      raises: Number(r.raises ?? 0),
+      medianCut: num(r.median_cut),
+      newListings: r.new_listings == null ? null : Number(r.new_listings),
+      cameDown: r.came_down == null ? null : Number(r.came_down),
+      afterGap: Boolean(r.after_gap),
+      partial: Boolean(r.partial),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type PricePoint = { at: string; price: number; currency: string | null };
+
+/** Every recorded price for one listing, oldest first, with repeats collapsed. */
+export async function getListingPriceHistory(id: string): Promise<PricePoint[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("listing_price_history", { p_listing_id: id });
+    if (error || !data) return [];
+    const out: PricePoint[] = [];
+    for (const r of data as Array<Record<string, unknown>>) {
+      const price = num(r.price);
+      if (price == null) continue;
+      const currency = r.currency == null ? null : String(r.currency);
+      const last = out[out.length - 1];
+      if (last && last.price === price && last.currency === currency) continue;
+      out.push({ at: String(r.observed_at), price, currency });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}

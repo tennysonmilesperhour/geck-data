@@ -29,15 +29,14 @@ const nextConfig = {
       },
     ],
   },
-  // The site was cut down to four pages: Price check (home), Morphs,
-  // Listings and Breeders. Old routes forward to the closest new page so
+  // The site was cut down to a few pages: Price check (home), Morphs,
+  // Listings, Breeders and Trends. Old routes forward to the closest new page so
   // bookmarks and search results keep working. Temporary (307) on purpose,
   // so any of these can come back without browsers having cached the move.
   async redirects() {
     const toMorphs = [
       "/market",
       "/indices",
-      "/trends",
       "/compare",
       "/reports",
       "/reports/:path*",

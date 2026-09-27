@@ -1,7 +1,7 @@
 "use client";
-// Site header. Four destinations and nothing else:
-//   Price check (home), Morphs, Listings, Breeders.
-// Account links sit on the right. On phones the four links drop to a
+// Site header. Five destinations and nothing else:
+//   Price check (home), Morphs, Listings, Breeders, Trends.
+// Account links sit on the right. On phones the links drop to a
 // second row instead of hiding behind a menu, so nothing is ever more
 // than one tap away.
 import Link from "next/link";
@@ -16,6 +16,7 @@ const NAV = [
   { href: "/morphs", label: "Morphs" },
   { href: "/listings", label: "Listings" },
   { href: "/sellers", label: "Breeders" },
+  { href: "/trends", label: "Trends" },
 ] as const;
 
 export default function Header() {
@@ -65,7 +66,7 @@ export default function Header() {
       key={item.href}
       href={item.href}
       aria-current={isActive(item.href) ? "page" : undefined}
-      className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
+      className={`whitespace-nowrap rounded-lg px-2.5 py-2 text-sm sm:px-3 font-medium transition ${
         isActive(item.href)
           ? "bg-ink-800 text-ink-50"
           : "text-ink-300 hover:bg-ink-850 hover:text-ink-50"
@@ -113,7 +114,7 @@ export default function Header() {
       </div>
 
       <nav
-        className="flex gap-1 overflow-x-auto border-t border-ink-800 px-3 py-2 md:hidden"
+        className="flex gap-0.5 overflow-x-auto border-t border-ink-800 px-2 py-2 md:hidden"
         aria-label="Main"
       >
         {navLinks}
