@@ -501,6 +501,23 @@ def scrape_feedle(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]
     return collected
 
 
+# Feedle renamed fields on its Sep 2026 redeploy. Try every name seen so
+# far for the paging cursor, newest first.
+FEEDLE_CURSOR_KEYS = ("created_at_cursor", "createdAtCursor", "cursor", "created_at", "createdAt")
+
+
+def feedle_next_cursor(last: dict[str, Any], result: dict[str, Any]) -> Optional[str]:
+    for key in ("nextCursor", "next_cursor", "cursor"):
+        value = result.get(key)
+        if isinstance(value, (str, int)) and str(value):
+            return str(value)
+    for key in FEEDLE_CURSOR_KEYS:
+        value = last.get(key)
+        if isinstance(value, (str, int)) and str(value):
+            return str(value)
+    return None
+
+
 def _feedle_pages(
     action_id: str,
     crested_code: str,
@@ -559,8 +576,15 @@ def _feedle_pages(
                 )
             )
         last = pets[-1] if isinstance(pets[-1], dict) else {}
-        next_cursor = last.get("created_at_cursor")
+        if page == 1:
+            log(f"feedle pet fields: {sorted(last.keys())}")
+        next_cursor = feedle_next_cursor(last, result)
         if not next_cursor or next_cursor == cursor or new_on_page == 0:
+            if len(seen_ids) < (count or 0):
+                log(
+                    f"WARN feedle stopped at {len(seen_ids)} of {count}: no usable "
+                    "cursor in the last pet or the response"
+                )
             break
         cursor = str(next_cursor)
         time.sleep(page_sleep())
@@ -578,7 +602,6 @@ KR_SHOPS: tuple[tuple[str, str, str], ...] = (
     ("newrun", "New Run Reptile", "https://newrunreptile.co.kr/product/list.html?cate_no=197&page={page}"),
     ("thezoo", "The Zoo", "https://xn--9m1b023b.com/product/list.html?cate_no=90&page={page}"),
     ("jbr", "Jungbreu Insect Harmony", "https://xn--699at5i1sh8pu9yi.com/product/list.html?cate_no=162&page={page}"),
-    ("crepax", "Crepax", "https://crepax.kr/product/search.html?keyword=%ED%81%AC%EB%A0%88%EC%8A%A4%ED%8B%B0%EB%93%9C&page={page}"),
 )
 KR_SHOP_MAX_PAGES = 20
 

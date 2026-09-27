@@ -17,7 +17,9 @@ scrapers for where those markets trade.
 
 - South Korea: Feedle (air.feedle.me), the main Korean reptile
   marketplace, already scraped, plus Korean breeder shops on Cafe24 (Gecko
-  Village, New Run Reptile, The Zoo, Jungbreu Insect Harmony, Crepax). Naver
+  Village, New Run Reptile, The Zoo, Jungbreu Insect Harmony; Crepax's
+  domain no longer resolves). Gecko Village titles carry no morph names, so
+  they count toward Korea's overall price only. Naver
   Cafe groups carry many Korean sales but need a login, so they are out.
 - Europe: terraristik.com, the largest European reptile classifieds site,
   plus MorphMarket listings priced in euros.
@@ -62,6 +64,14 @@ job, so an outage shows on the status page and in Discord.
 Trends gets a compare view: up to six morphs as lines (URL ?c=slug,slug),
 colors in the validated palette order and kept per morph, partial weeks
 left out, and a first-to-latest change table.
+
+### First live run (Sep 27)
+
+terraristik: 417 ads found, 267 crested kept, 53 with one clear price.
+Korean shops: 426 listings. Feedle: the new action id was found and
+reported 2,524 crested listings, but paging stopped at 12 because the
+cursor field was renamed too; the scraper now tries every known cursor
+name and logs the pet fields so the next rename is visible.
 
 ### Not verified
 

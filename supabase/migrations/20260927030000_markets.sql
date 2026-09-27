@@ -425,3 +425,9 @@ as $$
   order by p.trait, p.week;
 $$;
 grant execute on function geck_data.compare_trends(text[]) to anon, authenticated;
+
+-- The scrapers write with the service role, which new tables do not grant
+-- by default. Without these the first run could not store rates or snapshots.
+grant select, insert, update, delete on geck_data.fx_rates to service_role;
+grant select, insert, update, delete on geck_data.cross_platform_observations to service_role;
+grant select, insert, update, delete on geck_data.market_trait_alias to service_role;

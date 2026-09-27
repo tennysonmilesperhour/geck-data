@@ -149,3 +149,13 @@ class FeedleDiscoveryTests(unittest.TestCase):
         html = '<script src="/_next/static/chunks/app/page-1.js"></script>'
         with mock.patch.object(scp, "polite_get", return_value=Resp()):
             self.assertEqual(scp.discover_feedle_action_id(html), scp.FEEDLE_ACTION_FALLBACK)
+
+
+class FeedleCursorTests(unittest.TestCase):
+    def test_cursor_names(self) -> None:
+        import scrape_cross_platform as scp
+
+        self.assertEqual(scp.feedle_next_cursor({"created_at_cursor": "a"}, {}), "a")
+        self.assertEqual(scp.feedle_next_cursor({"created_at": "2026-09-01T00:00:00Z"}, {}), "2026-09-01T00:00:00Z")
+        self.assertEqual(scp.feedle_next_cursor({"created_at": "x"}, {"nextCursor": "n"}), "n")
+        self.assertIsNone(scp.feedle_next_cursor({"id": "1"}, {"data": []}))

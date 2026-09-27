@@ -137,3 +137,6 @@ as $$
 $$;
 
 grant execute on function geck_data.monthly_history(text) to anon, authenticated;
+
+-- backfill_history.py writes with the service role.
+grant select, insert, update, delete on geck_data.listing_backfill to service_role;
