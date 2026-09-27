@@ -111,6 +111,43 @@ const SECTIONS: Array<{ title: string; body: React.ReactNode }> = [
     ),
   },
   {
+    title: "Low, typical or high for its kind",
+    body: (
+      <>
+        <p>
+          Every listing is compared with similar geckos: listings that share its most
+          valuable morph, at the same age and sex. If fewer than 8 such listings exist, sex
+          is dropped, then age. A listing with no morph tags is compared with all crested
+          geckos of its age and sex.
+        </p>
+        <p>
+          &quot;Low for its kind&quot; means cheaper than three quarters of those similar
+          listings, &quot;high for its kind&quot; means pricier than three quarters, and
+          everything in between is &quot;typical price&quot;. &quot;Best value first&quot;
+          sorts by the price divided by the similar listings&apos; middle price.
+        </p>
+        <p>
+          Car sites call this a deal rating. Gecko prices spread far wider than car prices
+          because listings never measure pattern quality, color or lineage, so a low price
+          can also mean a plainer gecko. That is why the site reports where a price sits
+          rather than calling it a deal.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "How a breeder prices",
+    body: (
+      <p>
+        A breeder&apos;s pricing is the middle of their listings&apos; price-to-similar
+        ratios. Under 0.9 reads as &quot;below similar geckos&quot;, over 1.1 as
+        &quot;above&quot;, and in between as &quot;in line&quot;. It needs at least 5 priced
+        listings and only covers listings that name their store. It says nothing about
+        gecko quality, health, shipping or service.
+      </p>
+    ),
+  },
+  {
     title: "Genes, patterns and colors",
     body: (
       <p>

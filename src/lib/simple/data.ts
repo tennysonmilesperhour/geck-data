@@ -1,9 +1,11 @@
 import "server-only";
 
-// Data access for the simplified site: Price check (home), Morphs,
-// Listings and Breeders. Everything reads geck_data.listings (the catalog
-// the scraper keeps) plus four read-only SQL functions:
-//   morph_summary, asking_price_band, sold_price_band, breeder_summary.
+// Data access for the site: Price check (home), Morphs, Listings and
+// Breeders. Reads geck_data.listings (the catalog the scraper keeps), the
+// hourly listing_market_mv (catalog plus where each price sits among
+// similar geckos), breeder_market_v, and read-only SQL functions:
+//   morph_summary, asking_price_band, sold_price_band, value_grid,
+//   growth_curve, trait_upgrades, market_baseline.
 //
 // Plain rules this file follows so every page tells the same story:
 //   - Crested and unclassified rows only.
@@ -55,6 +57,15 @@ export type Listing = {
   weight: number | null;
   lastSeenAt: string | null;
   soldAt: string | null;
+  /** Where the price sits among similar geckos; null when not comparable. */
+  position: "low" | "typical" | "high" | null;
+  similarLow: number | null;
+  similarMid: number | null;
+  similarHigh: number | null;
+  /** The trait the listing was compared on, or null for all crested geckos. */
+  comparedTrait: string | null;
+  comparedN: number | null;
+  ratio: number | null;
 };
 
 export type Breeder = {
@@ -66,7 +77,17 @@ export type Breeder = {
   askMid: number | null;
   sold: number;
   topTraits: string[];
+  topTraitCounts: number[];
+  firstSeenAt: string | null;
   lastSeenAt: string | null;
+  /** Median of price / similar geckos' middle price across their listings. */
+  priceRatio: number | null;
+  pricedN: number;
+  nLow: number;
+  nTypical: number;
+  nHigh: number;
+  shareHatchling: number | null;
+  shareFemale: number | null;
 };
 
 // Scraped names sometimes carry HTML entities ("J&amp;J Reptiles").
@@ -184,14 +205,16 @@ export type ListingQuery = {
   /** hatchling | juvenile | subadult | adult */
   age?: string | null;
   maxPrice?: number | null;
-  sort?: "newest" | "price-low" | "price-high";
+  sort?: "newest" | "price-low" | "price-high" | "value";
+  /** Only listings priced in the lowest quarter of similar geckos. */
+  lowOnly?: boolean;
   seller?: string | null;
   limit?: number;
   offset?: number;
 };
 
 const LISTING_COLUMNS =
-  "listing_id, name, price, currency, sex, maturity, trait_array, primary_image_url, listing_url, seller_slug, seller_name, weight_grams, last_seen_at, sold_at";
+  "listing_id, name, price, currency, sex, maturity, trait_array, primary_image_url, listing_url, seller_slug, seller_name, weight_grams, last_seen_at, sold_at, position, similar_p25, similar_p50, similar_p75, compared_trait, compared_n, ratio";
 
 function toListing(r: Record<string, unknown>): Listing {
   return {
@@ -211,6 +234,13 @@ function toListing(r: Record<string, unknown>): Listing {
     weight: num(r.weight_grams),
     lastSeenAt: (r.last_seen_at as string | null) ?? null,
     soldAt: (r.sold_at as string | null) ?? null,
+    position: (r.position as Listing["position"]) ?? null,
+    similarLow: num(r.similar_p25),
+    similarMid: num(r.similar_p50),
+    similarHigh: num(r.similar_p75),
+    comparedTrait: (r.compared_trait as string | null) ?? null,
+    comparedN: num(r.compared_n),
+    ratio: num(r.ratio),
   };
 }
 
@@ -219,16 +249,15 @@ export async function getListings(
 ): Promise<{ rows: Listing[]; total: number }> {
   try {
     const status = q.status ?? "for-sale";
+    // listing_market_mv is the catalog (crested only, sane prices) plus
+    // where each price sits among similar geckos. Refreshed hourly.
     let query = createPublicClient()
-      .from("listings")
-      .select(LISTING_COLUMNS, { count: "exact" })
-      .or(CRESTED)
-      .gt("price", 0)
-      .lt("price", 100000);
+      .from("listing_market_mv")
+      .select(LISTING_COLUMNS, { count: "exact" });
     query =
       status === "sold"
         ? query.not("sold_at", "is", null)
-        : query.eq("is_active", true).is("sold_at", null);
+        : query.eq("for_sale", true);
     if (q.traits && q.traits.length) query = query.contains("trait_array", q.traits);
     if (q.sex) query = query.ilike("sex", q.sex);
     if (q.age) {
@@ -237,9 +266,12 @@ export async function getListings(
     }
     if (q.maxPrice) query = query.lte("price", q.maxPrice);
     if (q.seller) query = query.eq("seller_slug", q.seller);
+    if (q.lowOnly) query = query.eq("position", "low");
 
     const sort = q.sort ?? "newest";
-    if (sort === "price-low") query = query.order("price", { ascending: true });
+    if (sort === "value")
+      query = query.order("ratio", { ascending: true, nullsFirst: false });
+    else if (sort === "price-low") query = query.order("price", { ascending: true });
     else if (sort === "price-high") query = query.order("price", { ascending: false });
     else if (status === "sold")
       query = query.order("sold_at", { ascending: false, nullsFirst: false });
@@ -283,20 +315,34 @@ export async function getAskingPrices(trait: string): Promise<number[]> {
 
 export async function getBreeders(): Promise<Breeder[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("breeder_summary");
+    const { data, error } = await createPublicClient()
+      .from("breeder_market_v")
+      .select("*")
+      .order("for_sale", { ascending: false })
+      .order("sold", { ascending: false })
+      .limit(2000);
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => {
       const raw = decodeEntities(r.name as string | null)?.trim();
       return {
-      slug: String(r.seller_slug),
-      name: raw && !JUNK_NAME.test(raw) ? raw : String(r.seller_slug),
-      location: decodeEntities(r.location as string | null),
-      avatarUrl: (r.avatar_url as string | null) ?? null,
-      forSale: Number(r.for_sale ?? 0),
-      askMid: num(r.ask_p50),
-      sold: Number(r.sold ?? 0),
-      topTraits: (r.top_traits as string[] | null) ?? [],
-      lastSeenAt: (r.last_seen_at as string | null) ?? null,
+        slug: String(r.seller_slug),
+        name: raw && !JUNK_NAME.test(raw) ? raw : String(r.seller_slug),
+        location: decodeEntities(r.location as string | null),
+        avatarUrl: (r.avatar_url as string | null) ?? null,
+        forSale: Number(r.for_sale ?? 0),
+        askMid: num(r.ask_p50),
+        sold: Number(r.sold ?? 0),
+        topTraits: (r.top_traits as string[] | null) ?? [],
+        topTraitCounts: ((r.top_trait_counts as Array<string | number> | null) ?? []).map(Number),
+        firstSeenAt: (r.first_seen_at as string | null) ?? null,
+        lastSeenAt: (r.last_seen_at as string | null) ?? null,
+        priceRatio: num(r.price_ratio),
+        pricedN: Number(r.priced_n ?? 0),
+        nLow: Number(r.n_low ?? 0),
+        nTypical: Number(r.n_typical ?? 0),
+        nHigh: Number(r.n_high ?? 0),
+        shareHatchling: num(r.share_hatchling),
+        shareFemale: num(r.share_female),
       };
     });
   } catch {
@@ -389,5 +435,92 @@ export async function getBaseline(): Promise<{ n: number; p50: number | null }> 
     return { n: Number(r.n ?? 0), p50: num(r.p50) };
   } catch {
     return { n: 0, p50: null };
+  }
+}
+
+export type DataHealth = {
+  forSale: number;
+  recheckedRecently: number;
+  tagged: number;
+  withStore: number;
+  firstSeen: string | null;
+  lastChecked: string | null;
+  sold: number;
+  soldFrom: string | null;
+  soldTo: string | null;
+  byWeek: Array<{ week: string; n: number }>;
+};
+
+export async function getDataHealth(): Promise<DataHealth | null> {
+  try {
+    const { data, error } = await createPublicClient().rpc("data_health");
+    const r = (data as Array<Record<string, unknown>> | null)?.[0];
+    if (error || !r) return null;
+    return {
+      forSale: Number(r.for_sale ?? 0),
+      recheckedRecently: Number(r.rechecked_14d ?? 0),
+      tagged: Number(r.tagged ?? 0),
+      withStore: Number(r.with_store ?? 0),
+      firstSeen: (r.first_seen as string | null) ?? null,
+      lastChecked: (r.last_checked as string | null) ?? null,
+      sold: Number(r.sold ?? 0),
+      soldFrom: (r.sold_from as string | null) ?? null,
+      soldTo: (r.sold_to as string | null) ?? null,
+      byWeek: ((r.last_seen_by_week as Array<{ week: string; n: number }> | null) ?? []).map((w) => ({
+        week: String(w.week),
+        n: Number(w.n),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getListing(id: string): Promise<(Listing & { ageClass: string | null; sexClass: string | null; basis: string | null }) | null> {
+  try {
+    const { data, error } = await createPublicClient()
+      .from("listing_market_mv")
+      .select(`${LISTING_COLUMNS}, age_class, sex_class, basis`)
+      .eq("listing_id", id)
+      .maybeSingle();
+    if (error || !data) return null;
+    const r = data as Record<string, unknown>;
+    return {
+      ...toListing(r),
+      ageClass: (r.age_class as string | null) ?? null,
+      sexClass: (r.sex_class as string | null) ?? null,
+      basis: (r.basis as string | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Asking prices of the listings a listing was compared with (same group
+ * the SQL view used), so the page can place it among them.
+ */
+export async function getComparablePrices(opts: {
+  trait: string | null;
+  ageClass: string | null;
+  sexClass: string | null;
+  basis: string | null;
+}): Promise<number[]> {
+  try {
+    let q = createPublicClient()
+      .from("listing_market_mv")
+      .select("price")
+      .eq("currency", "USD")
+      .limit(3000);
+    if (opts.trait) q = q.contains("trait_array", [opts.trait]);
+    const useAge = opts.basis === "trait_age_sex" || opts.basis === "trait_age" || opts.basis === "market_age_sex";
+    const useSex = opts.basis === "trait_age_sex" || opts.basis === "market_age_sex";
+    if (useAge && opts.ageClass) q = q.eq("age_class", opts.ageClass);
+    if (useSex && opts.sexClass) q = q.eq("sex_class", opts.sexClass);
+    const { data, error } = await q;
+    if (error || !data) return [];
+    return (data as Array<{ price: number | string }>).map((r) => Number(r.price)).filter(Number.isFinite);
+  } catch {
+    return [];
   }
 }

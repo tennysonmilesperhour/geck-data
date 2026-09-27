@@ -49,6 +49,8 @@ const nextConfig = {
     ];
     return [
       { source: "/whats-it-worth", destination: "/", permanent: false },
+      { source: "/alerts", destination: "/watchlist", permanent: false },
+      { source: "/settings", destination: "/", permanent: false },
       { source: "/sold", destination: "/listings?status=sold", permanent: false },
       { source: "/trait/:slug", destination: "/morphs/:slug", permanent: false },
       ...toMorphs.map((source) => ({ source, destination: "/morphs", permanent: false })),

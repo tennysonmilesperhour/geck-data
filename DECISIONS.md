@@ -7,6 +7,62 @@ deferred.
 
 ---
 
+## 2026-09-27: Every listing and breeder priced in context
+
+Context: Tennyson asked for the same treatment on Breeders and every
+other page.
+
+### Research that shaped it
+
+- Car marketplaces (CarGurus) rate each asking price against an expected
+  value. Gecko prices spread far wider (the middle 80% of listings runs
+  0.36x to 2.3x their expected price) because pattern quality is not in
+  the data, so a "great deal" badge would mostly flag plainer animals.
+  The site reports where a price sits among similar geckos instead:
+  low, typical or high for its kind (lowest quarter, middle half, top
+  quarter).
+- Marketplace trust research (eBay, Etsy, MorphMarket reviews): buyers
+  judge sellers on tenure, specialty and fair pricing, and rarely open
+  detailed profiles. Breeder cards carry those signals directly.
+
+### Shipped
+
+- v_listing_value / listing_market_mv (hourly, in refresh_market_matviews):
+  each listing's similar group (strongest morph + age + sex, falling back
+  to morph + age, morph, then all crested geckos), its quartiles, ratio
+  and position. Group lots (313, via _looks_like_group_lot) are excluded
+  from comparisons after a "Wholesale 5/10 Lot" topped best value.
+- Listing cards show a mini range bar and "Low for its kind / Typical
+  price / High for its kind". Listings gain "Best value first" and a
+  "priced low for its kind" filter. Price check and morph pages list
+  matches best value first.
+- /listings/[id] rebuilt as a per-listing report: price vs similar
+  geckos, a strip of every comparable price, seller card, similar
+  listings, and buttons to MorphMarket and to price check the gecko.
+  Cards now open this page.
+- breeder_market_v: per-breeder listed/sold, first seen, pricing ratio
+  and low/typical/high split, share hatchlings and females, top morphs.
+  Breeders directory filters by focus morph, pricing and stage; breeder
+  pages add "How they price", "What they focus on" and similar breeders.
+- "Alert me" buttons (price check, morph, breeder) save alerts in the
+  matcher's real shape (trait_all, max_price, seller_ids); the old
+  WatchButton saved a shape the matcher never read. /watchlist merges
+  alerts and matches with pause and remove; /alerts redirects there.
+- /status rewritten for visitors (data_health()); the team pipeline view
+  moved to /status/pipeline. /settings (chart toggles for charts that no
+  longer exist) redirects home. Login returns to /watchlist and only
+  follows same-site next= paths.
+- _age_class/_sex_class lost their pinned search_path (they read no
+  tables) so Postgres can inline them.
+
+### Known limits stated on the pages
+
+- Only about 1 in 7 listings name their store, so breeder stats cover
+  303 breeders and ~1,100 current listings.
+- No price cuts are recorded in price_history, so none are shown.
+
+---
+
 ## 2026-09-26: Value report built around how geckos are actually priced
 
 Context: after the four-page cut, Tennyson asked for sex and age back in

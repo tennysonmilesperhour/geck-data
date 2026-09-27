@@ -1,8 +1,15 @@
 // Browse listings. Two views: what is listed now and what sold. Filters
 // are a plain form that writes to the URL, so results can be shared and
 // work without JavaScript.
+//
+// Every card says where its price sits among similar geckos (same
+// strongest morph, age and sex), the way car sites put each asking price
+// in context. "Best value first" sorts by price relative to similar
+// geckos instead of by raw price, so a $600 Axanthic priced well under
+// other Axanthics comes before a $150 Harlequin priced above other
+// Harlequins.
 import Link from "next/link";
-import { getListings, getMorphs, traitsFromSlugs } from "@/lib/simple/data";
+import { getListings, getMorphs, traitsFromSlugs, type ListingQuery } from "@/lib/simple/data";
 import { Empty, ListingGrid, PageIntro } from "@/components/simple/ui";
 import { fmtInt } from "@/lib/format";
 
@@ -21,13 +28,15 @@ const PAGE_SIZE = 24;
 export default async function ListingsPage({ searchParams }: { searchParams?: SearchParams }) {
   const status = one(searchParams?.status) === "sold" ? "sold" : "for-sale";
   const sexRaw = one(searchParams?.sex);
-  const sex = sexRaw === "male" || sexRaw === "female" ? sexRaw : null;
+  const sex: "male" | "female" | null = sexRaw === "male" || sexRaw === "female" ? sexRaw : null;
   const ageRaw = one(searchParams?.age);
   const age = ["hatchling", "juvenile", "subadult", "adult"].includes(ageRaw) ? ageRaw : null;
   const maxRaw = Number(one(searchParams?.max));
   const maxPrice = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.round(maxRaw) : null;
   const sortRaw = one(searchParams?.sort);
-  const sort = sortRaw === "price-low" || sortRaw === "price-high" ? sortRaw : "newest";
+  const sort =
+    sortRaw === "price-low" || sortRaw === "price-high" || sortRaw === "value" ? sortRaw : "newest";
+  const lowOnly = one(searchParams?.low) === "1";
   const page = Math.max(1, Math.min(200, Number(one(searchParams?.page)) || 1));
   const tRaw = one(searchParams?.t);
   const sellerRaw = one(searchParams?.seller);
@@ -40,17 +49,20 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
   );
   const tValue = selected.map((m) => m.slug).join(",");
 
-  const { rows, total } = await getListings({
+  const query: ListingQuery = {
     traits: selected.map((m) => m.trait),
     status,
     sex,
     age,
     maxPrice,
-    sort,
     seller,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-  });
+  };
+  const [{ rows, total }, lowCount] = await Promise.all([
+    getListings({ ...query, sort, lowOnly, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    status === "for-sale" && !lowOnly
+      ? getListings({ ...query, lowOnly: true, limit: 1 }).then((r) => r.total)
+      : Promise.resolve(null),
+  ]);
 
   const params = (over: Record<string, string | number | null>) => {
     const p = new URLSearchParams();
@@ -62,6 +74,7 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
       max: maxPrice,
       sort: sort === "newest" ? null : sort,
       seller,
+      low: lowOnly ? 1 : null,
       page: null,
       ...over,
     };
@@ -77,8 +90,8 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       <PageIntro title="Listings">
-        Crested geckos listed on MorphMarket, and the ones that sold. Tap any gecko to
-        open the original listing.
+        Crested geckos listed on MorphMarket, and the ones that sold. Every card shows
+        whether its price is low, typical or high for similar geckos. Tap one for detail.
       </PageIntro>
 
       <div className="flex gap-1 rounded-lg border border-ink-700 bg-ink-900 p-1 text-sm sm:w-fit">
@@ -158,8 +171,21 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
             <option value="newest">{status === "sold" ? "Most recent" : "Newest"}</option>
             <option value="price-low">Price, low to high</option>
             <option value="price-high">Price, high to low</option>
+            <option value="value">Best value first</option>
           </select>
         </label>
+        {status === "for-sale" ? (
+          <label className="col-span-2 flex items-center gap-2 text-sm text-ink-300 md:order-last md:col-span-6">
+            <input
+              type="checkbox"
+              name="low"
+              value="1"
+              defaultChecked={lowOnly}
+              className="h-4 w-4 accent-claude"
+            />
+            Only geckos priced low for their kind
+          </label>
+        ) : null}
         <button
           type="submit"
           className="col-span-2 rounded-lg bg-claude px-5 py-2 text-sm font-medium text-ink-950 hover:bg-claude-glow md:col-span-1"
@@ -173,9 +199,18 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
           {fmtInt(total)} {status === "sold" ? "sold" : "listed"}
           {selected.length ? ` with ${selected.map((m) => m.trait).join(" + ")}` : ""}
           {seller ? ` from ${rows[0]?.sellerName ?? seller}` : ""}
+          {lowOnly ? ", priced low for their kind" : ""}
+          {lowCount != null && total > 0 ? (
+            <>
+              {". "}
+              <Link href={params({ low: 1 })} className="text-claude-glow hover:underline">
+                {fmtInt(lowCount)} priced low for their kind
+              </Link>
+            </>
+          ) : null}
         </span>
-        {selected.length || sex || age || maxPrice || seller ? (
-          <Link href={params({ t: null, sex: null, age: null, max: null, seller: null })} className="hover:text-ink-100">
+        {selected.length || sex || age || maxPrice || seller || lowOnly ? (
+          <Link href={params({ t: null, sex: null, age: null, max: null, seller: null, low: null })} className="hover:text-ink-100">
             Clear filters
           </Link>
         ) : null}
@@ -209,12 +244,18 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
         </nav>
       ) : null}
 
-      {status === "sold" ? (
-        <p className="text-sm text-ink-500">
-          Sold prices are the last asking price seen before a listing came down, not a
-          confirmed payment. Sales history covers spring 2026.
-        </p>
-      ) : null}
+      <p className="text-sm text-ink-500">
+        {status === "sold"
+          ? "Sold prices are the last asking price seen before a listing came down, not a confirmed payment. Sales history covers spring 2026. "
+          : ""}
+        The bar on each card shows the price against the middle half of similar listings:
+        the same strongest morph, age and sex. &quot;Low for its kind&quot; means cheaper
+        than three quarters of them. Pattern quality is not in the data, so a low price
+        can also mean a plainer gecko.{" "}
+        <Link href="/methodology" className="text-ink-300 underline hover:text-ink-100">
+          How this works
+        </Link>
+      </p>
     </div>
   );
 }

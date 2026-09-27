@@ -50,6 +50,7 @@ import {
 } from "@/components/simple/ui";
 import { UpgradeList, ValueGridTable } from "@/components/simple/value";
 import GrowthChart from "@/components/simple/GrowthChart";
+import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 900;
@@ -108,7 +109,7 @@ export default async function ValueReportPage({ searchParams }: { searchParams?:
         status: "for-sale",
         sex: cur.sex === "male" || cur.sex === "female" ? cur.sex : null,
         age: cur.age,
-        sort: "newest",
+        sort: "value",
         limit: 8,
       }),
       getListings({ traits, status: "sold", sort: "newest", limit: 4 }),
@@ -144,6 +145,7 @@ export default async function ValueReportPage({ searchParams }: { searchParams?:
         sold={sold}
         asking={asking}
         hasTraits={traits.length > 0}
+        traits={traits}
       />
 
       <Section
@@ -208,9 +210,9 @@ export default async function ValueReportPage({ searchParams }: { searchParams?:
 
       <Section
         title={cur.sex || cur.age ? "Geckos like this, listed now" : "Listed now"}
-        note={`${fmtInt(comps.total)} matching listings. Tap one to open it on MorphMarket.`}
+        note={`${fmtInt(comps.total)} matching listings, best value first: priced lowest against similar geckos.`}
         action={
-          <TextLink href={listingsHref(cur, false)}>See all listings</TextLink>
+          <TextLink href={`${listingsHref(cur, false)}${listingsHref(cur, false).includes("?") ? "&" : "?"}sort=value`}>See all listings</TextLink>
         }
       >
         {comps.rows.length ? (
@@ -398,7 +400,9 @@ function Headline({
   sold,
   asking,
   hasTraits,
+  traits,
 }: {
+  traits: string[];
   name: string;
   est: Estimate | null;
   baseline: number | null;
@@ -448,6 +452,13 @@ function Headline({
         ) : null}
       </div>
       <p className="text-sm text-ink-400">{basis}</p>
+      {hasTraits ? (
+        <SaveAlert
+          label={`Alert me when one is listed under ${fmtUsd(est.low)}`}
+          name={`${traits.join(" + ")} under ${fmtUsd(est.low)}`}
+          query={{ trait_all: traits, max_price: est.low }}
+        />
+      ) : null}
 
       <div className="space-y-4 border-t border-ink-700 pt-5">
         <div className="text-sm font-medium text-ink-200">

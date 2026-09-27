@@ -251,6 +251,53 @@ const sexLabel = (s: string | null) => {
   return null;
 };
 
+const POSITION: Record<"low" | "typical" | "high", { label: string; cls: string }> = {
+  low: { label: "Low for its kind", cls: "bg-claude/15 text-claude-glow" },
+  typical: { label: "Typical price", cls: "bg-ink-700 text-ink-200" },
+  high: { label: "High for its kind", cls: "bg-ink-700 text-ink-300" },
+};
+
+/**
+ * Where a price sits among similar geckos: same strongest morph, age and
+ * sex. A marker on a small bar shows the price against the middle half of
+ * similar listings, the way a price guide shows a range with your item on
+ * it. Uses words, not just color.
+ */
+export function PricePosition({ listing }: { listing: Listing }) {
+  if (!listing.position || listing.similarLow == null || listing.similarHigh == null || listing.price == null) {
+    return null;
+  }
+  const lo = listing.similarLow;
+  const hi = listing.similarHigh;
+  const span = Math.max(hi - lo, 1);
+  const min = Math.max(0, lo - span);
+  const max = hi + span;
+  const pct = (v: number) => Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100));
+  const p = POSITION[listing.position];
+  const who = listing.comparedTrait ?? "crested geckos";
+  return (
+    <div className="space-y-1 pt-1">
+      <div className="relative h-2" aria-hidden="true">
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ink-700" />
+        <div
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-ink-600"
+          style={{ left: `${pct(lo)}%`, width: `${pct(hi) - pct(lo)}%` }}
+        />
+        <div
+          className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink-850 bg-claude-glow"
+          style={{ left: `${pct(listing.price)}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className={`rounded-full px-1.5 py-0.5 ${p.cls}`}>{p.label}</span>
+        <span className="truncate text-ink-500" title={`Middle half of ${listing.comparedN ?? ""} similar ${who} listings`}>
+          similar {fmtUsd(lo)} to {fmtUsd(hi)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function ListingCard({ listing }: { listing: Listing }) {
   const sold = Boolean(listing.soldAt);
   const maturity = listing.maturity === "Baby" ? "Hatchling" : listing.maturity;
@@ -276,7 +323,14 @@ export function ListingCard({ listing }: { listing: Listing }) {
           ) : null}
         </div>
         <div className="line-clamp-1 text-sm text-ink-200">
-          {listing.traits.length ? listing.traits.slice(0, 3).join(", ") : listing.name ?? "Crested gecko"}
+          {listing.traits.length
+            ? [
+                ...(listing.comparedTrait && listing.traits.includes(listing.comparedTrait) ? [listing.comparedTrait] : []),
+                ...listing.traits.filter((t) => t !== listing.comparedTrait),
+              ]
+                .slice(0, 3)
+                .join(", ")
+            : listing.name ?? "Crested gecko"}
         </div>
         <div className="line-clamp-1 text-xs text-ink-400">
           {[details, listing.sellerName].filter(Boolean).join(" · ")}
@@ -286,17 +340,17 @@ export function ListingCard({ listing }: { listing: Listing }) {
             ? `Came down ${fmtShortDate(listing.soldAt)}`
             : `Last checked ${fmtShortDate(listing.lastSeenAt)}`}
         </div>
+        <PricePosition listing={listing} />
       </div>
     </>
   );
-  const cls =
-    "group block overflow-hidden rounded-xl border border-ink-700 bg-ink-850 transition hover:border-ink-500";
-  return listing.url ? (
-    <a href={listing.url} target="_blank" rel="noopener noreferrer" className={cls}>
+  return (
+    <Link
+      href={`/listings/${encodeURIComponent(listing.id)}`}
+      className="group block overflow-hidden rounded-xl border border-ink-700 bg-ink-850 transition hover:border-ink-500"
+    >
       {inner}
-    </a>
-  ) : (
-    <div className={cls}>{inner}</div>
+    </Link>
   );
 }
 

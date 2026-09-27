@@ -26,6 +26,8 @@ import {
 } from "@/components/simple/ui";
 import { UpgradeList, ValueGridTable } from "@/components/simple/value";
 import GrowthChart from "@/components/simple/GrowthChart";
+import { BreederCard } from "@/components/simple/breeder";
+import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 1800;
@@ -65,7 +67,7 @@ export default async function MorphPage({ params }: { params: { slug: string } }
     getGrowthCurve(traits),
     getTraitUpgrades(traits),
     getAskingPrices(morph.trait),
-    getListings({ traits, status: "for-sale", sort: "newest", limit: 8 }),
+    getListings({ traits, status: "for-sale", sort: "value", limit: 8 }),
     getListings({ traits, status: "sold", sort: "newest", limit: 4 }),
     getBreeders(),
   ]);
@@ -75,7 +77,10 @@ export default async function MorphPage({ params }: { params: { slug: string } }
   const bins = histogram(prices);
   const maxBin = Math.max(...bins.map((b) => b.count), 1);
   const slugOf = new Map(morphs.map((m) => [m.trait, m.slug]));
-  const topBreeders = breeders.filter((b) => b.topTraits.includes(morph.trait)).slice(0, 6);
+  // Breeders whose top three morphs include this one, most listed first.
+  const topBreeders = breeders
+    .filter((b) => b.forSale > 0 && b.topTraits.slice(0, 3).includes(morph.trait))
+    .slice(0, 6);
   const growthEnough = growth.filter((p) => p.sex !== "all" && p.n >= 6).length >= 3;
 
   return (
@@ -100,7 +105,16 @@ export default async function MorphPage({ params }: { params: { slug: string } }
           </h1>
           <p className="mt-3 text-base leading-7 text-ink-300">{info.note}</p>
         </div>
-        <ButtonLink href={`/?t=${morph.slug}`}>Price a {morph.trait}</ButtonLink>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <ButtonLink href={`/?t=${morph.slug}`}>Price a {morph.trait}</ButtonLink>
+          {morph.askLow != null ? (
+            <SaveAlert
+              label={`Alert me under ${fmtUsd(morph.askLow)}`}
+              name={`${morph.trait} under ${fmtUsd(morph.askLow)}`}
+              query={{ trait_all: [morph.trait], max_price: morph.askLow }}
+            />
+          ) : null}
+        </div>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -190,8 +204,8 @@ export default async function MorphPage({ params }: { params: { slug: string } }
 
       <Section
         title="Listed now"
-        note="Tap a listing to open it on MorphMarket."
-        action={<TextLink href={`/listings?t=${morph.slug}`}>See all {fmtInt(morph.forSale)}</TextLink>}
+        note="Best value first: priced lowest against similar geckos."
+        action={<TextLink href={`/listings?t=${morph.slug}&sort=value`}>See all {fmtInt(morph.forSale)}</TextLink>}
       >
         {forSale.rows.length ? <ListingGrid listings={forSale.rows} /> : <Empty>Nothing listed right now.</Empty>}
       </Section>
@@ -207,19 +221,13 @@ export default async function MorphPage({ params }: { params: { slug: string } }
       ) : null}
 
       {topBreeders.length ? (
-        <Section title={`Breeders who list ${morph.trait} most`}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Section
+          title={`Breeders who focus on ${morph.trait}`}
+          action={<TextLink href={`/sellers?focus=${morph.slug}`}>See all</TextLink>}
+        >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {topBreeders.map((b) => (
-              <Link
-                key={b.slug}
-                href={`/sellers/${b.slug}`}
-                className="rounded-xl border border-ink-700 bg-ink-850 p-4 transition hover:border-ink-500"
-              >
-                <div className="font-medium text-ink-50">{b.name}</div>
-                <div className="text-sm text-ink-400">
-                  {fmtInt(b.forSale)} listed{b.location ? `, ${b.location}` : ""}
-                </div>
-              </Link>
+              <BreederCard key={b.slug} b={b} />
             ))}
           </div>
         </Section>

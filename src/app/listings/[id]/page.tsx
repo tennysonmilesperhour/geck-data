@@ -1,318 +1,244 @@
-// Public listing detail page. The URL pattern `/listings/<id>` is what the
-// alert notifier puts in webhook payloads, so it has to resolve to something
-// useful — until now the link 404'd.
-//
-// What we show:
-//   - Listing title, price, currency, sex/weight/maturity
-//   - First image (if any) from listing_images
-//   - Price history chart from price_history (every observation we hold for
-//     this listing, newest 500). The header used to claim "last 180d" while
-//     the query had no date filter at all.
-//   - Status timeline (live/sold/removed events from listing_status_events)
-//
-// Server-rendered. Public read on every backing table.
+// One listing, with its price in context: how it compares with similar
+// geckos (same strongest morph, age and sex), where it falls among them,
+// the seller, and similar geckos listed now. A clear button goes to the
+// original MorphMarket listing.
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
-import MiniSparkline from "@/components/charts/MiniSparkline";
-import ListingImage from "@/components/media/ListingImage";
+import { notFound } from "next/navigation";
 import {
-  rawMarketplaceListingId,
-  safeMarketImageUrl,
-} from "@/lib/media/market-images";
+  getBreeders,
+  getComparablePrices,
+  getListing,
+  getListings,
+  getMorphs,
+} from "@/lib/simple/data";
+import {
+  Card,
+  Chip,
+  ListingGrid,
+  Section,
+  Stat,
+  TextLink,
+  fmtShortDate,
+} from "@/components/simple/ui";
+import ListingImage from "@/components/media/ListingImage";
+import { BreederCard } from "@/components/simple/breeder";
+import { fmtInt, fmtUsd } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 1800;
 
-type ListingRow = {
-  id: string;
-  title: string | null;
-  price: number | null;
-  price_usd_equivalent: number | null;
-  sex: string | null;
-  weight: number | string | null;
-  maturity: string | null;
-  cached_traits: string | null;
-  species: string | null;
-  seller_id: string | null;
-  seller_name: string | null;
-  seller_location: string | null;
-  url: string | null;
-  current_status: string | null;
-  first_seen_at: string | null;
-  last_seen_at: string | null;
+const AGE: Record<string, string> = {
+  hatchling: "hatchling",
+  juvenile: "juvenile",
+  subadult: "subadult",
+  adult: "adult",
 };
 
-type PriceRow = {
-  observed_at: string;
-  price: number | null;
-  price_usd_equivalent: number | null;
-  currency: string | null;
-};
+export async function generateMetadata({ params }: { params: { id: string } }) {
+  const l = await getListing(params.id);
+  return {
+    title: l ? `${l.traits.join(" ") || l.name || "Crested gecko"} ${fmtUsd(l.price)} - Geck Inspect` : "Listing - Geck Inspect",
+    description: "How this crested gecko's asking price compares with similar geckos.",
+  };
+}
 
-type StatusRow = {
-  status: string;
-  observed_at: string;
-  source: string | null;
-  inference_confidence: number | null;
-};
+export default async function ListingPage({ params }: { params: { id: string } }) {
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(params.id)) notFound();
+  const l = await getListing(params.id);
+  if (!l) notFound();
 
-type ImageRow = {
-  storage_bucket: string;
-  storage_path: string | null;
-  image_url: string | null;
-};
-
-type CanonicalListingImageRow = {
-  primary_image_url: string | null;
-  all_image_urls: string[] | null;
-};
-
-async function fetchAll(id: string) {
-  const admin = createAdminClient();
-  const [listing, history, statuses, images, canonical] = await Promise.all([
-    admin
-      .from("market_listings")
-      .select(
-        "id, title, price, price_usd_equivalent, sex, weight, maturity, cached_traits, species, seller_id, seller_name, seller_location, url, current_status, first_seen_at, last_seen_at",
-      )
-      .eq("id", id)
-      .maybeSingle()
-      .then(({ data }) => data as ListingRow | null),
-    admin
-      .from("price_history")
-      .select("observed_at, price, price_usd_equivalent, currency")
-      .eq("listing_id", id)
-      .order("observed_at", { ascending: true })
-      .limit(500)
-      .then(({ data }) => (data ?? []) as PriceRow[]),
-    admin
-      .from("listing_status_events")
-      .select("status, observed_at, source, inference_confidence")
-      .eq("listing_id", id)
-      .order("observed_at", { ascending: true })
-      .limit(100)
-      .then(({ data }) => (data ?? []) as StatusRow[]),
-    admin
-      .from("listing_images")
-      .select("storage_bucket, storage_path, image_url")
-      .eq("listing_id", id)
-      .limit(10)
-      .then(({ data }) => (data ?? []) as ImageRow[]),
-    admin
-      .from("listings")
-      .select("primary_image_url, all_image_urls")
-      .eq("listing_id", rawMarketplaceListingId(id))
-      .maybeSingle()
-      .then(({ data }) => (data ?? null) as CanonicalListingImageRow | null),
+  const [morphs, comps, similar, breeders] = await Promise.all([
+    getMorphs(),
+    getComparablePrices({ trait: l.comparedTrait, ageClass: l.ageClass, sexClass: l.sexClass, basis: l.basis }),
+    getListings({
+      traits: l.comparedTrait ? [l.comparedTrait] : [],
+      status: "for-sale",
+      sex: l.sexClass === "male" || l.sexClass === "female" ? l.sexClass : null,
+      age: l.ageClass,
+      sort: "value",
+      limit: 9,
+    }),
+    l.sellerSlug ? getBreeders() : Promise.resolve([]),
   ]);
-  return { listing, history, statuses, images, canonical };
-}
+  const slugOf = new Map(morphs.map((m) => [m.trait, m.slug]));
+  const breeder = breeders.find((b) => b.slug === l.sellerSlug) ?? null;
+  const sold = Boolean(l.soldAt);
 
-function publicImageUrl(img: ImageRow): string | null {
-  if (img.image_url) return img.image_url;
-  if (img.storage_bucket === "listing-images" && img.storage_path) {
-    const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
-    if (base) return `${base}/storage/v1/object/public/${img.storage_bucket}/${img.storage_path}`;
-  }
-  return null;
-}
-
-export default async function ListingDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const { listing, history, statuses, images, canonical } = await fetchAll(params.id);
-
-  if (!listing) {
-    return (
-      <div className="space-y-4">
-        <h1 className="font-display text-2xl">Listing not found</h1>
-        <p className="text-ink-400">
-          We don&apos;t have <code className="font-mono">{params.id}</code> in our
-          observation log. It may have predated our scraping window or been
-          archived.
-        </p>
-        <Link href="/" className="text-claude underline">
-          Back to Pulse
-        </Link>
-      </div>
-    );
-  }
-
-  const priceSeries = history
-    .map((h) => h.price_usd_equivalent ?? h.price)
-    .filter((v): v is number => v != null);
-  const firstObservedAt = history[0]?.observed_at ?? null;
-  const lastObservedAt = history[history.length - 1]?.observed_at ?? null;
-  const imageUrls = [
-    canonical?.primary_image_url,
-    ...(canonical?.all_image_urls ?? []),
-    ...images.map(publicImageUrl),
+  const cheaperThan =
+    l.price != null && comps.length >= 5
+      ? Math.round((comps.filter((p) => p > (l.price as number)).length / comps.length) * 100)
+      : null;
+  const groupName = [
+    l.basis === "trait_age_sex" || l.basis === "market_age_sex"
+      ? l.sexClass === "unsexed" ? "unsexed" : l.sexClass
+      : null,
+    l.basis !== "trait" && l.basis !== "market" && l.ageClass ? AGE[l.ageClass] : null,
+    l.comparedTrait ?? "crested geckos",
   ]
-    .map(safeMarketImageUrl)
-    .filter((url): url is string => Boolean(url));
-  const uniqueImageUrls = [...new Set(imageUrls)];
+    .filter(Boolean)
+    .join(" ");
+  const maturity = l.maturity === "Baby" ? "Hatchling" : l.maturity;
+  const priceCheckHref = (() => {
+    const p = new URLSearchParams();
+    const slugs = l.traits.map((t) => slugOf.get(t)).filter(Boolean) as string[];
+    if (slugs.length) p.set("t", slugs.slice(0, 4).join(","));
+    if (l.sexClass) p.set("sex", l.sexClass);
+    if (l.ageClass) p.set("age", l.ageClass);
+    const s = p.toString().replace(/%2C/g, ",");
+    return s ? `/?${s}` : "/";
+  })();
+
+  // Strip plot of comparable prices with this listing marked.
+  const sorted = [...comps].sort((a, b) => a - b);
+  const cap = sorted.length ? sorted[Math.floor(sorted.length * 0.97)] ?? sorted[sorted.length - 1] : 0;
+  const axisMax = Math.max(cap, l.price ?? 0) * 1.05 || 1;
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="font-mono text-[11px] uppercase tracking-wider text-ink-400">
-            {listing.species ?? "unknown"} · {listing.current_status ?? "no data"}
-          </div>
-          <h1 className="font-display text-2xl text-ink-50">
-            {listing.title ?? listing.id}
-          </h1>
-          {listing.cached_traits && (
-            <p className="mt-1 text-sm text-ink-300">{listing.cached_traits}</p>
-          )}
-          <p className="mt-2 text-xs text-ink-500">
-            {listing.seller_id ? (
-              <Link
-                href={`/sellers/${listing.seller_id}`}
-                className="transition hover:text-claude-glow"
-              >
-                {listing.seller_name ?? listing.seller_id}
-              </Link>
-            ) : (
-              listing.seller_name ?? "Unknown seller"
-            )}
-            {listing.seller_location ? ` · ${listing.seller_location}` : ""}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="font-mono text-3xl text-ink-50">
-            {listing.price_usd_equivalent != null
-              ? `$${Math.round(listing.price_usd_equivalent).toLocaleString()}`
-              : listing.price
-                ? `${listing.price}`
-                : "no data"}
-          </div>
-          {listing.url && (
-            <a
-              href={listing.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1 inline-block text-xs text-claude underline"
-            >
-              View on source ↗
-            </a>
-          )}
-        </div>
-      </header>
+    <div className="mx-auto max-w-5xl space-y-12">
+      <div className="text-sm text-ink-400">
+        <Link href="/listings" className="hover:text-ink-100">
+          Listings
+        </Link>{" "}
+        / {l.traits.slice(0, 3).join(", ") || l.name || "Crested gecko"}
+      </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        <section className="md:col-span-1">
-          {uniqueImageUrls.length > 0 ? (
-            <div className="space-y-2">
-              <ListingImage
-                src={uniqueImageUrls[0]}
-                alt={listing.title ?? listing.id}
-                className="aspect-[4/5] w-full rounded-sm"
-                sizes="(min-width: 768px) 31vw, 94vw"
-                priority
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <ListingImage
+          src={l.image}
+          alt={l.name ?? "Crested gecko"}
+          className="aspect-square w-full rounded-xl"
+          sizes="(max-width: 768px) 100vw, 480px"
+          priority
+        />
+        <div className="space-y-5">
+          <div>
+            <div className="text-sm text-ink-400">
+              {sold ? `Came down ${fmtShortDate(l.soldAt)}` : `Listed, last checked ${fmtShortDate(l.lastSeenAt)}`}
+            </div>
+            <h1 className="mt-1 text-4xl font-semibold tabular-nums tracking-tight text-ink-50">
+              {fmtUsd(l.price)}
+              {l.currency && l.currency !== "USD" ? ` ${l.currency}` : ""}
+            </h1>
+            <p className="mt-1 text-ink-300">
+              {[l.sexClass === "male" ? "Male" : l.sexClass === "female" ? "Female" : "Not sexed", maturity, l.weight ? `${Math.round(l.weight)}g` : null]
+                .filter(Boolean)
+                .join(", ")}
+            </p>
+            {l.name ? <p className="mt-1 text-sm text-ink-500">&quot;{l.name}&quot;</p> : null}
+          </div>
+
+          {l.traits.length ? (
+            <div className="flex flex-wrap gap-2">
+              {l.traits.map((t) => {
+                const s = slugOf.get(t);
+                return s ? (
+                  <Chip key={t} href={`/morphs/${s}`}>
+                    {t}
+                  </Chip>
+                ) : (
+                  <span key={t} className="rounded-full border border-ink-700 px-3 py-1.5 text-sm text-ink-400">
+                    {t}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {l.url ? (
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center rounded-lg bg-claude px-4 py-2 text-sm font-medium text-ink-950 hover:bg-claude-glow"
+              >
+                Open on MorphMarket
+              </a>
+            ) : null}
+            <Link
+              href={priceCheckHref}
+              className="inline-flex items-center rounded-lg border border-ink-600 px-4 py-2 text-sm font-medium text-ink-100 hover:border-ink-500 hover:bg-ink-800"
+            >
+              Price check this gecko
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {l.position && l.similarMid != null ? (
+        <Section
+          title="How this price compares"
+          note={`Against ${fmtInt(l.comparedN)} listings of ${groupName}.`}
+        >
+          <Card className="space-y-6">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Stat label="This gecko" value={fmtUsd(l.price)} />
+              <Stat label="Similar geckos, middle" value={fmtUsd(l.similarMid)} />
+              <Stat label="Similar geckos, most" value={`${fmtUsd(l.similarLow)} to ${fmtUsd(l.similarHigh)}`} />
+              <Stat
+                label="Priced below"
+                value={cheaperThan != null ? `${cheaperThan}%` : "no data"}
+                hint="of similar listings"
               />
-              {uniqueImageUrls.length > 1 ? (
-                <div className="grid grid-cols-4 gap-2">
-                  {uniqueImageUrls.slice(1, 5).map((url, index) => (
-                    <ListingImage
-                      key={url}
-                      src={url}
-                      alt={`${listing.title ?? listing.id}, view ${index + 2}`}
-                      className="aspect-square w-full rounded-sm"
-                      sizes="(min-width: 768px) 7vw, 22vw"
+            </div>
+            {sorted.length >= 5 && l.price != null ? (
+              <div>
+                <div className="relative h-10" role="img" aria-label={`This listing at ${fmtUsd(l.price)} among ${sorted.length} similar listings`}>
+                  {sorted.map((p, i) => (
+                    <span
+                      key={i}
+                      className="absolute top-1/2 h-4 w-px -translate-y-1/2 bg-ink-500/50"
+                      style={{ left: `${Math.min((p / axisMax) * 100, 100)}%` }}
                     />
                   ))}
+                  <span
+                    className="absolute top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-claude-glow"
+                    style={{ left: `${Math.min((l.price / axisMax) * 100, 100)}%` }}
+                  />
                 </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="rounded-lg border border-ink-700 bg-ink-900/60 p-6 text-center text-xs text-ink-500">
-              no image stored
-            </div>
-          )}
-          <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
-            <Field label="Sex" value={listing.sex} />
-            <Field label="Maturity" value={listing.maturity} />
-            <Field label="Weight" value={listing.weight != null ? String(listing.weight) : null} />
-            <Field label="First seen" value={fmtDate(listing.first_seen_at)} />
-            <Field label="Last seen" value={fmtDate(listing.last_seen_at)} />
-          </dl>
-        </section>
-
-        <section className="md:col-span-2 space-y-4">
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-4">
-            <div className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Observed asking price ({history.length}{" "}
-              {history.length === 1 ? "observation" : "observations"}
-              {firstObservedAt && lastObservedAt
-                ? `, ${firstObservedAt.slice(0, 10)} to ${lastObservedAt.slice(0, 10)}`
-                : ""}
-              )
-            </div>
-            <p className="mt-1 text-[10px] leading-snug text-ink-500">
-              Points are spaced evenly by observation, not by date, so a long
-              collection gap looks the same as a short one. Collection stopped
-              between 2026-06-10 and 2026-08-26.
+                <div className="flex justify-between text-xs tabular-nums text-ink-500">
+                  <span>$0</span>
+                  <span>{fmtUsd(axisMax)}</span>
+                </div>
+                <p className="mt-2 text-xs text-ink-500">
+                  Each thin line is one similar listing. The bright bar is this gecko.
+                </p>
+              </div>
+            ) : null}
+            <p className="text-sm text-ink-400">
+              Similar means the same strongest morph
+              {l.basis === "trait_age_sex" || l.basis === "market_age_sex" ? ", age and sex" : l.basis === "trait_age" ? " and age" : ""}.
+              Listings don&apos;t measure pattern quality, color or lineage, which move real
+              prices a lot, so a low price can also mean a plainer gecko.
             </p>
-            {priceSeries.length > 0 ? (
-              <MiniSparkline values={priceSeries} width={520} height={120} />
-            ) : (
-              <div className="py-6 text-center text-xs text-ink-500">no price observations</div>
-            )}
-          </div>
+          </Card>
+        </Section>
+      ) : null}
 
-          <div className="rounded-lg border border-ink-700 bg-ink-900/40">
-            <div className="border-b border-ink-700 p-3 font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Status timeline
-            </div>
-            <ul className="divide-y divide-ink-800">
-              {statuses.length === 0 ? (
-                <li className="px-3 py-4 text-xs text-ink-500">no status events</li>
-              ) : (
-                statuses.map((s, i) => (
-                  <li key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-                    <span
-                      className={
-                        "rounded px-2 py-0.5 font-mono " +
-                        (s.status === "sold"
-                          ? "bg-emerald-900/40 text-emerald-200"
-                          : s.status === "removed"
-                            ? "bg-ink-800 text-ink-400"
-                            : "bg-ink-800 text-ink-200")
-                      }
-                    >
-                      {s.status}
-                    </span>
-                    <span className="text-ink-400">{fmtDate(s.observed_at)}</span>
-                    <span className="text-ink-500">{s.source ?? ""}</span>
-                    <span className="text-ink-500">
-                      conf{" "}
-                      {s.inference_confidence != null
-                        ? s.inference_confidence.toFixed(2)
-                        : "no data"}
-                    </span>
-                  </li>
-                ))
-              )}
-            </ul>
+      {breeder ? (
+        <Section title="Seller">
+          <div className="max-w-md">
+            <BreederCard b={breeder} />
           </div>
-        </section>
-      </div>
+        </Section>
+      ) : l.sellerName ? (
+        <Section title="Seller">
+          <p className="text-ink-300">{l.sellerName}</p>
+        </Section>
+      ) : null}
+
+      {similar.rows.filter((r) => r.id !== l.id).length ? (
+        <Section
+          title="Similar geckos listed now"
+          note="Best value first."
+          action={
+            l.comparedTrait && slugOf.get(l.comparedTrait) ? (
+              <TextLink href={`/listings?t=${slugOf.get(l.comparedTrait)}&sort=value`}>See more</TextLink>
+            ) : undefined
+          }
+        >
+          <ListingGrid listings={similar.rows.filter((r) => r.id !== l.id).slice(0, 8)} />
+        </Section>
+      ) : null}
     </div>
   );
-}
-
-function Field({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <>
-      <dt className="text-ink-400">{label}</dt>
-      <dd className="font-mono text-ink-200">{value ?? "no data"}</dd>
-    </>
-  );
-}
-
-function fmtDate(v: string | null | undefined): string {
-  if (!v) return "no data";
-  return new Date(v).toLocaleString();
 }

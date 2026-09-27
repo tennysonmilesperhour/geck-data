@@ -16,7 +16,10 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/upload";
+  // Only follow same-site paths, so a crafted link cannot bounce a visitor
+  // to another domain after login.
+  const rawNext = searchParams.get("next") || "/watchlist";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/watchlist";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,9 +51,13 @@ function LoginForm() {
 
   return (
     <div className="mx-auto max-w-sm py-16">
-      <h1 className="mb-6 text-2xl font-semibold text-ink-50">
+      <h1 className="text-3xl font-semibold tracking-tight text-ink-50">
         {mode === "signin" ? "Log in" : "Create account"}
       </h1>
+      <p className="mb-8 mt-2 text-ink-400">
+        An account lets you save price alerts for morphs and breeders. Everything else on
+        the site works without one.
+      </p>
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
@@ -60,7 +67,7 @@ function LoginForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-ink-100 placeholder-ink-500"
+            className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5 text-ink-100 placeholder-ink-500 focus:border-claude focus:outline-none"
             autoComplete="email"
           />
         </div>
@@ -72,7 +79,7 @@ function LoginForm() {
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-ink-100 placeholder-ink-500"
+            className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2.5 text-ink-100 placeholder-ink-500 focus:border-claude focus:outline-none"
             autoComplete={mode === "signin" ? "current-password" : "new-password"}
           />
         </div>
@@ -101,10 +108,10 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-claude py-2 text-ink-50 shadow-glow hover:bg-claude-glow disabled:opacity-50"
+          className="w-full rounded-lg bg-claude py-2.5 font-medium text-ink-950 hover:bg-claude-glow disabled:opacity-50"
         >
           {loading
-            ? "Working…"
+            ? "Working"
             : mode === "signin"
               ? "Log in"
               : "Create account"}
