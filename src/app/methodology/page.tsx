@@ -175,6 +175,30 @@ const SECTIONS: Array<{ title: string; body: React.ReactNode }> = [
     ),
   },
   {
+    title: "Other markets",
+    body: (
+      <>
+        <p>
+          The{" "}
+          <Link href="/markets" className="underline hover:text-ink-50">
+            markets
+          </Link>{" "}
+          page compares asking prices in the United States, South Korea, Europe, Canada and the
+          United Kingdom. Korea comes from Feedle, the main Korean reptile marketplace, and Korean
+          breeder shops. Europe comes from terraristik.com classifieds and MorphMarket listings in
+          euros. Canada and the UK come from MorphMarket listings in their currencies.
+        </p>
+        <p>
+          Every price converts to US dollars at the exchange rate stored with the latest scrape.
+          Morph names are matched in English and Korean, and a name inside a longer one (Harlequin
+          inside Extreme Harlequin) never counts twice. A morph is compared only when both markets
+          have at least 8 listings of it and the gap is at least 20% of the US price. The gap is room
+          for shipping, import fees and losses, not a profit.
+        </p>
+      </>
+    ),
+  },
+  {
     title: "Genes, patterns and colors",
     body: (
       <p>

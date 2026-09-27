@@ -11,6 +11,7 @@ const PUBLIC_ROUTES = [
   "/listings",
   "/sellers",
   "/trends",
+  "/markets",
   "/methodology",
   "/status",
   "/api-docs",

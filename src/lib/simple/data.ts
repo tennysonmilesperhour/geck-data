@@ -631,3 +631,105 @@ export async function getMonthlyHistory(trait: string | null): Promise<MonthRow[
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Markets: asking prices in the US, South Korea, Europe, Canada and the UK,
+// converted to USD at the latest stored exchange rate. See
+// supabase/migrations/20260927030000_markets.sql for the sources.
+
+export type MarketCode = "US" | "KR" | "EU" | "CA" | "UK" | "US_SHOPS";
+
+export type MarketCell = {
+  market: MarketCode;
+  trait: string | null;
+  n: number;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  asOf: string | null;
+};
+
+export async function getMarketCompare(min = 5): Promise<MarketCell[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("market_compare", { p_min: min });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      market: String(r.market) as MarketCode,
+      trait: r.trait == null ? null : String(r.trait),
+      n: Number(r.n ?? 0),
+      p25: num(r.p25),
+      p50: num(r.p50),
+      p75: num(r.p75),
+      asOf: (r.as_of as string | null) ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type FxRate = { currency: string; perUsd: number; asOf: string; source: string | null };
+
+export async function getFxRates(): Promise<FxRate[]> {
+  try {
+    const { data, error } = await createPublicClient()
+      .from("fx_rates")
+      .select("currency, per_usd, as_of, source")
+      .order("currency");
+    if (error || !data) return [];
+    return data.map((r) => ({
+      currency: String(r.currency),
+      perUsd: Number(r.per_usd),
+      asOf: String(r.as_of),
+      source: (r.source as string | null) ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getImportMarkup(): Promise<number | null> {
+  try {
+    const { data, error } = await createPublicClient().rpc("feedle_import_markup");
+    if (error) return null;
+    return num(data);
+  } catch {
+    return null;
+  }
+}
+
+export type MarketWeek = { market: MarketCode; week: string; n: number; p50: number | null };
+
+export async function getMarketWeekly(trait: string | null): Promise<MarketWeek[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("market_weekly", { p_trait: trait });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      market: String(r.market) as MarketCode,
+      week: String(r.week),
+      n: Number(r.n ?? 0),
+      p50: num(r.p50),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type TraitWeek = { trait: string; week: string; n: number; p50: number | null; partial: boolean };
+
+/** Weekly middle asking price for up to six morphs, for side-by-side trends. */
+export async function getCompareTrends(traits: string[]): Promise<TraitWeek[]> {
+  if (!traits.length) return [];
+  try {
+    const { data, error } = await createPublicClient().rpc("compare_trends", { p_traits: traits.slice(0, 6) });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      trait: String(r.trait),
+      week: String(r.week),
+      n: Number(r.n ?? 0),
+      p50: num(r.p50),
+      partial: Boolean(r.partial),
+    }));
+  } catch {
+    return [];
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
-// Site header. Five destinations and nothing else:
-//   Price check (home), Morphs, Listings, Breeders, Trends.
+// Site header. Six destinations and nothing else:
+//   Price check (home), Morphs, Listings, Breeders, Trends, Markets.
 // Account links sit on the right. On phones the links drop to a
 // second row instead of hiding behind a menu, so nothing is ever more
 // than one tap away.
@@ -17,6 +17,7 @@ const NAV = [
   { href: "/listings", label: "Listings" },
   { href: "/sellers", label: "Breeders" },
   { href: "/trends", label: "Trends" },
+  { href: "/markets", label: "Markets" },
 ] as const;
 
 export default function Header() {
@@ -66,7 +67,7 @@ export default function Header() {
       key={item.href}
       href={item.href}
       aria-current={isActive(item.href) ? "page" : undefined}
-      className={`whitespace-nowrap rounded-lg px-2.5 py-2 text-sm sm:px-3 font-medium transition ${
+      className={`whitespace-nowrap rounded-lg px-2 py-2 text-sm sm:px-3 font-medium transition ${
         isActive(item.href)
           ? "bg-ink-800 text-ink-50"
           : "text-ink-300 hover:bg-ink-850 hover:text-ink-50"

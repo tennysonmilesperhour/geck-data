@@ -7,6 +7,72 @@ deferred.
 
 ---
 
+## 2026-09-27: Markets page (US, South Korea, Europe, Canada) and morph comparison
+
+Context: Tennyson asked to compare trends across many morphs and for an
+arbitrage page between the US, South Korea and other top markets, with
+scrapers for where those markets trade.
+
+### Where each market trades, and what feeds it
+
+- South Korea: Feedle (air.feedle.me), the main Korean reptile
+  marketplace, already scraped, plus Korean breeder shops on Cafe24 (Gecko
+  Village, New Run Reptile, The Zoo, Jungbreu Insect Harmony, Crepax). Naver
+  Cafe groups carry many Korean sales but need a login, so they are out.
+- Europe: terraristik.com, the largest European reptile classifieds site,
+  plus MorphMarket listings priced in euros.
+- Canada and the UK: MorphMarket listings in CAD and GBP (170 and 18 now).
+- US: MorphMarket. TikisGeckos and Altitude Exotics stay a separate
+  "US shops" figure: a few high-end sellers, not the market.
+
+### Korea had silently stopped on Sep 8
+
+Feedle redeployed and the getPetList server-action id changed. The
+scraper fell back to a hard-coded id, got a 404, logged it, and still
+reported success. It now reads the id out of the page's JS chunks, and a
+source that returns nothing records a failed scrape_runs row and fails the
+job, so an outage shows on the status page and in Discord.
+
+### Matching morphs across languages
+
+- geck_data.match_traits(text) maps free text to canonical morphs: English
+  on word boundaries, Korean anywhere (shops run words together), plus
+  market_trait_alias for Feedle shorthand (tri, quad, LW) and Korean names
+  (릴리화이트, 엑잔틱, 익스트림할리퀸 ...). 크림시클 (Creamsicle) is a line
+  name and is blocked from matching Cream.
+- A morph named inside a longer one in the same listing is dropped
+  (_drop_contained), in every market alike, so Extreme Harlequin never
+  also counts as Harlequin.
+
+### Comparison rules
+
+- All prices convert to USD at the latest rate in fx_rates (Frankfurter,
+  stored by each cross-platform run). One rate for all dates keeps trend
+  lines about local prices, not currency swings.
+- A morph is compared when both markets have 8+ listings and the gap is at
+  least 20% of the US price. Korean buy prices are scaled by Feedle's export
+  markup (median 1.05 from the same animals' air vs won prices).
+- "Room per gecko" is the gap between middle asking prices: the budget for
+  shipping, import fees and losses, never presented as profit.
+- Market trend lines drop weeks where a market read under half its usual
+  count (Korea's Sep 8 run read 12 listings at a $867 middle).
+
+### Compare morphs
+
+Trends gets a compare view: up to six morphs as lines (URL ?c=slug,slug),
+colors in the validated palette order and kept per morph, partial weeks
+left out, and a first-to-latest change table.
+
+### Not verified
+
+MorphMarket, Feedle, the Korean shops and terraristik cannot be reached from
+the build sandbox. The Cafe24 and terraristik parsers are written against
+the platforms' documented markup and tested on sample HTML; the first
+GitHub run will show real counts per source in its log, and an empty source
+now fails loudly instead of passing.
+
+---
+
 ## 2026-09-27: A year of history from sampled listing numbers
 
 Context: Tennyson asked whether the dates we have could fill in the months

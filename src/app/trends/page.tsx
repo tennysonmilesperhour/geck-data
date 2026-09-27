@@ -7,7 +7,16 @@
 // the holes as holes.
 import { Fragment } from "react";
 import Link from "next/link";
-import { getMarketTrend, getMonthlyHistory, getMorphs, type MonthRow, type TrendWeek } from "@/lib/simple/data";
+import {
+  getCompareTrends,
+  getMarketTrend,
+  getMonthlyHistory,
+  getMorphs,
+  type MonthRow,
+  type TraitWeek,
+  type TrendWeek,
+} from "@/lib/simple/data";
+import MultiLineChart from "@/components/simple/MultiLineChart";
 import { MIN_PRICED, fmtMonth, fmtWeek, priceChange, saleWeek, untracked, weekTime } from "@/lib/simple/trend";
 import { Card, Chip, PageIntro, Section, Stat, TextLink } from "@/components/simple/ui";
 import { PriceTrendChart, WeeklyBars } from "@/components/simple/TrendCharts";
@@ -56,12 +65,19 @@ function SaleNote({ weeks }: { weeks: TrendWeek[] }) {
   );
 }
 
-export default async function TrendsPage({ searchParams }: { searchParams: { t?: string } }) {
+export default async function TrendsPage({ searchParams }: { searchParams: { t?: string; c?: string } }) {
   const morphs = await getMorphs();
   const picked = searchParams.t ? morphs.find((m) => m.slug === searchParams.t) ?? null : null;
-  const [weeks, months] = await Promise.all([
+  const topMorphsForCompare = [...morphs].sort((a, b) => b.forSale + b.sold - (a.forSale + a.sold));
+  const bySlug = new Map(morphs.map((m) => [m.slug, m]));
+  const requested = (searchParams.c ?? "").split(",").map((x) => x.trim()).filter((x) => bySlug.has(x));
+  // No choice yet: start with the four most-listed morphs.
+  const compareSlugs = [...new Set(requested.length ? requested : topMorphsForCompare.slice(0, 4).map((m) => m.slug))].slice(0, 6);
+  const compareTraits = compareSlugs.map((x) => bySlug.get(x)!.trait);
+  const [weeks, months, compared] = await Promise.all([
     getMarketTrend(picked?.trait ?? null),
     getMonthlyHistory(picked?.trait ?? null),
+    getCompareTrends(compareTraits),
   ]);
   const name = picked ? picked.trait : "All crested geckos";
   const change = priceChange(weeks);
@@ -207,6 +223,14 @@ export default async function TrendsPage({ searchParams }: { searchParams: { t?:
         </>
       )}
 
+      <CompareMorphs
+        rows={compared}
+        slugs={compareSlugs}
+        traits={compareTraits}
+        options={topMorphsForCompare.slice(0, 24).map((m) => ({ slug: m.slug, trait: m.trait }))}
+        keepT={picked?.slug ?? null}
+      />
+
       <PastYear months={months} name={name} />
 
       <Section title="About this history">
@@ -320,5 +344,113 @@ function PastYear({ months, name }: { months: MonthRow[]; name: string }) {
         </div>
       </div>
     </Section>
+  );
+}
+
+function CompareMorphs({
+  rows,
+  slugs,
+  traits,
+  options,
+  keepT,
+}: {
+  rows: TraitWeek[];
+  slugs: string[];
+  traits: string[];
+  options: Array<{ slug: string; trait: string }>;
+  keepT: string | null;
+}) {
+  const href = (next: string[]) => {
+    const p = new URLSearchParams();
+    if (keepT) p.set("t", keepT);
+    if (next.length) p.set("c", next.join(","));
+    const q = p.toString().replace(/%2C/g, ",");
+    return `/trends${q ? `?${q}` : ""}#compare`;
+  };
+  const toggle = (slug: string) =>
+    slugs.includes(slug) ? slugs.filter((x) => x !== slug) : [...slugs, slug].slice(-6);
+  // Keep series in the order chosen so each morph keeps its color.
+  const series = traits.map((trait) => ({
+    key: trait,
+    label: trait,
+    points: rows
+      .filter((r) => r.trait === trait && !r.partial && r.p50 != null && r.n >= MIN_PRICED)
+      .map((r) => ({ x: r.week, y: r.p50 as number, n: r.n })),
+  }));
+  const moves = series
+    .map((s) => {
+      const first = s.points[0];
+      const last = s.points[s.points.length - 1];
+      return first && last && first !== last
+        ? { trait: s.label, from: first, to: last, pct: (last.y - first.y) / first.y }
+        : null;
+    })
+    .filter((m): m is NonNullable<typeof m> => m != null)
+    .sort((a, b) => b.pct - a.pct);
+  const extra = options.filter((o) => !slugs.includes(o.slug));
+
+  return (
+    <section id="compare" className="scroll-mt-24">
+      <Section
+        title="Compare morphs"
+        note="Middle asking price per week, one line per morph. Pick up to six. Partial weeks are left out."
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {options
+              .filter((o) => slugs.includes(o.slug))
+              .map((o) => (
+                <Chip key={o.slug} href={href(toggle(o.slug))} active title={`Remove ${o.trait}`}>
+                  {o.trait} ×
+                </Chip>
+              ))}
+            {slugs.length < 6
+              ? extra.map((o) => (
+                  <Chip key={o.slug} href={href(toggle(o.slug))} title={`Add ${o.trait}`}>
+                    + {o.trait}
+                  </Chip>
+                ))
+              : null}
+          </div>
+          <Card>
+            {series.some((s) => s.points.length) ? (
+              <MultiLineChart series={series} maxGapDays={7} />
+            ) : (
+              <p className="text-ink-300">Pick a morph to compare.</p>
+            )}
+          </Card>
+          {moves.length ? (
+            <div className="overflow-x-auto rounded-xl border border-ink-700">
+              <table className="plain w-full min-w-[32rem] text-left text-sm">
+                <thead className="bg-ink-850 text-ink-400">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Morph</th>
+                    <th className="px-3 py-2 text-right font-medium">First week</th>
+                    <th className="px-3 py-2 text-right font-medium">Latest week</th>
+                    <th className="px-3 py-2 text-right font-medium">Change</th>
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums text-ink-200">
+                  {moves.map((m) => (
+                    <tr key={m.trait} className="border-t border-ink-800">
+                      <td className="px-3 py-2">{m.trait}</td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtUsd(m.from.y)} <span className="text-xs text-ink-500">{fmtWeek(m.from.x)}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {fmtUsd(m.to.y)} <span className="text-xs text-ink-500">{fmtWeek(m.to.x)}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {Math.abs(m.pct) < 0.02 ? "flat" : `${m.pct > 0 ? "up" : "down"} ${Math.round(Math.abs(m.pct) * 100)}%`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      </Section>
+    </section>
   );
 }
