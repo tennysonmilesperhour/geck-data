@@ -393,3 +393,52 @@ class SkipUnchangedWalkTests(unittest.TestCase):
             self.assertEqual(api.main(), 0)
         self.assertEqual(touched, ["1"])
         self.assertEqual(fetched, ["2", "3"])
+
+
+import backfill_history as bf  # noqa: E402
+
+
+class BackfillTests(unittest.TestCase):
+    def test_sampled_ids_step_down_on_multiples(self) -> None:
+        self.assertEqual(bf.sampled_ids(1000, 900, 25), [1000, 975, 950, 925, 900])
+        self.assertEqual(bf.sampled_ids(1010, 990, 25), [1000])
+        self.assertEqual(bf.sampled_ids(900, 1000, 25), [])
+
+    def test_oldest_id_is_median_near_target(self) -> None:
+        t = dt.datetime(2025, 9, 1, tzinfo=dt.timezone.utc)
+        pairs = [(3300000 + i * 1000, t + dt.timedelta(days=i - 3)) for i in range(7)]
+        pairs.append((1900000, t))  # a relisted outlier does not move the median much
+        pairs.append((4000000, t + dt.timedelta(days=300)))  # far from target, ignored
+        self.assertEqual(bf.estimate_oldest_id(pairs, t), 3302500)
+        self.assertIsNone(bf.estimate_oldest_id(pairs[:3], t))
+
+    def test_gone_row_has_no_detail_fields(self) -> None:
+        row = bf.backfill_row(3400000, every=25, status=404)
+        self.assertEqual(row, {"listing_id": "3400000", "http_status": 404, "sample_every": 25})
+
+    def test_crested_row_keeps_price_traits_and_sold_state(self) -> None:
+        detail = {
+            "id": 3400025,
+            "first_listed": "2025-11-02T10:00:00Z",
+            "state": "sold",
+            "price": 350,
+            "localized_price_currency": "$",
+            "title": "Lilly White female",
+            "sex": "Female",
+            "category": {"name": "Crested Geckos", "scientific_name": "Correlophus ciliatus"},
+            "cached_traits": [{"name": "Lilly White"}],
+        }
+        row = bf.backfill_row(3400025, every=25, status=200, detail=detail)
+        self.assertTrue(row["is_crested"])
+        self.assertTrue(row["is_sold"])
+        self.assertEqual(row["price"], 350)
+        self.assertEqual(row["currency"], "USD")
+        self.assertEqual(row["first_listed_at"][:10], "2025-11-02")
+
+    def test_other_species_row_is_dated_but_not_priced(self) -> None:
+        detail = {"id": 1, "first_listed": "2025-11-02", "state": "for_sale", "price": 90,
+                  "category": {"name": "Ball Pythons", "scientific_name": "Python regius"}}
+        row = bf.backfill_row(1, every=25, status=200, detail=detail)
+        self.assertFalse(row["is_crested"])
+        self.assertNotIn("price", row)
+        self.assertFalse(row["is_sold"])

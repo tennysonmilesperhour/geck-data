@@ -81,3 +81,14 @@ export function fmtWeek(w: string, withYear = false): string {
     timeZone: "UTC",
   });
 }
+
+/** A month needs this many sampled, priced listings to show a price. */
+export const MIN_PRICED = 8;
+
+export function fmtMonth(m: string, long = false): string {
+  return new Date(`${m}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: long ? "long" : "short",
+    ...(long ? { year: "numeric" } : {}),
+    timeZone: "UTC",
+  });
+}

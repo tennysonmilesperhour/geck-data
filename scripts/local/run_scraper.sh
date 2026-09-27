@@ -15,7 +15,11 @@
 #   3. Runs scrape_listings_api.py (it records the run in scrape_runs, so
 #      the website's Data status page shows whether it worked).
 #   4. Refreshes the market views so the website shows the new data.
-#   5. Posts to Discord if it failed and DISCORD_OPS_WEBHOOK is set.
+#   5. Reads a slice of old listings for the past-year history
+#      (backfill_history.py). Each day reads BACKFILL_DAILY_IDS more
+#      (default 4000, about 30 minutes) until the year is filled in, then
+#      it finishes in seconds. BACKFILL_DAILY_IDS=0 turns it off.
+#   6. Posts to Discord if the scrape failed and DISCORD_OPS_WEBHOOK is set.
 # The Mac is kept awake while it runs.
 
 set -u
@@ -67,6 +71,15 @@ for fn in ("refresh_combo_index_daily", "refresh_market_matviews"):
         # failure here only delays the website by up to an hour.
         print(f"WARN {fn}: {exc}", flush=True)
 PY
+
+BACKFILL_DAILY_IDS="${BACKFILL_DAILY_IDS:-4000}"
+if [ "$MODE" = "catalog" ] && [ "$BACKFILL_DAILY_IDS" -gt 0 ]; then
+  say "reading up to $BACKFILL_DAILY_IDS old listings for the past-year history"
+  # A failure here never affects the scrape's exit code; tomorrow's run
+  # picks up where this one stopped.
+  caffeinate -i "$PY" backfill_history.py --max-ids "$BACKFILL_DAILY_IDS" \
+    || say "history backfill stopped early; it resumes tomorrow"
+fi
 
 if [ "$STATUS" -ne 0 ] && [ -n "${DISCORD_OPS_WEBHOOK:-}" ]; then
   curl -sS -m 20 -H "Content-Type: application/json" \

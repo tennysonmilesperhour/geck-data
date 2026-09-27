@@ -57,6 +57,21 @@ runs as soon as the Mac wakes up.
    its details are more than six days old, so most daily runs are much
    shorter. The Mac stays awake while it runs.
 
+**The past year of history:** each daily run also reads about 4,000 old
+MorphMarket listing numbers (roughly 30 extra minutes) to fill in the Trends
+page's "The past year" section, newest months first. The year is done after
+about a week, and from then on this step takes seconds. To check that
+MorphMarket still serves old listings before waiting a week:
+
+```
+cd scripts && ../scripts/.venv/bin/python backfill_history.py --probe
+```
+
+It reads 12 old listings, writes nothing, and says whether the backfill will
+work. To fill the whole year in one sitting instead (a few hours):
+`../scripts/.venv/bin/python backfill_history.py --all`. To turn the daily
+step off, add `BACKFILL_DAILY_IDS=0` to `.env.local`.
+
 **Checking it worked:** open the website's Data status page. "Rechecked
 recently" should jump from 8% toward 100% after the first full run. The log on
 your Mac is at `~/Library/Logs/geck-scraper.log`.

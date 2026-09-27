@@ -591,3 +591,43 @@ export async function getListingPriceHistory(id: string): Promise<PricePoint[]> 
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// The past year, by the month listings were posted. Built from a sample of
+// old listing ids (scripts/backfill_history.py), so it includes geckos that
+// sold before tracking began. `covered` is false for months the backfill has
+// not reached yet; those are drawn as not read, never as zero.
+
+export type MonthRow = {
+  month: string;
+  sampled: number;
+  estPosted: number;
+  priced: number;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  soldShare: number | null;
+  goneShare: number | null;
+  covered: boolean;
+};
+
+export async function getMonthlyHistory(trait: string | null): Promise<MonthRow[]> {
+  try {
+    const { data, error } = await createPublicClient().rpc("monthly_history", { p_trait: trait });
+    if (error || !data) return [];
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      month: String(r.month),
+      sampled: Number(r.sampled ?? 0),
+      estPosted: Number(r.est_posted ?? 0),
+      priced: Number(r.priced ?? 0),
+      p25: num(r.p25),
+      p50: num(r.p50),
+      p75: num(r.p75),
+      soldShare: num(r.sold_share),
+      goneShare: num(r.gone_share),
+      covered: Boolean(r.covered),
+    }));
+  } catch {
+    return [];
+  }
+}

@@ -7,10 +7,11 @@
 // the holes as holes.
 import { Fragment } from "react";
 import Link from "next/link";
-import { getMarketTrend, getMorphs, type TrendWeek } from "@/lib/simple/data";
-import { fmtWeek, priceChange, saleWeek, untracked, weekTime } from "@/lib/simple/trend";
+import { getMarketTrend, getMonthlyHistory, getMorphs, type MonthRow, type TrendWeek } from "@/lib/simple/data";
+import { MIN_PRICED, fmtMonth, fmtWeek, priceChange, saleWeek, untracked, weekTime } from "@/lib/simple/trend";
 import { Card, Chip, PageIntro, Section, Stat, TextLink } from "@/components/simple/ui";
 import { PriceTrendChart, WeeklyBars } from "@/components/simple/TrendCharts";
+import { MonthlyChart } from "@/components/simple/MonthlyCharts";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 3600;
@@ -58,7 +59,10 @@ function SaleNote({ weeks }: { weeks: TrendWeek[] }) {
 export default async function TrendsPage({ searchParams }: { searchParams: { t?: string } }) {
   const morphs = await getMorphs();
   const picked = searchParams.t ? morphs.find((m) => m.slug === searchParams.t) ?? null : null;
-  const weeks = await getMarketTrend(picked?.trait ?? null);
+  const [weeks, months] = await Promise.all([
+    getMarketTrend(picked?.trait ?? null),
+    getMonthlyHistory(picked?.trait ?? null),
+  ]);
   const name = picked ? picked.trait : "All crested geckos";
   const change = priceChange(weeks);
   const gaps = untracked(weeks);
@@ -203,6 +207,8 @@ export default async function TrendsPage({ searchParams }: { searchParams: { t?:
         </>
       )}
 
+      <PastYear months={months} name={name} />
+
       <Section title="About this history">
         <div className="space-y-3 text-base leading-7 text-ink-300">
           <p>
@@ -218,6 +224,13 @@ export default async function TrendsPage({ searchParams }: { searchParams: { t?:
             sellers ask, not what buyers paid.
           </p>
           <p>
+            The past year comes from a different source. MorphMarket numbers its listings in the order
+            they are posted, so the scraper reads one listing number in every 25 from the past year,
+            including listings that have since sold. That sample shows what was posted each month and
+            at what price. Listings a seller deleted can no longer be read, so the posted counts are a
+            floor and the table shows how many are gone.
+          </p>
+          <p>
             {picked ? (
               <>
                 More on this morph: <TextLink href={`/morphs/${picked.slug}`}>{picked.trait} prices</TextLink>.{" "}
@@ -228,5 +241,84 @@ export default async function TrendsPage({ searchParams }: { searchParams: { t?:
         </div>
       </Section>
     </div>
+  );
+}
+
+function PastYear({ months, name }: { months: MonthRow[]; name: string }) {
+  const read = months.filter((m) => m.covered);
+  const title = "The past year";
+  const note = "By the month each listing was posted, including listings that have since sold.";
+  if (!read.length) {
+    return (
+      <Section title={title} note={note}>
+        <Card>
+          <p className="text-ink-300">
+            Not read yet. Each daily scrape from the Mac now also reads a slice of old MorphMarket
+            listings, and this section fills in month by month over about a week, newest months
+            first.
+          </p>
+        </Card>
+      </Section>
+    );
+  }
+  return (
+    <Section
+      title={title}
+      note={`${note} ${read.length} of ${months.length} months read so far.`}
+    >
+      <div className="space-y-6">
+        <Card>
+          <h3 className="mb-3 text-sm font-medium text-ink-200">{name}: asking price by month posted</h3>
+          <MonthlyChart rows={months} kind="price" />
+          <p className="mt-3 text-sm text-ink-400">
+            A month needs at least {MIN_PRICED} sampled listings to show a price.
+          </p>
+        </Card>
+        <Card>
+          <h3 className="mb-3 text-sm font-medium text-ink-200">Listings posted each month (estimated)</h3>
+          <MonthlyChart rows={months} kind="posted" />
+        </Card>
+        <div className="overflow-x-auto rounded-xl border border-ink-700">
+          <table className="plain w-full min-w-[40rem] text-left text-sm">
+            <thead className="bg-ink-850 text-ink-400">
+              <tr>
+                <th className="px-3 py-2 font-medium">Posted in</th>
+                <th className="px-3 py-2 text-right font-medium">Sampled</th>
+                <th className="px-3 py-2 text-right font-medium">Posted, est.</th>
+                <th className="px-3 py-2 text-right font-medium">Middle price</th>
+                <th className="px-3 py-2 text-right font-medium">Since sold</th>
+                <th className="px-3 py-2 text-right font-medium">Gone from MorphMarket</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums text-ink-200">
+              {months.map((m) => (
+                <tr key={m.month} className={`border-t border-ink-800 ${m.covered ? "" : "text-ink-500"}`}>
+                  <td className="px-3 py-2">{fmtMonth(m.month, true)}</td>
+                  {m.covered ? (
+                    <>
+                      <td className="px-3 py-2 text-right">{fmtInt(m.sampled)}</td>
+                      <td className="px-3 py-2 text-right">{fmtInt(m.estPosted)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {m.priced >= MIN_PRICED ? fmtUsd(m.p50) : "too few"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {m.soldShare != null ? `${Math.round(m.soldShare * 100)}%` : ""}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {m.goneShare != null ? `${Math.round(m.goneShare * 100)}%` : ""}
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={5} className="px-3 py-2 italic">
+                      not read yet
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Section>
   );
 }

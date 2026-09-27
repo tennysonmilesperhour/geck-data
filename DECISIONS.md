@@ -7,6 +7,55 @@ deferred.
 
 ---
 
+## 2026-09-27: A year of history from sampled listing numbers
+
+Context: Tennyson asked whether the dates we have could fill in the months
+before tracking began, going back one year.
+
+### What the existing dates can and cannot do
+
+- Only 1,670 listings carry MorphMarket's posting date, and all of them
+  were still for sale when we first saw them. Counting or pricing past
+  months from them would only show the geckos that did not sell, which
+  skews toward overpriced animals. first_seen_at is our own discovery date
+  and says nothing about earlier months. Hatch dates exist for 360
+  listings. None of these can stand in for a year of history on their own.
+- What they did show: MorphMarket listing ids rise with posting date
+  (correlation 0.99 across those 1,670). Ids are handed out across all
+  species, and about 5% land on crested geckos.
+
+### What was built
+
+- scripts/backfill_history.py reads every 25th id from the past year's id
+  range, newest first, and stores one row per id in
+  geck_data.listing_backfill (species, posting date, state, price, traits
+  for crested geckos, or the 404 when a listing was deleted). That is a
+  fair sample of everything posted, sold or not: about 31,000 reads and
+  roughly 1,500 crested listings, around 120 a month.
+- The oldest id is the median id of known listings posted within 20 days
+  of the start date, plus 2% for margin, so the walk needs no hand-picked
+  numbers and gets more accurate as the backfill adds dated rows.
+- geck_data.monthly_history(trait) returns, per posting month: sampled
+  count, estimated postings (sampled times 25), asking price quartiles
+  (USD, group lots excluded), share since sold, share gone (404s placed by
+  the nearest lower dated id), and whether the backfill has reached that
+  month. Unread months are drawn as "Not read yet", never zero, and a month
+  needs 8 priced listings before it shows a price.
+- The Mac's daily run reads 4,000 ids after the scrape, so the year fills
+  in over about a week with no extra step. --probe checks in one minute
+  whether MorphMarket still serves old listings.
+
+### Not verified
+
+- MorphMarket cannot be reached from the build sandbox, so it is unproven
+  that old and sold listings still return details. The probe answers that
+  on the first try. If they do not, the table stays empty and nothing else
+  is affected.
+- Estimated postings are a floor: deleted listings cannot be read, which is
+  why the gone share is shown next to them.
+
+---
+
 ## 2026-09-27: Weekly history and a scraper that skips unchanged listings
 
 Context: Tennyson asked for the scraper to skip unchanged listings and for
