@@ -52,8 +52,10 @@ runs as soon as the Mac wakes up.
    scripts/local/run_scraper.sh
    ```
 
-   A full run reads every crested gecko listing and takes one to three hours.
-   The Mac stays awake while it runs.
+   The first full run reads every crested gecko listing and takes one to three
+   hours. After that, a listing whose price has not changed is skipped unless
+   its details are more than six days old, so most daily runs are much
+   shorter. The Mac stays awake while it runs.
 
 **Checking it worked:** open the website's Data status page. "Rechecked
 recently" should jump from 8% toward 100% after the first full run. The log on

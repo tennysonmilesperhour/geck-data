@@ -30,6 +30,13 @@ Env vars:
   MIN_CATALOG_WRITES    refuse mark_unseen below this many upserts
   DETAIL_SLEEP_S        pause between detail fetches (default 0.15)
   PAGE_SLEEP_S          pause between list pages (default 0.5)
+  SKIP_UNCHANGED        1 (default) skips the detail fetch for a known
+                        live listing whose list price is unchanged and
+                        whose details were read in the last
+                        REFETCH_AFTER_DAYS; 0 fetches every detail
+  REFETCH_AFTER_DAYS    re-read details at least this often even when the
+                        price is unchanged (default 6, so every listing
+                        still gets a price observation each week)
 """
 from __future__ import annotations
 
@@ -308,6 +315,147 @@ def close_abandoned_runs(supabase, scrape_type: str = "listings") -> int:
     if closed:
         log(f"closed {closed} abandoned '{scrape_type}' run(s)")
     return closed
+
+
+# Skipping unchanged listings
+#
+# A full catalog walk fetches one detail page per listing, which is most
+# of a run's time and most of its requests. When the list page already
+# shows the same price we stored, and we read that listing's details
+# recently, the detail fetch tells us nothing new. Those listings only
+# get last_seen_at bumped, which is what keeps them from being swept as
+# "came down" at the end of a complete walk.
+#
+# The list payload's shape is not documented. If a list item carries no
+# usable price, the listing is fetched in full as before, so the worst
+# case is today's behavior, never missed data.
+
+LIST_PRICE_KEYS = ("price", "price_amount", "localized_price")
+LIST_CURRENCY_KEYS = ("localized_price_currency", "price_currency", "currency")
+TOUCH_BATCH_SIZE = 200
+
+
+def _skip_unchanged_enabled() -> bool:
+    return os.environ.get("SKIP_UNCHANGED", "1").strip().lower() not in (
+        "0", "false", "no", "off", ""
+    )
+
+
+def _refetch_after_days() -> float:
+    raw = os.environ.get("REFETCH_AFTER_DAYS", "6")
+    return max(0.0, float(raw))
+
+
+def _to_price(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("amount", "value", "price"):
+            if key in value:
+                return _to_price(value[key])
+        return None
+    text = re.sub(r"[^0-9.]", "", str(value))
+    if not text or text.count(".") > 1:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def list_item_price(item: dict[str, Any]) -> Optional[float]:
+    for key in LIST_PRICE_KEYS:
+        if key in item:
+            price = _to_price(item.get(key))
+            if price is not None:
+                return price
+    return None
+
+
+def list_item_currency(item: dict[str, Any]) -> Optional[str]:
+    for key in LIST_CURRENCY_KEYS:
+        raw = item.get(key)
+        if isinstance(raw, str) and raw.strip():
+            cur = raw.strip()
+            return "USD" if cur in ("$", "US$") else cur.upper()
+    return None
+
+
+def load_known_live(supabase) -> dict[str, dict[str, Any]]:
+    """Live listings keyed by listing_id, with what the skip check needs."""
+    known: dict[str, dict[str, Any]] = {}
+    page_size = 1000
+    offset = 0
+    while True:
+        chunk = (
+            supabase.table("listings")
+            .select("listing_id,price,currency,last_updated_at,is_active,sold_at")
+            .eq("is_active", True)
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+            or []
+        )
+        for row in chunk:
+            lid = str(row.get("listing_id") or "").strip()
+            if lid and not row.get("sold_at"):
+                known[lid] = row
+        if len(chunk) < page_size:
+            break
+        offset += page_size
+    return known
+
+
+def is_unchanged(
+    item: dict[str, Any],
+    stored: Optional[dict[str, Any]],
+    *,
+    now: dt.datetime,
+    refetch_after: dt.timedelta,
+) -> bool:
+    """True when the list row proves nothing changed that a detail read would catch."""
+    if not stored:
+        return False
+    if stored.get("is_active") is False or stored.get("sold_at"):
+        return False
+    list_price = list_item_price(item)
+    stored_price = _to_price(stored.get("price"))
+    if list_price is None or stored_price is None:
+        return False
+    if abs(list_price - stored_price) > 0.005:
+        return False
+    list_cur = list_item_currency(item)
+    stored_cur = (stored.get("currency") or "USD").upper()
+    if list_cur is not None and list_cur != stored_cur:
+        return False
+    read_at = _parse_iso(stored.get("last_updated_at"))
+    if read_at is None or now - read_at >= refetch_after:
+        return False
+    return True
+
+
+def touch_seen(supabase, listing_ids: list[str], seen_at: str) -> int:
+    """Bump last_seen_at on listings the walk saw but did not re-read."""
+    touched = 0
+    for i in range(0, len(listing_ids), TOUCH_BATCH_SIZE):
+        batch = listing_ids[i : i + TOUCH_BATCH_SIZE]
+        try:
+            supabase.table("listings").update({"last_seen_at": seen_at}).in_(
+                "listing_id", batch
+            ).execute()
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN: last_seen_at bump failed for {len(batch)} listings: {exc}")
+            continue
+        touched += len(batch)
+        try:
+            supabase.table("market_listings").update(
+                {"last_seen_at": seen_at}
+            ).in_("id", [f"mm_{lid}" for lid in batch]).execute()
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN: market_listings last_seen_at bump failed: {exc}")
+    return touched
 
 
 def _window_hours() -> int:
@@ -915,6 +1063,23 @@ def main() -> int:
     hit_page_cap = False
     fetcher: Optional[MorphMarketFetcher] = None
 
+    skip_unchanged = _skip_unchanged_enabled()
+    refetch_after = dt.timedelta(days=_refetch_after_days())
+    known_live: dict[str, dict[str, Any]] = {}
+    if skip_unchanged:
+        try:
+            known_live = load_known_live(supabase)
+            log(
+                f"skip-unchanged on: {len(known_live)} live listings loaded, "
+                f"details re-read after {refetch_after.days} days"
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN: could not load known listings, fetching all: {exc}")
+            known_live = {}
+    skipped = 0
+    list_prices_seen = 0
+    logged_item_keys = False
+
     if mode == "catalog":
         log(
             f"API catalog recrawl: MAX_PAGES={max_pages} "
@@ -961,8 +1126,16 @@ def main() -> int:
                     break
                 continue
 
+            if not logged_item_keys and isinstance(results[0], dict):
+                # One line per run that shows what list rows carry, so the
+                # skip check can be tuned from a real log.
+                log(f"list item keys: {sorted(results[0].keys())}")
+                logged_item_keys = True
+
             in_window_on_page = 0
             page_rows: list[dict[str, Any]] = []
+            page_unchanged: list[str] = []
+            walk_now = dt.datetime.now(dt.timezone.utc)
             page_details: list[
                 tuple[str, dict[str, Any], dt.datetime, Optional[str]]
             ] = []
@@ -983,6 +1156,16 @@ def main() -> int:
                 if not listing_id:
                     continue
                 attempted += 1
+                if list_item_price(item) is not None:
+                    list_prices_seen += 1
+                if skip_unchanged and is_unchanged(
+                    item,
+                    known_live.get(listing_id),
+                    now=walk_now,
+                    refetch_after=refetch_after,
+                ):
+                    page_unchanged.append(listing_id)
+                    continue
                 try:
                     detail = fetch_detail(listing_id, fetcher)
                     if sleep_s:
@@ -1028,6 +1211,18 @@ def main() -> int:
                 page_details.append(
                     (row["listing_id"], detail, listed_at, row.get("seller_slug"))
                 )
+
+            if page_unchanged:
+                touched = touch_seen(supabase, page_unchanged, walk_now.isoformat())
+                skipped += touched
+                # A confirmed sighting counts toward the catalog write floor,
+                # otherwise a quiet day could never run the came-down sweep.
+                succeeded += touched
+                failed += len(page_unchanged) - touched
+                if mode == "catalog" and touched < len(page_unchanged):
+                    walk_incomplete = True
+                consecutive_empty = 0
+                log(f"page {page}: {touched} unchanged, skipped detail read")
 
             if page_rows:
                 consecutive_empty = 0
@@ -1115,9 +1310,15 @@ def main() -> int:
             succeeded=succeeded,
             failed=failed,
         )
+        if skip_unchanged and attempted and list_prices_seen == 0:
+            log(
+                "skip-unchanged had no effect: list rows carry no price, so "
+                "every listing was read in full"
+            )
         log(
             f"done mode={mode} status={status} attempted={attempted} "
-            f"succeeded={succeeded} failed={failed} complete={complete}"
+            f"succeeded={succeeded} failed={failed} skipped_unchanged={skipped} "
+            f"complete={complete}"
         )
         return 0
     except Exception as exc:  # noqa: BLE001

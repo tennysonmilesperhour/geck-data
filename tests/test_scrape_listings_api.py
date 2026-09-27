@@ -4,6 +4,8 @@ import datetime as dt
 import sys
 import unittest
 from pathlib import Path
+import os
+from unittest import mock
 from unittest.mock import patch
 
 
@@ -230,3 +232,164 @@ class AbandonedRunTests(unittest.TestCase):
                 raise RuntimeError("network down")
 
         self.assertEqual(api.close_abandoned_runs(Broken()), 0)
+
+
+class SkipUnchangedTests(unittest.TestCase):
+    NOW = dt.datetime(2026, 9, 27, 12, tzinfo=dt.timezone.utc)
+    WEEK = dt.timedelta(days=6)
+
+    def stored(self, **over):
+        row = {
+            "listing_id": "123",
+            "price": 250,
+            "currency": "USD",
+            "last_updated_at": "2026-09-25T08:00:00+00:00",
+            "is_active": True,
+            "sold_at": None,
+        }
+        row.update(over)
+        return row
+
+    def check(self, item, stored):
+        return api.is_unchanged(item, stored, now=self.NOW, refetch_after=self.WEEK)
+
+    def test_same_price_recently_read_is_skipped(self) -> None:
+        self.assertTrue(self.check({"key": "123", "price": 250}, self.stored()))
+        self.assertTrue(self.check({"key": "123", "price": "250.00"}, self.stored()))
+        self.assertTrue(
+            self.check({"key": "123", "price": {"amount": 250}}, self.stored())
+        )
+
+    def test_price_change_is_fetched(self) -> None:
+        self.assertFalse(self.check({"key": "123", "price": 225}, self.stored()))
+
+    def test_missing_list_price_is_fetched(self) -> None:
+        self.assertFalse(self.check({"key": "123"}, self.stored()))
+        self.assertFalse(self.check({"key": "123", "price": None}, self.stored()))
+
+    def test_unknown_or_inactive_listing_is_fetched(self) -> None:
+        item = {"key": "123", "price": 250}
+        self.assertFalse(self.check(item, None))
+        self.assertFalse(self.check(item, self.stored(is_active=False)))
+        self.assertFalse(
+            self.check(item, self.stored(sold_at="2026-06-01T00:00:00+00:00"))
+        )
+
+    def test_stale_details_are_reread(self) -> None:
+        item = {"key": "123", "price": 250}
+        self.assertFalse(
+            self.check(item, self.stored(last_updated_at="2026-09-20T08:00:00+00:00"))
+        )
+        self.assertFalse(self.check(item, self.stored(last_updated_at=None)))
+
+    def test_currency_change_is_fetched(self) -> None:
+        item = {"key": "123", "price": 250, "localized_price_currency": "CAD"}
+        self.assertFalse(self.check(item, self.stored()))
+        item["localized_price_currency"] = "$"
+        self.assertTrue(self.check(item, self.stored()))
+
+    def test_flag_turns_it_off(self) -> None:
+        with mock.patch.dict(os.environ, {"SKIP_UNCHANGED": "0"}):
+            self.assertFalse(api._skip_unchanged_enabled())
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SKIP_UNCHANGED", None)
+            self.assertTrue(api._skip_unchanged_enabled())
+
+
+class _TouchQuery:
+    def __init__(self, log, table, fail):
+        self.log, self.table, self.fail = log, table, fail
+
+    def update(self, payload):
+        self.payload = payload
+        return self
+
+    def in_(self, col, ids):
+        self.col, self.ids = col, list(ids)
+        return self
+
+    def execute(self):
+        if self.fail:
+            raise RuntimeError("boom")
+        self.log.append((self.table, self.col, self.ids, self.payload))
+        return None
+
+
+class _TouchSupabase:
+    def __init__(self, fail_tables=()):
+        self.calls = []
+        self.fail_tables = set(fail_tables)
+
+    def table(self, name):
+        return _TouchQuery(self.calls, name, name in self.fail_tables)
+
+
+class TouchSeenTests(unittest.TestCase):
+    def test_bumps_listings_and_canonical_rows_in_batches(self) -> None:
+        fake = _TouchSupabase()
+        ids = [str(i) for i in range(api.TOUCH_BATCH_SIZE + 5)]
+        n = api.touch_seen(fake, ids, "2026-09-27T12:00:00+00:00")
+        self.assertEqual(n, len(ids))
+        listings = [c for c in fake.calls if c[0] == "listings"]
+        canonical = [c for c in fake.calls if c[0] == "market_listings"]
+        self.assertEqual(len(listings), 2)
+        self.assertEqual(listings[0][1], "listing_id")
+        self.assertEqual(listings[0][3], {"last_seen_at": "2026-09-27T12:00:00+00:00"})
+        self.assertEqual(canonical[0][1], "id")
+        self.assertEqual(canonical[0][2][0], "mm_0")
+
+    def test_failed_bump_is_not_counted(self) -> None:
+        fake = _TouchSupabase(fail_tables={"listings"})
+        self.assertEqual(api.touch_seen(fake, ["1", "2"], "x"), 0)
+
+
+class SkipUnchangedWalkTests(unittest.TestCase):
+    def test_walk_reads_changed_and_new_listings_only(self) -> None:
+        recent = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)).isoformat()
+        known = {
+            "1": {"listing_id": "1", "price": 200, "currency": "USD",
+                  "last_updated_at": recent, "is_active": True, "sold_at": None},
+            "2": {"listing_id": "2", "price": 300, "currency": "USD",
+                  "last_updated_at": recent, "is_active": True, "sold_at": None},
+        }
+        items = [
+            {"key": "1", "price": 200, "category_name": "Crested Gecko"},
+            {"key": "2", "price": 275, "category_name": "Crested Gecko"},
+            {"key": "3", "price": 150, "category_name": "Crested Gecko"},
+        ]
+        fetched: list[str] = []
+        touched: list[str] = []
+
+        def detail(listing_id, _fetcher):
+            fetched.append(listing_id)
+            return {"id": listing_id, "price": 1, "owner": {"slug": "s", "name": "S"},
+                    "category": {"name": "Crested Geckos"}}
+
+        def touch(_sb, ids, _at):
+            touched.extend(ids)
+            return len(ids)
+
+        class Fetcher:
+            def close(self):
+                pass
+
+        env = {"INGEST_MODE": "catalog", "SKIP_UNCHANGED": "1", "MAX_PAGES": "1"}
+        with patch.dict(os.environ, env), \
+            patch.object(api, "apply_cli_args", return_value=False), \
+            patch.object(api, "get_supabase", return_value=object()), \
+            patch.object(api, "close_abandoned_runs", return_value=0), \
+            patch.object(api, "start_scrape_run", return_value=1), \
+            patch.object(api, "finalise_scrape_run"), \
+            patch.object(api, "load_known_live", return_value=known), \
+            patch.object(api, "touch_seen", side_effect=touch), \
+            patch.object(api, "MorphMarketFetcher", return_value=Fetcher()), \
+            patch.object(api, "fetch_list_page", return_value={"results": items, "next": None}), \
+            patch.object(api, "fetch_detail", side_effect=detail), \
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)), \
+            patch.object(api, "write_image_and_gallery_rows"), \
+            patch.object(api, "patch_canonical_extras"), \
+            patch.object(api, "mark_unseen_if_safe", return_value=False), \
+            patch.object(api.time, "sleep"):
+            self.assertEqual(api.main(), 0)
+        self.assertEqual(touched, ["1"])
+        self.assertEqual(fetched, ["2", "3"])
