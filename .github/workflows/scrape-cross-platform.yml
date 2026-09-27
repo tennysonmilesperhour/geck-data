@@ -1,7 +1,8 @@
 name: Weekday cross-platform shops
 
-# Public-storefront ingest for Feedle (Korea), TikisGeckos, and Altitude
-# Exotics into cross_platform_listings. Does not touch MorphMarket tables
+# Public-storefront ingest for Feedle and Korean breeder shops (Korea),
+# terraristik.com (Europe), TikisGeckos and Altitude Exotics (US) into
+# cross_platform_listings, plus daily exchange rates and price snapshots. Does not touch MorphMarket tables
 # and must not share the scrape-listings concurrency group.
 #
 # 10:50am America/Denver during MDT is 16:50 UTC. Chosen to sit after
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out repo
         uses: actions/checkout@v7
@@ -47,4 +48,4 @@ jobs:
         uses: ./.github/actions/notify-failure
         with:
           webhook-url: ${{ secrets.DISCORD_OPS_WEBHOOK }}
-          context: "Weekday cross-platform ingest (Feedle / Tikis / Altitude) did not complete."
+          context: "Weekday cross-platform ingest (Feedle, Korean shops, terraristik, US shops) did not complete."

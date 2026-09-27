@@ -1,4 +1,10 @@
-"""Ingest Feedle, TikisGeckos, and Altitude Exotics into cross_platform_listings.
+"""Ingest crested gecko markets outside MorphMarket into cross_platform_listings.
+
+Korea: Feedle (the main Korean reptile marketplace) and Korean breeder
+shops on Cafe24. Europe: terraristik.com classifieds. US: TikisGeckos and
+Altitude Exotics. Each run also stores exchange rates (fx_rates) and one
+price snapshot per listing per day (cross_platform_observations) so the
+Markets page can show trends.
 
 Writes ONLY public.cross_platform_listings (and optional first-image rows
 in cross_platform_listing_images). Never touches market_listings, listings,
@@ -20,6 +26,8 @@ Usage:
   python scrape_cross_platform.py --source=all --dry-run
   python scrape_cross_platform.py --source=feedle_air
   python scrape_cross_platform.py --source=tikis --dry-run --max-pages=2
+  python scrape_cross_platform.py --source=kr_shops --dry-run --max-pages=1
+  python scrape_cross_platform.py --source=terraristik --dry-run --max-pages=1
 
 Env:
   SUPABASE_URL / SUPABASE_SERVICE_KEY   required unless --dry-run
@@ -43,6 +51,15 @@ from urllib.parse import urljoin
 
 import requests
 
+from lib.intl_markets import (
+    find_server_action_id,
+    kr_listing_flags,
+    parse_cafe24_list,
+    parse_frankfurter,
+    parse_terraristik_ad,
+    parse_terraristik_search,
+    script_srcs,
+)
 from lib.cross_platform import (
     CRESTED_SPECIES,
     FEEDLE_CRESTED_CODE,
@@ -180,12 +197,28 @@ def _decode_next_f(html: str) -> str:
     return "".join(blob_parts)
 
 
-def discover_feedle_action_id(html: str) -> str:
+def discover_feedle_action_id(html: str, max_chunks: int = 40) -> str:
+    """Find getPetList's server-action id.
+
+    Next.js assigns a new id on every Feedle deploy. It is declared in the
+    page's client JS chunks, not the HTML, so read those. On 2026-09-08 a
+    deploy retired the hard-coded fallback and every run after that got a
+    404 while reporting nothing.
+    """
     match = GETPETLIST_HASH_RE.search(html)
     if match:
         return match.group(1)
-    # Homepage HTML rarely inlines the hash. Use the public action id the
-    # infinite-scroll client calls; refresh from JS only if a POST fails.
+    for url in script_srcs(html, FEEDLE_ORIGIN)[:max_chunks]:
+        try:
+            js = polite_get(url).text
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN feedle chunk {url}: {exc}")
+            continue
+        found = find_server_action_id(js, "getPetList")
+        if found:
+            log(f"feedle getPetList action found in {url.rsplit('/', 1)[-1]}")
+            return found
+    log("WARN feedle getPetList action not found in JS; using the stored fallback")
     return FEEDLE_ACTION_FALLBACK
 
 
@@ -360,6 +393,11 @@ def build_feedle_rows(
         "kr_seller_is_guaranteed": pet.get("kr_seller_is_guaranteed"),
         "species_name_en": species_name,
         "fetch_method": "getPetList_server_action",
+        # Posting and sale dates, when Feedle sends them, give Korea a
+        # history the way first_listed does for MorphMarket.
+        "created_at": pet.get("created_at") or pet.get("createdAt") or pet.get("created_at_cursor"),
+        "updated_at": pet.get("updated_at") or pet.get("updatedAt"),
+        "sold_at": pet.get("sold_at") or pet.get("soldAt"),
     }
     rows.append(
         (
@@ -439,12 +477,48 @@ def scrape_feedle(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]
         )
 
     collected: list[tuple[dict[str, Any], Optional[str]]] = []
-    cursor: Optional[str] = None
     seen_ids: set[str] = set()
+    for sold_flag in (None, True):
+        # First pass is the default catalog (for sale). The second asks for
+        # sold listings, which gives Korea real sale prices; if Feedle
+        # ignores the flag, already-seen ids stop it after one page.
+        got = _feedle_pages(
+            action_id,
+            crested_code,
+            sold_flag,
+            limit_pages,
+            seen_ids,
+            collected,
+            air_rate=air_rate,
+            kr_rate=kr_rate,
+            kr_rate_source=kr_rate_source,
+        )
+        log(f"feedle pass sold={sold_flag}: {got} new pets")
+    log(
+        f"feedle done: unique pets={len(seen_ids)} "
+        f"rows={len(collected)} (air+kr)"
+    )
+    return collected
+
+
+def _feedle_pages(
+    action_id: str,
+    crested_code: str,
+    sold_flag: Optional[bool],
+    limit_pages: int,
+    seen_ids: set[str],
+    collected: list[tuple[dict[str, Any], Optional[str]]],
+    *,
+    air_rate: Optional[float],
+    kr_rate: Optional[float],
+    kr_rate_source: str,
+) -> int:
+    added = 0
+    cursor: Optional[str] = None
     for page in range(1, limit_pages + 1):
         payload: dict[str, Any] = {
             "sort": None,
-            "sold": None,
+            "sold": sold_flag,
             "species": crested_code,
             "sex": None,
             "size": [],
@@ -475,6 +549,7 @@ def scrape_feedle(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]
                 continue
             seen_ids.add(pid)
             new_on_page += 1
+            added += 1
             collected.extend(
                 build_feedle_rows(
                     pet,
@@ -489,11 +564,222 @@ def scrape_feedle(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]
             break
         cursor = str(next_cursor)
         time.sleep(page_sleep())
-    log(
-        f"feedle done: unique pets={len(seen_ids)} "
-        f"rows={len(collected)} (air+kr)"
-    )
+    return added
+
+
+# ---------------------------------------------------------------------------
+# Korean breeder shops (Cafe24)
+# ---------------------------------------------------------------------------
+
+# (slug, shop name, list URL with {page}). Category pages where the shop
+# has a crested gecko category; otherwise the shop's product search.
+KR_SHOPS: tuple[tuple[str, str, str], ...] = (
+    ("geckovillage", "Gecko Village", "https://geckovillage.co.kr/product/list.html?cate_no=76&page={page}"),
+    ("newrun", "New Run Reptile", "https://newrunreptile.co.kr/product/list.html?cate_no=197&page={page}"),
+    ("thezoo", "The Zoo", "https://xn--9m1b023b.com/product/list.html?cate_no=90&page={page}"),
+    ("jbr", "Jungbreu Insect Harmony", "https://xn--699at5i1sh8pu9yi.com/product/list.html?cate_no=162&page={page}"),
+    ("crepax", "Crepax", "https://crepax.kr/product/search.html?keyword=%ED%81%AC%EB%A0%88%EC%8A%A4%ED%8B%B0%EB%93%9C&page={page}"),
+)
+KR_SHOP_MAX_PAGES = 20
+
+
+def scrape_kr_shops(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
+    collected: list[tuple[dict[str, Any], Optional[str]]] = []
+    observed = now_iso()
+    for slug, shop, template in KR_SHOPS:
+        seen: set[str] = set()
+        kept = skipped = 0
+        for page in range(1, min(limit_pages, KR_SHOP_MAX_PAGES) + 1):
+            url = template.format(page=page)
+            log(f"GET {url}")
+            try:
+                html = polite_get(url).text
+            except Exception as exc:  # noqa: BLE001
+                log(f"WARN {shop} page {page}: {exc}")
+                break
+            items = [i for i in parse_cafe24_list(html, url) if i["product_no"] not in seen]
+            if not items:
+                break
+            for item in items:
+                seen.add(item["product_no"])
+                flags = kr_listing_flags(item["name"])
+                if not flags["is_animal"] or not item["price_krw"]:
+                    skipped += 1
+                    continue
+                kept += 1
+                collected.append(
+                    (
+                        {
+                            "platform": "kr_shops",
+                            "external_id": f"{slug}:{item['product_no']}",
+                            "title": item["name"],
+                            "description": None,
+                            "price": item["price_krw"],
+                            "price_usd_equivalent": None,
+                            "currency": "KRW",
+                            "seller_name": shop,
+                            "seller_location": "Korea",
+                            "url": item["url"],
+                            "traits_raw": item["name"],
+                            "species": CRESTED_SPECIES,
+                            "last_seen_at": observed,
+                            "payload": {
+                                "shop": slug,
+                                "sold": item["sold_out"],
+                                "sex": flags["sex"],
+                                "is_group_lot": flags["is_group_lot"],
+                                "exclude_from_combo_arb": flags["is_group_lot"],
+                                "fetch_method": "cafe24_list",
+                            },
+                        },
+                        None,
+                    )
+                )
+            time.sleep(page_sleep())
+        log(f"{shop}: kept {kept}, skipped {skipped} (supplies or unpriced)")
     return collected
+
+
+# ---------------------------------------------------------------------------
+# terraristik.com (Europe)
+# ---------------------------------------------------------------------------
+
+TERRA_SEARCH = "https://www.terraristik.com/tb/buy-and-sell/all-herp-ads/01/"
+TERRA_TERMS = ("Correlophus ciliatus", "crested gecko", "Kronengecko")
+TERRA_MAX_ADS = int(os.environ.get("TERRA_MAX_ADS", "300"))
+TERRA_AD_SLEEP_S = max(1.0, float(os.environ.get("TERRA_AD_SLEEP_S", "1.5")))
+
+
+def scrape_terraristik(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
+    ads: dict[str, str] = {}
+    for term in TERRA_TERMS:
+        for page in range(min(limit_pages, 15)):
+            params = {"ftsearch": term}
+            if page:
+                params["split"] = str(page * 10)
+            log(f"GET terraristik search '{term}' split={page * 10}")
+            try:
+                html = polite_get(TERRA_SEARCH, params=params).text
+            except Exception as exc:  # noqa: BLE001
+                log(f"WARN terraristik search: {exc}")
+                break
+            found = [a for a in parse_terraristik_search(html) if a[0] not in ads]
+            if not found:
+                break
+            ads.update(found)
+            time.sleep(page_sleep())
+    log(f"terraristik: {len(ads)} ads found, reading up to {TERRA_MAX_ADS}")
+    collected: list[tuple[dict[str, Any], Optional[str]]] = []
+    observed = now_iso()
+    skipped = {"not_crested": 0, "wanted": 0, "error": 0}
+    for ad_id, url in list(ads.items())[:TERRA_MAX_ADS]:
+        try:
+            ad = parse_terraristik_ad(polite_get(url).text)
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN terraristik ad {ad_id}: {exc}")
+            skipped["error"] += 1
+            continue
+        finally:
+            time.sleep(TERRA_AD_SLEEP_S)
+        if not ad["is_crested"]:
+            skipped["not_crested"] += 1
+            continue
+        if ad["wanted"]:
+            skipped["wanted"] += 1
+            continue
+        # One clear price per ad is comparable; ads listing several animals
+        # at several prices keep their prices in the payload only.
+        exclude = ad["multi_price"] or ad["mixed_species"] or is_group_lot_text(ad["title"])
+        collected.append(
+            (
+                {
+                    "platform": "terraristik",
+                    "external_id": ad_id,
+                    "title": ad["title"],
+                    "description": ad["text"][:2000],
+                    "price": ad["price_eur"],
+                    "price_usd_equivalent": None,
+                    "currency": "EUR",
+                    "seller_name": None,
+                    "seller_location": ad["place"],
+                    "url": url,
+                    "traits_raw": ad["title"],
+                    "species": CRESTED_SPECIES,
+                    "last_seen_at": observed,
+                    "payload": {
+                        "posted": ad["posted"],
+                        "prices": ad["prices"],
+                        "multi_price": ad["multi_price"],
+                        "mixed_species": ad["mixed_species"],
+                        "is_group_lot": exclude,
+                        "exclude_from_combo_arb": exclude,
+                        "sold": False,
+                        "fetch_method": "terraristik_ad_page",
+                    },
+                },
+                None,
+            )
+        )
+    log(f"terraristik: kept {len(collected)}, skipped {skipped}")
+    return collected
+
+
+# ---------------------------------------------------------------------------
+# Exchange rates and daily price snapshots
+# ---------------------------------------------------------------------------
+
+FX_CURRENCIES = ("KRW", "EUR", "GBP", "CAD", "JPY")
+
+
+def update_fx_rates(supabase) -> dict[str, float]:
+    """Store units-per-USD for each tracked currency. The site converts with these."""
+    try:
+        resp = polite_get(
+            FRANKFURTER,
+            params={"from": "USD", "to": ",".join(FX_CURRENCIES)},
+        )
+        rates = parse_frankfurter(resp.json(), FX_CURRENCIES)
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN exchange rates: {exc}")
+        return {}
+    if rates and supabase is not None:
+        rows = [
+            {"currency": cur, "per_usd": rate, "as_of": now_iso(), "source": "frankfurter"}
+            for cur, rate in rates.items()
+        ]
+        try:
+            supabase.table("fx_rates").upsert(rows, on_conflict="currency").execute()
+            log(f"exchange rates stored: {rates}")
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN exchange rate write: {exc}")
+    return rates
+
+
+def record_observations(supabase, pairs: list[tuple[dict[str, Any], Optional[str]]]) -> None:
+    """One row per listing per day, so every market gets a price history."""
+    today = dt.datetime.now(dt.timezone.utc).date().isoformat()
+    rows = []
+    for row, _image in pairs:
+        if row.get("platform") == "feedle_air":
+            continue  # same animals as feedle_kr, kept once in native KRW
+        payload = row.get("payload") or {}
+        rows.append(
+            {
+                "platform": row["platform"],
+                "external_id": str(row["external_id"]),
+                "observed_on": today,
+                "price": row.get("price"),
+                "currency": row.get("currency"),
+                "sold": bool(payload.get("sold")),
+            }
+        )
+    for i in range(0, len(rows), 500):
+        try:
+            supabase.table("cross_platform_observations").upsert(
+                rows[i : i + 500], on_conflict="platform,external_id,observed_on"
+            ).execute()
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN observations write: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -840,7 +1126,7 @@ def print_dry_run(pairs: list[tuple[dict[str, Any], Optional[str]]]) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
-SOURCES = ("all", "feedle_air", "feedle_kr", "tikis", "altitude")
+SOURCES = ("all", "feedle_air", "feedle_kr", "tikis", "altitude", "kr_shops", "terraristik")
 
 
 def apply_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -872,6 +1158,8 @@ def collect(source: str, pages: int) -> list[tuple[dict[str, Any], Optional[str]
     want_feedle = source in ("all", "feedle_air", "feedle_kr")
     want_tikis = source in ("all", "tikis")
     want_altitude = source in ("all", "altitude")
+    want_kr_shops = source in ("all", "kr_shops")
+    want_terra = source in ("all", "terraristik")
     pairs: list[tuple[dict[str, Any], Optional[str]]] = []
     if want_feedle:
         feedle_pairs = scrape_feedle(pages)
@@ -884,6 +1172,17 @@ def collect(source: str, pages: int) -> list[tuple[dict[str, Any], Optional[str]
         pairs.extend(scrape_tikis(pages))
     if want_altitude:
         pairs.extend(scrape_altitude(pages))
+    # Each source is independent: one site being down must not stop the rest.
+    for wanted, fn, name in (
+        (want_kr_shops, scrape_kr_shops, "kr_shops"),
+        (want_terra, scrape_terraristik, "terraristik"),
+    ):
+        if not wanted:
+            continue
+        try:
+            pairs.extend(fn(pages))
+        except Exception as exc:  # noqa: BLE001
+            log(f"ERROR {name}: {exc}")
     return pairs
 
 
@@ -949,23 +1248,44 @@ def main() -> int:
     from lib.supabase_client import get_supabase
 
     supabase = get_supabase()
-    feedle_pairs = [
-        p for p in pairs if p[0]["platform"] in ("feedle_air", "feedle_kr")
-    ]
-    shop_pairs = [
-        p
-        for p in pairs
-        if p[0]["platform"] in ("tikis_geckos", "altitude_exotics")
-    ]
-    try:
-        if feedle_pairs:
-            run_group(supabase, "cross_platform_feedle", feedle_pairs, False)
-        if shop_pairs:
-            run_group(supabase, "cross_platform_shops", shop_pairs, False)
-    except Exception:
-        traceback.print_exc()
-        return 1
-    return 0
+    update_fx_rates(supabase)
+    groups = (
+        ("cross_platform_feedle", ("feedle_air", "feedle_kr"), args.source in ("all", "feedle_air", "feedle_kr")),
+        ("cross_platform_shops", ("tikis_geckos", "altitude_exotics"), args.source in ("all", "tikis", "altitude")),
+        ("cross_platform_kr_shops", ("kr_shops",), args.source in ("all", "kr_shops")),
+        ("cross_platform_terraristik", ("terraristik",), args.source in ("all", "terraristik")),
+    )
+    exit_code = 0
+    for scrape_type, platforms, wanted in groups:
+        if not wanted:
+            continue
+        group = [p for p in pairs if p[0]["platform"] in platforms]
+        if not group:
+            # A source that returns nothing is broken, not quiet. Record it
+            # so the Data status page shows it instead of going silent.
+            record_empty_run(supabase, scrape_type)
+            exit_code = 1
+            continue
+        try:
+            run_group(supabase, scrape_type, group, False)
+            record_observations(supabase, group)
+        except Exception:
+            traceback.print_exc()
+            exit_code = 1
+    return exit_code
+
+
+def record_empty_run(supabase, scrape_type: str) -> None:
+    run_id = start_scrape_run(supabase, scrape_type)
+    finalise_scrape_run(
+        supabase,
+        run_id,
+        status="failed",
+        attempted=0,
+        succeeded=0,
+        failed=0,
+        error_message="source returned no listings; see the job log",
+    )
 
 
 if __name__ == "__main__":
