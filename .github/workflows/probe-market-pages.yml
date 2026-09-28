@@ -9,6 +9,10 @@ on:
       urls:
         description: "Space-separated URLs"
         required: true
+      around:
+        description: "Regexes (split by ||) to print markup around"
+        required: false
+        default: ""
 
 jobs:
   probe:
@@ -24,4 +28,5 @@ jobs:
         working-directory: scripts
         env:
           URLS: ${{ inputs.urls }}
+          AROUND: ${{ inputs.around }}
         run: python probe_pages.py $URLS

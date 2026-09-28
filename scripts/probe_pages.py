@@ -18,7 +18,8 @@ from urllib.parse import urljoin, urlsplit
 import requests
 
 UA = "GeckDataBot/1.0 (crested gecko market tracker)"
-PRICE_RE = re.compile(r"(?:¥|￥)\s?[0-9,]{3,9}|[0-9,]{3,9}\s?(?:円|원|€)", re.I)
+PRICE_RE = re.compile(r"(?:¥|￥|&yen;|&#165;)\s?[0-9,]{3,9}|[0-9,]{3,9}\s?(?:円|원|€)", re.I)
+AROUND = [a for a in (__import__("os").environ.get("AROUND") or "").split("||") if a]
 HINTS = {
     "cafe24": r"cafe24|xans-product",
     "ocnk (Ocnk/おちゃのこ)": r"ocnk|ochanoko",
@@ -63,6 +64,13 @@ def probe(url: str) -> None:
         a = max(0, first.start() - 1500)
         excerpt = re.sub(r"\s+", " ", html[a : first.end() + 600])
         print("markup around first price:\n", excerpt[:2100])
+    for pat in AROUND:
+        hit = re.search(pat, html)
+        if hit:
+            a = max(0, hit.start() - 300)
+            print(f"markup around /{pat}/:\n", re.sub(r"\s+", " ", html[a : hit.start() + 3000]))
+        else:
+            print(f"no match for /{pat}/")
     jsonld = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
     if jsonld:
         print("json-ld blocks:", len(jsonld), re.sub(r"\s+", " ", jsonld[0])[:600])
