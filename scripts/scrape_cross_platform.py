@@ -515,15 +515,24 @@ FEEDLE_CURSOR_KEYS = (
 FEEDLE_SHORTFALL: list[str] = []
 
 
+def _cursor_text(value: Any) -> Optional[str]:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    if isinstance(value, (str, int, float)):
+        return str(value)
+    # Composite cursors (a timestamp plus an id) come back as objects.
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
 def feedle_next_cursor(last: dict[str, Any], result: dict[str, Any]) -> Optional[str]:
     for key in ("nextCursor", "next_cursor", "cursor"):
-        value = result.get(key)
-        if isinstance(value, (str, int)) and str(value):
-            return str(value)
+        text = _cursor_text(result.get(key))
+        if text:
+            return text
     for key in FEEDLE_CURSOR_KEYS:
-        value = last.get(key)
-        if isinstance(value, (str, int)) and str(value):
-            return str(value)
+        text = _cursor_text(last.get(key))
+        if text:
+            return text
     return None
 
 
@@ -541,6 +550,7 @@ def _feedle_pages(
 ) -> int:
     added = 0
     cursor: Optional[str] = None
+    use_pages = False
     for page in range(1, limit_pages + 1):
         payload: dict[str, Any] = {
             "sort": None,
@@ -558,6 +568,8 @@ def _feedle_pages(
             # the one it knows.
             payload["createdAtCursor"] = cursor
             payload["listedAtOnHomePageCursor"] = cursor
+        if use_pages:
+            payload["page"] = page
         log(f"POST getPetList page={page} cursor={cursor or 'start'}")
         try:
             result = feedle_get_pet_list(action_id, payload)
@@ -590,7 +602,18 @@ def _feedle_pages(
         last = pets[-1] if isinstance(pets[-1], dict) else {}
         if page == 1:
             log(f"feedle pet fields: {sorted(last.keys())}")
+            log(f"feedle response fields: {sorted(result.keys())}")
+            for key in FEEDLE_CURSOR_KEYS:
+                if key in last:
+                    log(f"feedle {key} = {str(last.get(key))[:120]!r}")
         next_cursor = feedle_next_cursor(last, result)
+        if not next_cursor and new_on_page and len(seen_ids) < (count or 0):
+            # No cursor at all: try numbered pages. A page that repeats the
+            # last one adds nothing and ends the walk below.
+            use_pages = True
+            cursor = None
+            time.sleep(page_sleep())
+            continue
         if not next_cursor or next_cursor == cursor or new_on_page == 0:
             if sold_flag is None and len(seen_ids) < 0.5 * (count or 0):
                 FEEDLE_SHORTFALL.append(f"read {len(seen_ids)} of {count} Feedle listings")

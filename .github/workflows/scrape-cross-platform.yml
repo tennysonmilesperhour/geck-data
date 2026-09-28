@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: '50 16 * * 1-5'
   workflow_dispatch:
+    inputs:
+      source:
+        description: "all, feedle_kr, kr_shops, terraristik, tikis or altitude"
+        required: false
+        default: all
 
 concurrency:
   group: scrape-cross-platform
@@ -40,8 +45,9 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
           TRIGGERED_BY: github_action_cross_platform
+          SOURCE: ${{ inputs.source || 'all' }}
         working-directory: scripts
-        run: python scrape_cross_platform.py --source=all
+        run: python scrape_cross_platform.py --source="$SOURCE"
 
       - name: Notify Discord on failure
         if: ${{ failure() || cancelled() }}
