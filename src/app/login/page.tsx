@@ -108,7 +108,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-claude py-2.5 font-medium text-ink-950 hover:bg-claude-glow disabled:opacity-50"
+          className="w-full rounded-lg bg-claude py-2.5 font-medium text-white hover:bg-claude-soft disabled:opacity-50"
         >
           {loading
             ? "Working"

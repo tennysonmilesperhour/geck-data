@@ -188,7 +188,7 @@ export default async function ListingsPage({ searchParams }: { searchParams?: Se
         ) : null}
         <button
           type="submit"
-          className="col-span-2 rounded-lg bg-claude px-5 py-2 text-sm font-medium text-ink-950 hover:bg-claude-glow md:col-span-1"
+          className="col-span-2 rounded-lg bg-claude px-5 py-2 text-sm font-medium text-white hover:bg-claude-soft md:col-span-1"
         >
           Show
         </button>

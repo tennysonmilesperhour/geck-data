@@ -151,7 +151,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
                 href={l.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center rounded-lg bg-claude px-4 py-2 text-sm font-medium text-ink-950 hover:bg-claude-glow"
+                className="inline-flex items-center rounded-lg bg-claude px-4 py-2 text-sm font-medium text-white hover:bg-claude-soft"
               >
                 Open on MorphMarket
               </a>

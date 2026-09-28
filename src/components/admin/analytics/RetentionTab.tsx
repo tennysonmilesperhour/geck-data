@@ -1,8 +1,8 @@
 "use client";
-// Retention tab — weekly signup cohort × W+1..W+4 follow-up activity.
+// Retention tab: weekly signup cohort × W+1..W+4 follow-up activity.
 // Incomplete weeks render "incomplete" so a half-elapsed week can't be misread as a
 // retention cliff. Cell color saturates at 60% (the source app's pragmatic
-// ceiling — few SaaS products hit 100% weekly retention).
+// ceiling; few SaaS products hit 100% weekly retention).
 import { useMemo } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { retentionGrid, type CohortRow } from "./aggregations";
@@ -81,7 +81,7 @@ export default function RetentionTab({ data }: { data: DataBundle | null }) {
                     <td
                       key={i}
                       className="px-3 py-2 text-center font-mono text-xs tabular-nums text-ink-100"
-                      style={{ backgroundColor: `rgba(16, 185, 129, ${alpha})` }}
+                      style={{ backgroundColor: `rgba(94, 106, 210, ${alpha})` }}
                       title={`${c.active}/${c.size} active`}
                     >
                       {c.pct}%

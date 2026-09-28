@@ -1,6 +1,6 @@
 // Catalog of data sources that can back a market number. Every badge on
 // the dashboard reads from this single source of truth so icons, colors,
-// and display labels stay consistent — add a new pipeline here once and
+// and display labels stay consistent. Add a new pipeline here once and
 // it lights up everywhere.
 import type { SourceId } from "./types";
 
@@ -13,14 +13,14 @@ export type SourceMeta = {
   description: string;
 };
 
-// Ordered — tables render sources in this order for determinism.
+// Ordered: tables render sources in this order for determinism.
 export const SOURCES: readonly SourceMeta[] = [
   {
     id: "gi_sales",
     label: "Geck Inspect sales",
     short: "GI sales",
     kind: "internal",
-    color: "#10b981",
+    color: "#5e6ad2",
     description: "Confirmed sale events from Geck Inspect users' transaction logs.",
   },
   {
@@ -28,7 +28,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect listings",
     short: "GI listings",
     kind: "internal",
-    color: "#34d399",
+    color: "#828fff",
     description: "Live and recently closed listings captured by the Geck Inspect ingest.",
   },
   {
@@ -36,7 +36,7 @@ export const SOURCES: readonly SourceMeta[] = [
     label: "Geck Inspect breeding",
     short: "GI breeding",
     kind: "internal",
-    color: "#6ee7b7",
+    color: "#a9b1ff",
     description: "Forward-looking supply from user-tracked breeding pairs & clutches.",
   },
   {
@@ -53,7 +53,7 @@ export const SOURCES: readonly SourceMeta[] = [
     short: "Pangea",
     kind: "external",
     color: "#38bdf8",
-    description: "Pangea Reptile retail pricing — skews toward retail establishment pricing.",
+    description: "Pangea Reptile retail pricing. Skews toward retail establishment pricing.",
   },
   {
     id: "breeder",
@@ -122,9 +122,9 @@ const UNKNOWN_META: SourceMeta = {
   label: "Other source",
   short: "Other",
   kind: "external",
-  color: "#94a3b8",
+  color: "#8a8f98",
   description:
-    "Source not in the canonical catalog. Probably a legacy ingest value — see normalizeSourceId in src/lib/market/sources.ts.",
+    "Source not in the canonical catalog. Probably a legacy ingest value. See normalizeSourceId in src/lib/market/sources.ts.",
 };
 
 export function sourceMeta(id: SourceId | string): SourceMeta {

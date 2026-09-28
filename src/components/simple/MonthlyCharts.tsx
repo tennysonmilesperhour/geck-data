@@ -9,10 +9,10 @@ import type { MonthRow } from "@/lib/simple/data";
 import { MIN_PRICED, fmtMonth } from "@/lib/simple/trend";
 
 
-const SLOT1 = "#3987e5";
-const SURFACE = "#0f172a";
-const GRID = "#1e293b";
-const MUTED = "#64748b";
+const SLOT1 = "rgb(var(--chart-1))";
+const SURFACE = "rgb(var(--ink-850))";
+const GRID = "rgb(var(--ink-700))";
+const MUTED = "rgb(var(--ink-400))";
 
 const W = 720;
 const PAD = { l: 52, r: 16, t: 22, b: 30 };
@@ -100,7 +100,7 @@ export function MonthlyChart({ rows, kind }: { rows: MonthRow[]; kind: "price" |
           >
             <defs>
               <pattern id={`unread-${kind}`} width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <line x1="0" y1="0" x2="0" y2="8" stroke="#334155" strokeWidth="2" />
+                <line x1="0" y1="0" x2="0" y2="8" stroke="rgb(var(--ink-600))" strokeWidth="2" />
               </pattern>
             </defs>
             {ticks.map((t) => (
@@ -126,13 +126,13 @@ export function MonthlyChart({ rows, kind }: { rows: MonthRow[]; kind: "price" |
                   fill={`url(#unread-${kind})`}
                   opacity={0.5}
                 />
-                <text x={PAD.l + band * ((a + b + 1) / 2)} y={PAD.t - 8} textAnchor="middle" fontSize={11} fill="#94a3b8">
+                <text x={PAD.l + band * ((a + b + 1) / 2)} y={PAD.t - 8} textAnchor="middle" fontSize={11} fill="rgb(var(--ink-400))">
                   Not read yet
                 </text>
               </g>
             ))}
             {hover != null ? (
-              <line x1={cx(hover)} x2={cx(hover)} y1={PAD.t} y2={bottom} stroke="#475569" />
+              <line x1={cx(hover)} x2={cx(hover)} y1={PAD.t} y2={bottom} stroke="rgb(var(--ink-600))" />
             ) : null}
             {kind === "price"
               ? runs.map((run) => (

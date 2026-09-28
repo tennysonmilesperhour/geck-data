@@ -1,8 +1,8 @@
 "use client";
-// Tiny inline SVG line chart of accuracy-over-time. No d3 needed — five
+// Tiny inline SVG line chart of accuracy-over-time. No d3 needed; five
 // runs is enough to eyeball a trend without dragging in a chart lib.
 //
-// X axis = run start time, Y axis = accuracy (0–1). Points colored by
+// X axis = run start time, Y axis = accuracy (0 to 1). Points colored by
 // status (success=emerald, failed=rose).
 import { useMemo } from "react";
 import type { EvalRun } from "@/lib/training/evalRuns";
@@ -25,7 +25,7 @@ export default function AccuracyLine({ runs, height = 180 }: Props) {
   if (data.length === 0) {
     return (
       <div className="flex h-44 items-center justify-center rounded-lg border border-dashed border-ink-700 text-xs text-ink-500">
-        No successful eval runs yet — run scripts/eval_morph_id.py to populate.
+        No successful eval runs yet. Run scripts/eval_morph_id.py to populate.
       </div>
     );
   }
@@ -65,7 +65,7 @@ export default function AccuracyLine({ runs, height = 180 }: Props) {
                 x2={PADDING.left + innerW}
                 y1={y}
                 y2={y}
-                stroke="rgb(51,65,85)"
+                stroke="rgb(var(--ink-700))"
                 strokeWidth="1"
                 strokeDasharray="2 4"
               />
@@ -110,7 +110,7 @@ export default function AccuracyLine({ runs, height = 180 }: Props) {
           <path
             d={path}
             fill="none"
-            stroke="rgb(16,185,129)"
+            stroke="rgb(var(--ready))"
             strokeWidth="2"
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -122,8 +122,8 @@ export default function AccuracyLine({ runs, height = 180 }: Props) {
               cx={xs[i]}
               cy={ys[i]}
               r="3.5"
-              fill={d.status === "success" ? "rgb(16,185,129)" : "rgb(244,63,94)"}
-              stroke="rgb(15,23,42)"
+              fill={d.status === "success" ? "rgb(var(--ready))" : "rgb(var(--danger))"}
+              stroke="rgb(var(--ink-850))"
               strokeWidth="1.5"
             >
               <title>

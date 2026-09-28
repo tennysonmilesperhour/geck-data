@@ -11,11 +11,11 @@ import { useState } from "react";
 import type { TrendWeek } from "@/lib/simple/data";
 import { fmtWeek, fullRuns, untracked, weekTime } from "@/lib/simple/trend";
 
-const SLOT1 = "#3987e5";
-const SLOT2 = "#d95926";
-const SURFACE = "#0f172a";
-const GRID = "#1e293b";
-const MUTED = "#64748b";
+const SLOT1 = "rgb(var(--chart-1))";
+const SLOT2 = "rgb(var(--chart-2))";
+const SURFACE = "rgb(var(--ink-850))";
+const GRID = "rgb(var(--ink-700))";
+const MUTED = "rgb(var(--ink-400))";
 
 const W = 720;
 const PAD = { l: 52, r: 20, t: 22, b: 30 };
@@ -80,7 +80,7 @@ function Frame({
           patternUnits="userSpaceOnUse"
           patternTransform="rotate(45)"
         >
-          <line x1="0" y1="0" x2="0" y2="8" stroke="#334155" strokeWidth="2" />
+          <line x1="0" y1="0" x2="0" y2="8" stroke="rgb(var(--ink-600))" strokeWidth="2" />
         </pattern>
       </defs>
       {ticks.map((t) => (
@@ -134,7 +134,7 @@ function Frame({
               y={PAD.t - 8}
               textAnchor="middle"
               fontSize={11}
-              fill="#94a3b8"
+              fill="rgb(var(--ink-400))"
             >
               Not tracked ({g.weeks} weeks)
             </text>
@@ -243,7 +243,7 @@ export function PriceTrendChart({
                 x2={s.x(weeks[hover].week)}
                 y1={PAD.t}
                 y2={s.bottom}
-                stroke="#475569"
+                stroke="rgb(var(--ink-600))"
               />
             ) : null}
             {runs.map((r) => (

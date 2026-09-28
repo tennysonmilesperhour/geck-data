@@ -2,7 +2,7 @@
 // Compact inline-SVG chart primitives for the admin analytics dashboard.
 // Deliberately small and framework-free (no Recharts, no re-using the big D3
 // components in src/components/charts) so this bundle stays lean. Each chart
-// is layout-agnostic — the caller sets the container size.
+// is layout-agnostic; the caller sets the container size.
 import type { DayPoint } from "./aggregations";
 
 export const PALETTE = {
@@ -12,8 +12,8 @@ export const PALETTE = {
   purple: "#a855f7",
   rose: "#f43f5e",
   slate: "#64748b",
-  gridLine: "#1f2937", // matches ink-800-ish for subtle grid
-  axisLabel: "#94a3b8",
+  gridLine: "rgb(var(--ink-700))", // ink-700 hairline
+  axisLabel: "rgb(var(--ink-400))",
 };
 
 const W = 640;
@@ -52,7 +52,7 @@ function xForBar(i: number, n: number): { x: number; w: number } {
 }
 
 // ----------------------------------------------------------------------------
-// AxisLabels — shared between the charts.
+// AxisLabels: shared between the charts.
 // ----------------------------------------------------------------------------
 function YAxis({ max }: { max: number }) {
   return (
@@ -112,7 +112,7 @@ function XAxis({ points }: { points: DayPoint[] }) {
 }
 
 // ----------------------------------------------------------------------------
-// AreaChart — single cumulative series with gradient fill.
+// AreaChart: single cumulative series with gradient fill.
 // ----------------------------------------------------------------------------
 export function AreaChart({
   data,
@@ -157,7 +157,7 @@ export function AreaChart({
 }
 
 // ----------------------------------------------------------------------------
-// BarChart — daily counts. Same axes as AreaChart.
+// BarChart: daily counts. Same axes as AreaChart.
 // ----------------------------------------------------------------------------
 export function BarChart({
   data,
@@ -189,7 +189,7 @@ export function BarChart({
 }
 
 // ----------------------------------------------------------------------------
-// LineMulti — multiple series over a shared day axis. Used for the Daily
+// LineMulti: multiple series over a shared day axis. Used for the Daily
 // Activity Mix chart on the Growth tab.
 // ----------------------------------------------------------------------------
 export type Series = { name: string; color: string; data: DayPoint[] };
@@ -236,7 +236,7 @@ export function LineMulti({ series, title }: { series: Series[]; title?: string 
 }
 
 // ----------------------------------------------------------------------------
-// HBar — horizontal bars for ranked lists (feature usage, top events).
+// HBar: horizontal bars for ranked lists (feature usage, top events).
 // Scales height with item count so many rows stay readable.
 // ----------------------------------------------------------------------------
 export function HBarChart({
@@ -281,7 +281,7 @@ export function HBarChart({
               x={labelW + w + 6}
               y={y + rowH / 2 + 4}
               fontSize={11}
-              fill="#e2e8f0"
+              fill="rgb(var(--ink-200))"
             >
               {r.value.toLocaleString()}
             </text>
@@ -293,7 +293,7 @@ export function HBarChart({
 }
 
 // ----------------------------------------------------------------------------
-// EmptyChart — neutral placeholder keeping the layout height stable.
+// EmptyChart: neutral placeholder keeping the layout height stable.
 // ----------------------------------------------------------------------------
 export function EmptyChart({ label }: { label: string }) {
   return (

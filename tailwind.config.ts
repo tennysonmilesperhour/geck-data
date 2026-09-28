@@ -5,115 +5,97 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Naturalist field-guide palette. Backgrounds are deeper and
-        // more saturated than the previous low-chroma greys, so the
-        // hierarchy actually reads on a dark surface. Text tones stay
-        // near-neutral but with a faint green warmth.
+        // Linear-style palette in two themes. Every value is a CSS variable
+        // defined in src/app/globals.css: dark on :root, light under
+        // [data-theme="light"]. Dark follows Linear's own tokens (canvas
+        // #08090a, surfaces #0f1011 to #18191a, hairline #23252a, ink
+        // #f7f8f8 to #8a8f98, lavender #5e6ad2). Token names are unchanged
+        // from earlier themes, so every class switches without edits.
+        // `<alpha-value>` keeps opacity modifiers like bg-ink-900/40 working.
         ink: {
-          // Retuned to the Geck Inspect "Market Analytics" slate scale so
-          // GeckIntellect reads as the same product surface. Token names are
-          // unchanged; only the values moved from forest green to slate, so
-          // every existing class shifts palette without a rewrite.
-          950: "#020617",   // page bg — slate-950
-          900: "#0a1120",   // app bg — lifted slate
-          850: "#0f172a",   // panel bg — slate-900
-          800: "#131d31",   // card bg — slate-900/lifted
-          750: "#1a2438",   // hover
-          700: "#1e293b",   // border strong — slate-800
-          650: "#273349",   // border
-          600: "#334155",   // muted border — slate-700
-          500: "#64748b",   // muted fg — slate-500
-          400: "#94a3b8",   // dim fg — slate-400
-          300: "#cbd5e1",   // secondary fg — slate-300
-          200: "#e2e8f0",   // primary fg-dim — slate-200
-          100: "#f1f5f9",   // primary fg — slate-100
-          50:  "#f8fafc",   // brightest fg — slate-50
+          950: "rgb(var(--ink-950) / <alpha-value>)",
+          900: "rgb(var(--ink-900) / <alpha-value>)",
+          850: "rgb(var(--ink-850) / <alpha-value>)",
+          800: "rgb(var(--ink-800) / <alpha-value>)",
+          750: "rgb(var(--ink-750) / <alpha-value>)",
+          700: "rgb(var(--ink-700) / <alpha-value>)",
+          650: "rgb(var(--ink-650) / <alpha-value>)",
+          600: "rgb(var(--ink-600) / <alpha-value>)",
+          500: "rgb(var(--ink-500) / <alpha-value>)",
+          400: "rgb(var(--ink-400) / <alpha-value>)",
+          300: "rgb(var(--ink-300) / <alpha-value>)",
+          200: "rgb(var(--ink-200) / <alpha-value>)",
+          100: "rgb(var(--ink-100) / <alpha-value>)",
+          50: "rgb(var(--ink-50) / <alpha-value>)",
         },
-        // /market layers the deeper "forest" tones on top. Mirrors
-        // ink-* so per-surface search-and-replace stays clean.
+        // /market scope. Same ladder with one deeper step.
         forest: {
-          // /market scope. Same slate scale as ink, a shade deeper at the
-          // bottom so the dashboard reads a touch darker than the rest of
-          // the app, matching the Market Analytics panel ground.
-          975: "#010409",   // deepest wash
-          950: "#020617",
-          900: "#0a1120",
-          850: "#0f172a",   // forest-surface bg — slate-900
-          800: "#131d31",
-          750: "#1a2438",
-          700: "#1e293b",
-          650: "#273349",
-          600: "#334155",
-          500: "#64748b",
-          400: "#94a3b8",
-          300: "#cbd5e1",
-          200: "#e2e8f0",
-          100: "#f1f5f9",
-          50:  "#f8fafc",
+          975: "rgb(var(--ink-975) / <alpha-value>)",
+          950: "rgb(var(--ink-950) / <alpha-value>)",
+          900: "rgb(var(--ink-900) / <alpha-value>)",
+          850: "rgb(var(--ink-850) / <alpha-value>)",
+          800: "rgb(var(--ink-800) / <alpha-value>)",
+          750: "rgb(var(--ink-750) / <alpha-value>)",
+          700: "rgb(var(--ink-700) / <alpha-value>)",
+          650: "rgb(var(--ink-650) / <alpha-value>)",
+          600: "rgb(var(--ink-600) / <alpha-value>)",
+          500: "rgb(var(--ink-500) / <alpha-value>)",
+          400: "rgb(var(--ink-400) / <alpha-value>)",
+          300: "rgb(var(--ink-300) / <alpha-value>)",
+          200: "rgb(var(--ink-200) / <alpha-value>)",
+          100: "rgb(var(--ink-100) / <alpha-value>)",
+          50: "rgb(var(--ink-50) / <alpha-value>)",
         },
-        // Primary CTA / accent. Slightly more pigment than the
-        // previous flat emerald so it reads as a chosen ink rather
-        // than a Tailwind default. Kept under `claude` so the rest of
-        // the codebase compiles unchanged.
+        // The one accent: primary buttons, the selected state, focus rings,
+        // link text. Buttons use white text on DEFAULT (4.7:1 in both themes).
         claude: {
-          // Primary accent, retuned to the Market Analytics emerald so the
-          // CTA / link / highlight colour matches the preview exactly.
-          DEFAULT: "#10b981",  // emerald-500
-          soft:    "#059669",  // emerald-600
-          glow:    "#34d399",  // emerald-400 — hover / focus / link text
+          DEFAULT: "rgb(var(--claude) / <alpha-value>)",
+          soft:    "rgb(var(--claude-soft) / <alpha-value>)",
+          glow:    "rgb(var(--claude-glow) / <alpha-value>)",
         },
-        // Warm terracotta — the field-guide accent. Used for "rising"
-        // momentum, important highlights, and ornament strokes. NOT a
-        // CTA color; pair with emerald for primary actions.
+        // Secondary tint scale. Linear keeps a single hue, so the old warm
+        // accent now runs through lavender tints.
         clay: {
-          // Warm accent, retuned from terracotta to the Market Analytics
-          // amber. Used for eyebrows, "preview" notes and warm highlights;
-          // never a CTA. Kept under `clay` so existing classes compile.
-          50:  "#fffbeb",
-          100: "#fef3c7",
-          200: "#fde68a",
-          300: "#fcd34d",   // amber-300 — eyebrow text
-          400: "#fbbf24",   // amber-400
-          500: "#f59e0b",   // amber-500 — primary
-          600: "#d97706",
-          700: "#b45309",
-          800: "#92400e",
-          900: "#78350f",
+          50: "rgb(var(--clay-50) / <alpha-value>)",
+          100: "rgb(var(--clay-100) / <alpha-value>)",
+          200: "rgb(var(--clay-200) / <alpha-value>)",
+          300: "rgb(var(--clay-300) / <alpha-value>)",
+          400: "rgb(var(--clay-400) / <alpha-value>)",
+          500: "rgb(var(--clay-500) / <alpha-value>)",
+          600: "rgb(var(--clay-600) / <alpha-value>)",
+          700: "rgb(var(--clay-700) / <alpha-value>)",
+          800: "rgb(var(--clay-800) / <alpha-value>)",
+          900: "rgb(var(--clay-900) / <alpha-value>)",
         },
-        // Parchment cream — for paper-warm highlights, tooltip
-        // surfaces, ornamental hairlines. Use sparingly.
         parchment: {
-          // Highlight surface, retuned to soft amber so warm accents read
-          // against the slate ground instead of as printed cream.
-          50:  "#fffbeb",
-          100: "#fef3c7",
-          200: "#fde68a",
-          300: "#fcd34d",
-          400: "#fbbf24",
+          50: "rgb(var(--clay-50) / <alpha-value>)",
+          100: "rgb(var(--clay-100) / <alpha-value>)",
+          200: "rgb(var(--clay-200) / <alpha-value>)",
+          300: "rgb(var(--clay-300) / <alpha-value>)",
+          400: "rgb(var(--clay-400) / <alpha-value>)",
         },
-        // Status tokens. `ready` (sage) keeps the field-guide warmth.
-        // `busy` shifts toward clay so amber doesn't compete with the
-        // primary accent.
-        ready: "#34d399",     // emerald-400 — healthy / rising
-        busy:  "#f59e0b",     // amber-500 — attention / degraded
-        info:  "#38bdf8",     // sky-400 — informational / scraped source
-        danger:"#f87171",     // red-400 — error / falling
-        // Legacy gecko tokens — existing components reference these.
+        // Status. Rising and under market use lavender, over market and
+        // warnings use amber at matched lightness, errors use red. Blue
+        // against warm stays distinct for red-green color blindness.
+        ready:  "rgb(var(--ready) / <alpha-value>)",
+        busy:   "rgb(var(--busy) / <alpha-value>)",
+        info:   "rgb(var(--info) / <alpha-value>)",
+        danger: "rgb(var(--danger) / <alpha-value>)",
+        // Legacy gecko tokens, still referenced by a few components.
         gecko: {
-          DEFAULT: "#34d399",  // emerald-400
-          light:   "#6ee7b7",  // emerald-300
-          dark:    "#059669",  // emerald-600
-          accent:  "#f59e0b",  // amber-500
+          DEFAULT: "rgb(var(--claude-glow) / <alpha-value>)",
+          light:   "rgb(var(--clay-300) / <alpha-value>)",
+          dark:    "rgb(var(--claude) / <alpha-value>)",
+          accent:  "rgb(var(--busy) / <alpha-value>)",
         },
       },
       fontFamily: {
         // CSS variables come from src/app/layout.tsx (next/font/google).
         // Each registration falls back to a system stack so SSR + the
         // font-loading window never render with the wrong metrics.
-        // De-serifed to match the Market Analytics preview, which sets every
-        // heading in the sans UI face. Points at the sans variable so the
-        // 43 `font-display` headings across the app render sans without an
-        // edit to each one.
+        // Headings use the same sans face as body text, like Linear. Points
+        // at the sans variable so every `font-display` heading renders sans
+        // without an edit to each one.
         display: [
           "var(--font-sans)",
           "ui-sans-serif",
@@ -140,15 +122,15 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        // Panels in the preview are a flat slate card with a hairline ring,
-        // no atmospheric glow. `panel` is that ring; `glow` stays emerald for
-        // the rare focused/elevated element.
-        panel: "0 0 0 1px rgba(30,41,59,0.8)",
-        glow:  "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.30)",
+        // Linear lifts panels with a hairline and a faint top edge instead
+        // of drop shadows. The edge value changes per theme (globals.css).
+        edge:  "var(--shadow-edge)",
+        panel: "0 0 0 1px rgb(var(--ink-700)), var(--shadow-edge)",
+        glow:  "0 0 0 1px rgba(94,106,210,0.45), 0 8px 30px -12px rgba(94,106,210,0.35)",
         "forest-panel":
-          "0 0 0 1px rgba(30,41,59,0.8), 0 12px 40px -30px rgba(2,6,23,0.8)",
+          "0 0 0 1px rgb(var(--ink-700)), var(--shadow-lift)",
         "forest-glow":
-          "0 0 0 1px rgba(16,185,129,0.35), 0 8px 30px -12px rgba(16,185,129,0.30)",
+          "0 0 0 1px rgba(94,106,210,0.45), 0 8px 30px -12px rgba(94,106,210,0.35)",
       },
     },
   },

@@ -89,7 +89,7 @@ function PriceCell({ cell, us }: { cell: MarketCell | undefined; us: MarketCell 
     <span>
       <span className="text-ink-100">{fmtUsd(cell.p50)}</span>
       {cmp ? (
-        <span className={`ml-1.5 text-xs ${cmp.dir === "below" ? "text-sky-300" : cmp.dir === "above" ? "text-amber-300" : "text-ink-500"}`}>
+        <span className={`ml-1.5 text-xs ${cmp.dir === "below" ? "text-ready" : cmp.dir === "above" ? "text-busy" : "text-ink-500"}`}>
           {cmp.text}
         </span>
       ) : null}

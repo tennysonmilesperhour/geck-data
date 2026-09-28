@@ -11,8 +11,8 @@ import { useState } from "react";
 import type { GrowthPoint } from "@/lib/simple/data";
 
 const SERIES = [
-  { key: "female", label: "Female", color: "#3987e5" },
-  { key: "male", label: "Male", color: "#d95926" },
+  { key: "female", label: "Female", color: "rgb(var(--chart-1))" },
+  { key: "male", label: "Male", color: "rgb(var(--chart-2))" },
   { key: "unsexed", label: "Not sexed", color: "#199e70" },
 ] as const;
 
@@ -70,19 +70,19 @@ export default function GrowthChart({ points }: { points: GrowthPoint[] }) {
         >
           {ticks.map((t) => (
             <g key={t}>
-              <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="#1e293b" strokeWidth={1} />
-              <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#64748b">
+              <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="rgb(var(--ink-700))" strokeWidth={1} />
+              <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="rgb(var(--ink-400))">
                 {t === 0 ? "$0" : usd(t)}
               </text>
             </g>
           ))}
           {LABELS.map((lab, b) => (
-            <text key={lab} x={x(b)} y={H - 10} textAnchor="middle" fontSize={11} fill="#64748b">
+            <text key={lab} x={x(b)} y={H - 10} textAnchor="middle" fontSize={11} fill="rgb(var(--ink-400))">
               {lab}
             </text>
           ))}
           {hover != null ? (
-            <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} stroke="#475569" strokeWidth={1} />
+            <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} stroke="rgb(var(--ink-600))" strokeWidth={1} />
           ) : null}
           {lines.map((l) => (
             <g key={l.key}>
@@ -101,7 +101,7 @@ export default function GrowthChart({ points }: { points: GrowthPoint[] }) {
                   cy={y(p.p50!)}
                   r={hover === p.bucket ? 5 : 3.5}
                   fill={l.color}
-                  stroke="#0f172a"
+                  stroke="rgb(var(--ink-850))"
                   strokeWidth={2}
                 />
               ))}
@@ -109,7 +109,7 @@ export default function GrowthChart({ points }: { points: GrowthPoint[] }) {
                 x={x(l.pts[l.pts.length - 1].bucket) + 10}
                 y={y(l.pts[l.pts.length - 1].p50!) + 4}
                 fontSize={12}
-                fill="#cbd5e1"
+                fill="rgb(var(--ink-200))"
               >
                 {l.label}
               </text>

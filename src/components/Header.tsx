@@ -10,6 +10,7 @@ import type { User } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Logo from "@/components/ui/Logo";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const NAV = [
   { href: "/", label: "Price check" },
@@ -69,8 +70,8 @@ export default function Header() {
       aria-current={isActive(item.href) ? "page" : undefined}
       className={`whitespace-nowrap rounded-lg px-2 py-2 text-sm sm:px-3 font-medium transition ${
         isActive(item.href)
-          ? "bg-ink-800 text-ink-50"
-          : "text-ink-300 hover:bg-ink-850 hover:text-ink-50"
+          ? "bg-ink-750 text-ink-50"
+          : "text-ink-300 hover:bg-ink-750/60 hover:text-ink-50"
       }`}
     >
       {item.label}
@@ -92,6 +93,7 @@ export default function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3 text-sm">
+          <ThemeToggle />
           {loaded && user ? (
             <>
               <Link href="/watchlist" className="hidden text-ink-300 hover:text-ink-50 sm:inline">

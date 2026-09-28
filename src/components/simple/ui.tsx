@@ -63,7 +63,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div className={`rounded-xl border border-ink-700 bg-ink-850 p-5 ${className}`}>
+    <div className={`rounded-xl border border-ink-700 bg-ink-850 p-5 shadow-edge ${className}`}>
       {children}
     </div>
   );
@@ -112,7 +112,7 @@ export function ButtonLink({
 }) {
   const cls =
     variant === "primary"
-      ? "bg-claude text-ink-950 hover:bg-claude-glow"
+      ? "bg-claude text-white hover:bg-claude-soft"
       : "border border-ink-600 text-ink-100 hover:border-ink-500 hover:bg-ink-800";
   return (
     <Link

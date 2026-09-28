@@ -11,10 +11,10 @@ import { useState } from "react";
 export type LinePoint = { x: string; y: number; n?: number };
 export type LineSeries = { key: string; label: string; points: LinePoint[] };
 
-export const SERIES_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"];
-const SURFACE = "#0f172a";
-const GRID = "#1e293b";
-const MUTED = "#64748b";
+export const SERIES_COLORS = ["rgb(var(--chart-1))", "rgb(var(--chart-2))", "#199e70", "#c98500", "#d55181", "#008300"];
+const SURFACE = "rgb(var(--ink-850))";
+const GRID = "rgb(var(--ink-700))";
+const MUTED = "rgb(var(--ink-400))";
 const DAY = 86_400_000;
 
 const W = 720;
@@ -143,7 +143,7 @@ export default function MultiLineChart({
                     </text>
                   ) : null,
                 )}
-            {hover ? <line x1={hx} x2={hx} y1={PAD.t} y2={H - PAD.b} stroke="#475569" /> : null}
+            {hover ? <line x1={hx} x2={hx} y1={PAD.t} y2={H - PAD.b} stroke="rgb(var(--ink-600))" /> : null}
             {shown.map((s) => (
               <g key={s.key}>
                 {runs(s.points, maxGapDays).map((r) =>
@@ -164,7 +164,7 @@ export default function MultiLineChart({
               </g>
             ))}
             {labels.map((l) => (
-              <text key={l.key} x={Math.min(l.x + 10, W - PAD.r + 10)} y={l.y + 4} fontSize={12} fill="#cbd5e1">
+              <text key={l.key} x={Math.min(l.x + 10, W - PAD.r + 10)} y={l.y + 4} fontSize={12} fill="rgb(var(--ink-200))">
                 {l.label.length > 16 ? `${l.label.slice(0, 15)}…` : l.label}
               </text>
             ))}
