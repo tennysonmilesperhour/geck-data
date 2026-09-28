@@ -79,7 +79,7 @@ export default async function BreederPage({ params }: { params: { id: string } }
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <PricingPill b={b} />
                 {stageLine ? (
-                  <span className="rounded-full bg-ink-800 px-2 py-0.5 text-xs text-ink-300">{stageLine}</span>
+                  <span className="rounded-sm bg-ink-800 px-1.5 py-0.5 text-xs text-ink-300">{stageLine}</span>
                 ) : null}
               </div>
             ) : null}
@@ -139,8 +139,8 @@ export default async function BreederPage({ params }: { params: { id: string } }
                   ) : (
                     <span className="truncate text-ink-100">{x.trait}</span>
                   )}
-                  <span className="h-2 overflow-hidden rounded-full bg-ink-800">
-                    <span className="block h-full rounded-full bg-claude/60" style={{ width: `${Math.max(x.share * 100, 3)}%` }} />
+                  <span className="h-1 overflow-hidden bg-ink-800">
+                    <span className="bar-fill block h-full" style={{ width: `${Math.max(x.share * 100, 3)}%` }} />
                   </span>
                   <span className="w-20 text-right tabular-nums text-ink-400">
                     {Math.round(x.share * 100)}% ({fmtInt(x.count)})

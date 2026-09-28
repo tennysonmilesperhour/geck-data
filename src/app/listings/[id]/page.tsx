@@ -137,7 +137,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
                     {t}
                   </Chip>
                 ) : (
-                  <span key={t} className="rounded-full border border-ink-700 px-3 py-1.5 text-sm text-ink-400">
+                  <span key={t} className="rounded-sm border border-ink-700 px-2 py-1 text-[13px] text-ink-400">
                     {t}
                   </span>
                 );
@@ -193,7 +193,7 @@ export default async function ListingPage({ params }: { params: { id: string } }
                     />
                   ))}
                   <span
-                    className="absolute top-1/2 h-8 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-claude-glow"
+                    className="absolute top-1/2 h-7 w-[2px] -translate-x-1/2 -translate-y-1/2 bg-claude-glow"
                     style={{ left: `${Math.min((l.price / axisMax) * 100, 100)}%` }}
                   />
                 </div>

@@ -37,7 +37,6 @@ import {
 } from "@/lib/simple/estimate";
 import {
   Card,
-  Chip,
   Empty,
   ListingGrid,
   PriceRangeBar,
@@ -49,6 +48,7 @@ import {
   niceMax,
 } from "@/components/simple/ui";
 import { UpgradeList, ValueGridTable } from "@/components/simple/value";
+import { GROUPS, traitInfo } from "@/lib/simple/genetics";
 import GrowthChart from "@/components/simple/GrowthChart";
 import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
@@ -274,50 +274,47 @@ function Picker({ morphs, state }: { morphs: Morph[]; state: State }) {
     return <Empty>Morph list could not load right now. Try again in a minute.</Empty>;
   }
   const picked = morphs.filter((m) => state.slugs.includes(m.slug));
-  const rest = morphs.filter((m) => !state.slugs.includes(m.slug));
   const anything = state.slugs.length || state.sex || state.age;
   return (
-    <Card className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-ink-50">Your gecko</h2>
+    <section className="rounded-lg border border-ink-700 bg-ink-850 shadow-edge">
+      <header className="flex min-h-[48px] flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 px-5 py-2.5">
+        <h2 className="text-sm font-semibold text-ink-50">Your gecko</h2>
+        {picked.length ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {picked.map((m) => (
+              <Link
+                key={m.slug}
+                href={href({ ...state, slugs: toggle(state.slugs, m.slug) })}
+                scroll={false}
+                title={`Remove ${m.trait}`}
+                className="inline-flex items-center gap-1.5 rounded-sm border border-claude/50 bg-claude/15 px-2 py-0.5 text-[13px] text-ink-50 transition hover:border-claude"
+              >
+                {m.trait}
+                <span aria-hidden="true" className="text-ink-400">×</span>
+                <span className="sr-only">Remove</span>
+              </Link>
+            ))}
+          </div>
+        ) : null}
         {anything ? (
-          <Link href="/" scroll={false} className="text-sm text-ink-400 hover:text-ink-100">
+          <Link href="/" scroll={false} className="ml-auto text-[13px] text-ink-400 hover:text-ink-100">
             Start over
           </Link>
         ) : null}
+      </header>
+
+      <div className="grid grid-cols-1 gap-x-8 gap-y-6 px-5 pb-5 pt-4 md:grid-cols-3">
+        {GROUPS.map((g) => (
+          <MorphGroup
+            key={g.id}
+            title={g.title}
+            morphs={morphs.filter((m) => traitInfo(m.trait).group === g.id)}
+            state={state}
+          />
+        ))}
       </div>
 
-      <div className="space-y-2">
-        <div className="text-sm text-ink-400">Morphs</div>
-        {picked.length ? (
-          <>
-            <div className="flex flex-wrap gap-2">
-              {picked.map((m) => (
-                <Chip
-                  key={m.slug}
-                  href={href({ ...state, slugs: toggle(state.slugs, m.slug) })}
-                  active
-                  title={`Remove ${m.trait}`}
-                >
-                  {m.trait} <span aria-hidden="true">×</span>
-                  <span className="sr-only">Remove</span>
-                </Chip>
-              ))}
-            </div>
-            <details className="group">
-              <summary className="cursor-pointer list-none text-sm font-medium text-claude-glow hover:underline">
-                <span className="group-open:hidden">+ Add another morph</span>
-                <span className="hidden group-open:inline">Hide morph list</span>
-              </summary>
-              <MorphChips morphs={rest} state={state} />
-            </details>
-          </>
-        ) : (
-          <MorphChips morphs={rest} state={state} />
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 border-t border-ink-700 px-5 py-4 md:grid-cols-2">
         <Segmented
           label="Sex"
           options={[
@@ -337,23 +334,83 @@ function Picker({ morphs, state }: { morphs: Morph[]; state: State }) {
           hrefFor={(v) => href({ ...state, age: v as AgeClass | null })}
         />
       </div>
-    </Card>
+    </section>
   );
 }
 
-function MorphChips({ morphs, state }: { morphs: Morph[]; state: State }) {
+// How many morphs each group shows before "more". Picked morphs always show.
+const GROUP_TOP = 6;
+
+/**
+ * One column of the morph checklist: a header, then one row per morph with
+ * a checkbox, how many are listed, and the typical asking price. The most
+ * listed morphs show first; the rest open under "more".
+ */
+function MorphGroup({ title, morphs, state }: { title: string; morphs: Morph[]; state: State }) {
+  if (!morphs.length) return null;
+  const sorted = [...morphs].sort((a, b) => b.forSale - a.forSale);
+  const top = sorted.filter((m, i) => i < GROUP_TOP || state.slugs.includes(m.slug));
+  const more = sorted.filter((m) => !top.includes(m));
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {morphs.map((m) => (
-        <Chip
-          key={m.slug}
-          href={href({ ...state, slugs: toggle(state.slugs, m.slug) })}
-          title={`${fmtInt(m.forSale)} listed`}
-        >
-          {m.trait}
-        </Chip>
-      ))}
+    <div>
+      <div className="grid grid-cols-[1fr_44px_52px] items-baseline gap-2 border-b border-ink-700 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-500">
+        <span>{title}</span>
+        <span className="text-right">Listed</span>
+        <span className="text-right">Typical</span>
+      </div>
+      <ul className="pt-1">
+        {top.map((m) => (
+          <MorphRow key={m.slug} m={m} state={state} />
+        ))}
+      </ul>
+      {more.length ? (
+        <details className="group">
+          <summary className="cursor-pointer list-none py-1.5 text-[13px] text-ink-400 hover:text-ink-100 [&::-webkit-details-marker]:hidden">
+            <span className="group-open:hidden">{more.length} more</span>
+            <span className="hidden group-open:inline">Fewer</span>
+          </summary>
+          <ul>
+            {more.map((m) => (
+              <MorphRow key={m.slug} m={m} state={state} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
+  );
+}
+
+function MorphRow({ m, state }: { m: Morph; state: State }) {
+  const on = state.slugs.includes(m.slug);
+  return (
+    <li>
+      <Link
+        href={href({ ...state, slugs: toggle(state.slugs, m.slug) })}
+        scroll={false}
+        aria-pressed={on}
+        className="-mx-1.5 grid grid-cols-[14px_1fr_44px_52px] items-center gap-2 rounded-sm px-1.5 py-[5px] transition hover:bg-ink-750"
+      >
+        <span
+          aria-hidden="true"
+          className={`flex h-3.5 w-3.5 items-center justify-center rounded-[2px] border ${
+            on ? "border-claude bg-claude" : "border-ink-600"
+          }`}
+        >
+          {on ? (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5.2 4.1 7.2 8 3" stroke="white" strokeWidth="1.6" />
+            </svg>
+          ) : null}
+        </span>
+        <span className={`truncate text-[13px] ${on ? "font-medium text-ink-50" : "text-ink-200"}`}>
+          {m.trait}
+        </span>
+        <span className="text-right text-xs tabular-nums text-ink-500">{fmtInt(m.forSale)}</span>
+        <span className="text-right text-xs tabular-nums text-ink-300">
+          {m.askMid != null ? fmtUsd(m.askMid) : ""}
+        </span>
+      </Link>
+    </li>
   );
 }
 
@@ -370,9 +427,12 @@ function Segmented({
 }) {
   return (
     <div className="space-y-2">
-      <div className="text-sm text-ink-400">{label}</div>
-      <div className="flex flex-wrap gap-1 rounded-lg border border-ink-700 bg-ink-900 p-1">
-        {options.map((o) => {
+      <div className="text-[11px] font-medium uppercase tracking-wider text-ink-500">{label}</div>
+      <div
+        className="grid overflow-hidden rounded border border-ink-700 bg-ink-900"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      >
+        {options.map((o, i) => {
           const active = o.value === current;
           return (
             <Link
@@ -380,9 +440,9 @@ function Segmented({
               href={hrefFor(o.value)}
               scroll={false}
               aria-current={active ? "true" : undefined}
-              className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-center text-sm transition ${
-                active ? "bg-ink-700 text-ink-50" : "text-ink-400 hover:text-ink-100"
-              }`}
+              className={`truncate px-1 py-1.5 text-center text-xs transition sm:px-2 sm:text-[13px] ${
+                i ? "border-l border-ink-700" : ""
+              } ${active ? "bg-ink-700 font-medium text-ink-50" : "text-ink-400 hover:bg-ink-800 hover:text-ink-100"}`}
             >
               {o.label}
             </Link>
@@ -486,8 +546,8 @@ function Headline({
         />
         <PriceScale max={scaleMax} />
         <p className="text-xs leading-5 text-ink-500">
-          Dot is the middle price, the bar covers the middle half, the thin line runs
-          from the cheapest tenth to the priciest tenth. Sold prices are the last asking
+          The tick is the middle price, the bar covers the middle half, and the hairline
+          runs from the cheapest tenth to the priciest tenth. Sold prices are the last asking
           price before a listing came down, not a confirmed payment.
         </p>
       </div>

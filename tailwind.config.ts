@@ -4,6 +4,17 @@ const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // Tight corners everywhere: 4px on panels and cards, 3px on controls,
+      // 2px on tags. Anything round (rounded-full) is reserved for things
+      // that really are round, like a person's avatar.
+      borderRadius: {
+        sm: "2px",
+        DEFAULT: "3px",
+        md: "3px",
+        lg: "4px",
+        xl: "4px",
+        "2xl": "6px",
+      },
       colors: {
         // Linear-style palette in two themes. Every value is a CSS variable
         // defined in src/app/globals.css: dark on :root, light under

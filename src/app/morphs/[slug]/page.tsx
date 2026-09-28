@@ -97,10 +97,10 @@ export default async function MorphPage({ params }: { params: { slug: string } }
 
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-ink-700 bg-ink-900 px-3 py-1 text-xs text-ink-300">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-sm border border-ink-700 bg-ink-900 px-2 py-1 text-xs text-ink-300">
             {info.kind}
             {info.confidence === "emerging" ? (
-              <span className="rounded-full bg-busy/15 px-1.5 text-busy">emerging</span>
+              <span className="rounded-sm bg-busy/15 px-1.5 text-busy">emerging</span>
             ) : null}
           </div>
           <h1 className="text-3xl font-semibold tracking-tight text-ink-50 sm:text-4xl">
@@ -200,7 +200,7 @@ export default async function MorphPage({ params }: { params: { slug: string } }
                 <div key={b.label} className="flex h-full flex-1 flex-col justify-end" title={`${b.label}: ${b.count}`}>
                   <div className="mb-1 text-center text-[11px] tabular-nums text-ink-400">{b.count || ""}</div>
                   <div
-                    className="rounded-t bg-claude/70"
+                    className="bar-fill-v"
                     style={{ height: `${(b.count / maxBin) * 100}%`, minHeight: b.count ? 2 : 0 }}
                   />
                 </div>

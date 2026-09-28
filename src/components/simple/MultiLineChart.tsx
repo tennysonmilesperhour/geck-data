@@ -2,16 +2,17 @@
 // Several price lines on one time axis: morphs against each other, or one
 // morph across markets. Time runs at true scale and a line breaks wherever
 // its points are further apart than `maxGapDays`, so an untracked stretch
-// is never bridged. Up to six series take the validated categorical slots
-// 1 to 6 in the order given (the caller keeps that order stable so a
-// series keeps its color). Every line is labeled at its end, with a legend
-// and a table view, so color never carries identity alone.
+// is never bridged. Up to six series take colors sampled in order from one
+// gradient (the caller keeps that order stable so a series keeps its
+// color). Every line is labeled at its end, with a legend and a table
+// view, so color never carries identity alone.
 import { useState } from "react";
+import { LINE, seriesColor } from "@/components/charts/series";
 
 export type LinePoint = { x: string; y: number; n?: number };
 export type LineSeries = { key: string; label: string; points: LinePoint[] };
 
-export const SERIES_COLORS = ["rgb(var(--chart-1))", "rgb(var(--chart-2))", "#199e70", "#c98500", "#d55181", "#008300"];
+const MAX_SERIES = 6;
 const SURFACE = "rgb(var(--ink-850))";
 const GRID = "rgb(var(--ink-700))";
 const MUTED = "rgb(var(--ink-400))";
@@ -57,9 +58,9 @@ export default function MultiLineChart({
   caption?: string;
 }) {
   const [hover, setHover] = useState<string | null>(null);
-  const shown = series
-    .slice(0, SERIES_COLORS.length)
-    .map((s, i) => ({ ...s, color: SERIES_COLORS[i], points: [...s.points].sort((a, b) => t(a.x) - t(b.x)) }))
+  const kept = series.slice(0, MAX_SERIES);
+  const shown = kept
+    .map((s, i) => ({ ...s, color: seriesColor(i, kept.length), points: [...s.points].sort((a, b) => t(a.x) - t(b.x)) }))
     .filter((s) => s.points.length);
   if (!shown.length) return null;
 
@@ -100,7 +101,7 @@ export default function MultiLineChart({
       <div className="flex flex-wrap gap-4 text-sm text-ink-300" aria-hidden="true">
         {shown.map((s) => (
           <span key={s.key} className="inline-flex items-center gap-2">
-            <span className="h-0.5 w-5 rounded-full" style={{ background: s.color }} />
+            <span className="h-[2px] w-4" style={{ background: s.color }} />
             {s.label}
           </span>
         ))}
@@ -150,21 +151,21 @@ export default function MultiLineChart({
                   r.length > 1 ? (
                     <polyline
                       key={r[0].x}
-                      fill="none"
+                      {...LINE}
                       stroke={s.color}
-                      strokeWidth={2}
-                      strokeLinejoin="round"
                       points={r.map((p) => `${x(p.x)},${y(p.y)}`).join(" ")}
                     />
                   ) : null,
                 )}
-                {s.points.map((p) => (
-                  <circle key={p.x} cx={x(p.x)} cy={y(p.y)} r={hover === p.x ? 5 : 3.5} fill={s.color} stroke={SURFACE} strokeWidth={2} />
-                ))}
+                {s.points
+                  .filter((p) => p.x === hover || runs(s.points, maxGapDays).some((r) => r.length === 1 && r[0].x === p.x))
+                  .map((p) => (
+                    <rect key={p.x} x={x(p.x) - 2.5} y={y(p.y) - 2.5} width={5} height={5} fill={s.color} stroke={SURFACE} strokeWidth={1} />
+                  ))}
               </g>
             ))}
             {labels.map((l) => (
-              <text key={l.key} x={Math.min(l.x + 10, W - PAD.r + 10)} y={l.y + 4} fontSize={12} fill="rgb(var(--ink-200))">
+              <text key={l.key} x={Math.min(l.x + 8, W - PAD.r + 8)} y={l.y + 4} fontSize={11} fill="rgb(var(--ink-300))">
                 {l.label.length > 16 ? `${l.label.slice(0, 15)}…` : l.label}
               </text>
             ))}
@@ -201,7 +202,7 @@ export default function MultiLineChart({
               <div className="mb-1 font-medium text-ink-100">Week of {fmtDate(hover, true)}</div>
               {at.map(({ s, p }) => (
                 <div key={s.key} className="flex items-center gap-2 text-ink-300">
-                  <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+                  <span className="h-[2px] w-3" style={{ background: s.color }} />
                   {s.label}
                   <span className="ml-auto pl-3 tabular-nums text-ink-100">{usd(p!.y)}</span>
                   {p!.n != null ? <span className="text-ink-500">n={p!.n}</span> : null}

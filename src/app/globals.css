@@ -49,6 +49,9 @@
   --danger: 235 87 87;
   --chart-1: 130 143 255;
   --chart-2: 212 135 60;
+  /* Chart lines are sampled from one gradient, a (bright) to b (deep). */
+  --series-a: 214 218 255;  /* #d6daff */
+  --series-b: 85 99 216;    /* #5563d8 */
 
   --shadow-edge: inset 0 1px 0 rgba(255,255,255,0.04);
   --shadow-lift: 0 24px 60px -36px rgba(0,0,0,0.9);
@@ -110,6 +113,8 @@
   --danger: 201 52 52;
   --chart-1: 94 106 210;
   --chart-2: 184 101 26;
+  --series-a: 46 55 150;    /* #2e3796 */
+  --series-b: 124 134 224;  /* #7c86e0 */
 
   --shadow-edge: 0 1px 2px rgba(16,18,24,0.05);
   --shadow-lift: 0 16px 40px -24px rgba(16,18,24,0.25);
@@ -171,34 +176,41 @@ body::before {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgb(var(--ink-700)); border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--ink-700)); border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: rgb(var(--ink-600)); }
 
-/* Status dot */
+/* Status marker: a small square, not a dot. */
 .status-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
   background: rgb(var(--ready));
-  box-shadow: 0 0 0 3px rgb(var(--ready) / 0.16);
 }
-.status-dot.busy { background: rgb(var(--busy)); box-shadow: 0 0 0 3px rgb(var(--busy) / 0.18); }
-.status-dot.idle { background: rgb(var(--ink-500)); box-shadow: 0 0 0 3px rgb(var(--ink-500) / 0.15); }
-.status-dot.info { background: rgb(var(--info)); box-shadow: 0 0 0 3px rgb(var(--info) / 0.16); }
+.status-dot.busy { background: rgb(var(--busy)); }
+.status-dot.idle { background: rgb(var(--ink-500)); }
+.status-dot.info { background: rgb(var(--info)); }
+
+/* Data bars: one gradient, deep to bright, square ends. */
+.bar-fill {
+  background: linear-gradient(90deg, rgb(var(--series-b)), rgb(var(--series-a)));
+}
+.bar-fill-v {
+  background: linear-gradient(0deg, rgb(var(--series-b)), rgb(var(--series-a)));
+}
 
 /* Card surface: a charcoal panel with a hairline border and a faint white
    highlight on the top edge, the way Linear lifts panels without shadows. */
 .surface {
   background: rgb(var(--card));
   border: 1px solid rgb(var(--border));
-  border-radius: 12px;
+  border-radius: 4px;
   box-shadow: var(--shadow-edge);
 }
 .surface-soft {
   background: rgb(var(--panel));
   border: 1px solid rgb(var(--border));
-  border-radius: 12px;
+  border-radius: 4px;
 }
 
 /* Elevated card, the "this matters" tier: a lavender hairline and a faint
@@ -208,7 +220,7 @@ body::before {
     radial-gradient(120% 140% at 0% 0%, rgba(94,106,210,0.10), transparent 55%),
     rgb(var(--card));
   border: 1px solid rgba(94,106,210,0.35);
-  border-radius: 12px;
+  border-radius: 4px;
   box-shadow: var(--shadow-edge);
 }
 
@@ -334,7 +346,7 @@ body::before {
   inset: -24px -24px 0 -24px;
   pointer-events: none;
   z-index: -1;
-  border-radius: 12px;
+  border-radius: 4px;
   background:
     radial-gradient(circle at 50% 0%, var(--page-glow), transparent 55%),
     rgb(var(--ink-975));
@@ -343,13 +355,13 @@ body::before {
 .market-theme .forest-surface {
   background: rgb(var(--ink-850));
   border: 1px solid rgb(var(--ink-700));
-  border-radius: 12px;
+  border-radius: 4px;
   box-shadow: var(--shadow-edge);
 }
 .market-theme .forest-surface-soft {
   background: rgb(var(--ink-900));
   border: 1px solid rgb(var(--ink-700));
-  border-radius: 12px;
+  border-radius: 4px;
 }
 
 .market-theme .tick text { fill: rgb(var(--ink-400)); }

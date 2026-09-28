@@ -3,17 +3,18 @@
 // Live animals are the one collectible that appreciates on its own: a
 // hatchling becomes a sexed, breedable adult. This chart shows that curve.
 //
-// One axis (price), one line per sex, points only where enough listings
-// back them. Colors are the validated categorical slots 1 to 3 for the
-// dark surface; every line is also direct-labeled, so color never carries
-// identity alone. Hover or focus shows the values for a weight bucket.
+// One axis (price), one line per sex, drawn only where enough listings
+// back them. Line colors are sampled from one gradient and every line is
+// direct-labeled, so color never carries identity alone. Hover or focus
+// shows the values for a weight bucket.
 import { useState } from "react";
 import type { GrowthPoint } from "@/lib/simple/data";
+import { LINE, seriesColor } from "@/components/charts/series";
 
 const SERIES = [
-  { key: "female", label: "Female", color: "rgb(var(--chart-1))" },
-  { key: "male", label: "Male", color: "rgb(var(--chart-2))" },
-  { key: "unsexed", label: "Not sexed", color: "#199e70" },
+  { key: "female", label: "Female", color: seriesColor(0, 3) },
+  { key: "male", label: "Male", color: seriesColor(1, 3) },
+  { key: "unsexed", label: "Not sexed", color: seriesColor(2, 3) },
 ] as const;
 
 const LABELS = ["<5g", "5-10g", "10-15g", "15-20g", "20-30g", "30-40g", "40-50g", "50g+"];
@@ -53,7 +54,7 @@ export default function GrowthChart({ points }: { points: GrowthPoint[] }) {
       <div className="flex flex-wrap gap-4 text-sm text-ink-300" aria-hidden="true">
         {lines.map((l) => (
           <span key={l.key} className="inline-flex items-center gap-2">
-            <span className="h-0.5 w-5 rounded-full" style={{ background: l.color }} />
+            <span className="h-[2px] w-4" style={{ background: l.color }} />
             {l.label}
           </span>
         ))}
@@ -87,29 +88,27 @@ export default function GrowthChart({ points }: { points: GrowthPoint[] }) {
           {lines.map((l) => (
             <g key={l.key}>
               <polyline
-                fill="none"
+                {...LINE}
                 stroke={l.color}
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
                 points={l.pts.map((p) => `${x(p.bucket)},${y(p.p50!)}`).join(" ")}
               />
-              {l.pts.map((p) => (
-                <circle
-                  key={p.bucket}
-                  cx={x(p.bucket)}
-                  cy={y(p.p50!)}
-                  r={hover === p.bucket ? 5 : 3.5}
-                  fill={l.color}
-                  stroke="rgb(var(--ink-850))"
-                  strokeWidth={2}
-                />
-              ))}
+              {l.pts
+                .filter((p) => p.bucket === hover)
+                .map((p) => (
+                  <rect
+                    key={p.bucket}
+                    x={x(p.bucket) - 3}
+                    y={y(p.p50!) - 3}
+                    width={6}
+                    height={6}
+                    fill={l.color}
+                  />
+                ))}
               <text
-                x={x(l.pts[l.pts.length - 1].bucket) + 10}
+                x={x(l.pts[l.pts.length - 1].bucket) + 8}
                 y={y(l.pts[l.pts.length - 1].p50!) + 4}
-                fontSize={12}
-                fill="rgb(var(--ink-200))"
+                fontSize={11}
+                fill="rgb(var(--ink-300))"
               >
                 {l.label}
               </text>
@@ -142,7 +141,7 @@ export default function GrowthChart({ points }: { points: GrowthPoint[] }) {
             <div className="mb-1 font-medium text-ink-100">{LABELS[hover]}</div>
             {at(hover).map((r) => (
               <div key={r.l.key} className="flex items-center gap-2 text-ink-300">
-                <span className="h-2 w-2 rounded-full" style={{ background: r.l.color }} />
+                <span className="h-[2px] w-3" style={{ background: r.l.color }} />
                 {r.l.label}
                 <span className="ml-auto pl-3 tabular-nums text-ink-100">{usd(r.p!.p50!)}</span>
                 <span className="text-ink-500">n={r.p!.n}</span>

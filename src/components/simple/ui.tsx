@@ -141,7 +141,7 @@ export function Chip({
       href={href}
       title={title}
       scroll={false}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition ${
+      className={`inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[13px] transition ${
         active
           ? "border-claude bg-claude/15 text-ink-50"
           : "border-ink-700 bg-ink-900 text-ink-300 hover:border-ink-500 hover:text-ink-100"
@@ -178,8 +178,8 @@ export function fmtMonthRange(from: string | null, to: string | null): string {
 }
 
 /**
- * Horizontal price range. The thin line spans the 10th to 90th percentile,
- * the thick bar the middle half (25th to 75th), and the dot the median.
+ * Horizontal price range. The hairline spans the 10th to 90th percentile,
+ * the bar the middle half (25th to 75th), and the tick the median.
  * `scaleMax` lets several bars share one axis so they can be compared.
  */
 export function PriceRangeBar({
@@ -201,19 +201,19 @@ export function PriceRangeBar({
       <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ink-700" />
       {lo != null && hi != null ? (
         <div
-          className="absolute top-1/2 h-0.5 -translate-y-1/2 bg-ink-500"
+          className="absolute top-1/2 h-px -translate-y-1/2 bg-ink-500"
           style={{ left: `${lo}%`, width: `${Math.max(hi - lo, 0.5)}%` }}
         />
       ) : null}
       {q1 != null && q3 != null ? (
         <div
-          className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-claude/60"
+          className="bar-fill absolute top-1/2 h-1.5 -translate-y-1/2"
           style={{ left: `${q1}%`, width: `${Math.max(q3 - q1, 1)}%` }}
         />
       ) : null}
       {mid != null ? (
         <div
-          className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink-950 bg-claude-glow"
+          className="absolute top-1/2 h-4 w-[2px] -translate-x-1/2 -translate-y-1/2 bg-ink-50"
           style={{ left: `${mid}%` }}
         />
       ) : null}
@@ -280,16 +280,16 @@ export function PricePosition({ listing }: { listing: Listing }) {
       <div className="relative h-2" aria-hidden="true">
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ink-700" />
         <div
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-ink-600"
+          className="absolute top-1/2 h-1 -translate-y-1/2 bg-ink-600"
           style={{ left: `${pct(lo)}%`, width: `${pct(hi) - pct(lo)}%` }}
         />
         <div
-          className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink-850 bg-claude-glow"
+          className="absolute top-1/2 h-3 w-[2px] -translate-x-1/2 -translate-y-1/2 bg-claude-glow"
           style={{ left: `${pct(listing.price)}%` }}
         />
       </div>
       <div className="flex items-center justify-between gap-2 text-[11px]">
-        <span className={`rounded-full px-1.5 py-0.5 ${p.cls}`}>{p.label}</span>
+        <span className={`rounded-sm px-1.5 py-0.5 ${p.cls}`}>{p.label}</span>
         <span className="truncate text-ink-500" title={`Middle half of ${listing.comparedN ?? ""} similar ${who} listings`}>
           similar {fmtUsd(lo)} to {fmtUsd(hi)}
         </span>
@@ -319,7 +319,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
               : "No price"}
           </span>
           {sold ? (
-            <span className="rounded-full bg-ink-700 px-2 py-0.5 text-[11px] text-ink-200">Sold</span>
+            <span className="rounded-sm bg-ink-700 px-1.5 py-0.5 text-[11px] text-ink-200">Sold</span>
           ) : null}
         </div>
         <div className="line-clamp-1 text-sm text-ink-200">

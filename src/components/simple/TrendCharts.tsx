@@ -2,17 +2,18 @@
 // Week-by-week history charts. Time runs left to right at true scale, so a
 // stretch with no scrape shows up as empty, labeled space instead of being
 // squeezed out or drawn as zero. Lines only join back-to-back full weeks.
-// A week where only part of the catalog was checked is a hollow dot: its
-// middle price rests on a small sample.
+// A week where only part of the catalog was checked is a hollow marker:
+// its middle price rests on a small sample.
 //
-// Colors are the validated categorical slots used by the growth chart.
-// Each chart has one y axis; counts and prices never share a chart.
-import { useState } from "react";
+// Colors come from the shared series gradient. Each chart has one y axis;
+// counts and prices never share a chart.
+import { useId, useState } from "react";
 import type { TrendWeek } from "@/lib/simple/data";
 import { fmtWeek, fullRuns, untracked, weekTime } from "@/lib/simple/trend";
+import { LINE, SeriesDefs } from "@/components/charts/series";
 
-const SLOT1 = "rgb(var(--chart-1))";
-const SLOT2 = "rgb(var(--chart-2))";
+const SLOT1 = "rgb(var(--series-a))";
+const SLOT2 = "rgb(var(--series-b))";
 const SURFACE = "rgb(var(--ink-850))";
 const GRID = "rgb(var(--ink-700))";
 const MUTED = "rgb(var(--ink-400))";
@@ -176,6 +177,7 @@ export function PriceTrendChart({
   label: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const gid = `g${useId().replace(/:/g, "")}`;
   const priced = weeks.filter((w) => w.p50 != null);
   if (priced.length < 2) return null;
   const H = 300;
@@ -195,24 +197,15 @@ export function PriceTrendChart({
         aria-hidden="true"
       >
         <span className="inline-flex items-center gap-2">
-          <span
-            className="h-0.5 w-5 rounded-full"
-            style={{ background: SLOT1 }}
-          />
+          <span className="h-[2px] w-4" style={{ background: SLOT1 }} />
           Middle asking price
         </span>
         <span className="inline-flex items-center gap-2">
-          <span
-            className="h-3 w-5 rounded-sm"
-            style={{ background: SLOT1, opacity: 0.25 }}
-          />
+          <span className="h-3 w-4" style={{ background: SLOT1, opacity: 0.18 }} />
           Middle half of prices
         </span>
         <span className="inline-flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 rounded-full border-2"
-            style={{ borderColor: SLOT1 }}
-          />
+          <span className="h-2 w-2 border" style={{ borderColor: SLOT1 }} />
           Partial check
         </span>
       </div>
@@ -230,6 +223,7 @@ export function PriceTrendChart({
               .join(", ")}.`}
             onMouseLeave={() => setHover(null)}
           >
+            <SeriesDefs id={gid} x1={PAD.l} x2={W - PAD.r} y1={PAD.t} y2={s.bottom} />
             <Frame
               h={H}
               scale={s}
@@ -252,7 +246,7 @@ export function PriceTrendChart({
                 r.every((w) => w.p25 != null && w.p75 != null) ? (
                   <polygon
                     fill={SLOT1}
-                    opacity={0.18}
+                    opacity={0.12}
                     points={[
                       ...r.map((w) => `${s.x(w.week)},${y(w.p75!)}`),
                       ...[...r]
@@ -263,11 +257,8 @@ export function PriceTrendChart({
                 ) : null}
                 {r.length > 1 ? (
                   <polyline
-                    fill="none"
-                    stroke={SLOT1}
-                    strokeWidth={2}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
+                    {...LINE}
+                    stroke={`url(#${gid}-line)`}
                     points={r
                       .map((w) => `${s.x(w.week)},${y(w.p50!)}`)
                       .join(" ")}
@@ -277,14 +268,15 @@ export function PriceTrendChart({
             ))}
             {weeks.map((w, i) =>
               w.p50 == null ? null : (
-                <circle
+                <rect
                   key={w.week}
-                  cx={s.x(w.week)}
-                  cy={y(w.p50)}
-                  r={hover === i ? 5.5 : 4}
+                  x={s.x(w.week) - (hover === i ? 3.5 : 2.5)}
+                  y={y(w.p50) - (hover === i ? 3.5 : 2.5)}
+                  width={hover === i ? 7 : 5}
+                  height={hover === i ? 7 : 5}
                   fill={w.partial ? SURFACE : SLOT1}
-                  stroke={w.partial ? SLOT1 : SURFACE}
-                  strokeWidth={2}
+                  stroke={SLOT1}
+                  strokeWidth={1}
                 />
               ),
             )}
@@ -404,10 +396,7 @@ export function WeeklyBars({
       >
         {series.map((sr, i) => (
           <span key={sr.key} className="inline-flex items-center gap-2">
-            <span
-              className="h-3 w-3 rounded-sm"
-              style={{ background: colors[i] }}
-            />
+            <span className="h-3 w-3" style={{ background: colors[i] }} />
             {sr.label}
           </span>
         ))}
@@ -433,11 +422,13 @@ export function WeeklyBars({
                 if (v == null || v <= 0) return null;
                 const bx = s.x(w.week) + (j === 0 ? -barW - 1 : 1);
                 const top = y(v);
-                const r = Math.min(4, barW / 2, s.bottom - top);
                 return (
-                  <path
+                  <rect
                     key={`${w.week}-${sr.key}`}
-                    d={`M${bx},${s.bottom} V${top + r} Q${bx},${top} ${bx + r},${top} H${bx + barW - r} Q${bx + barW},${top} ${bx + barW},${top + r} V${s.bottom} Z`}
+                    x={bx}
+                    y={top}
+                    width={barW}
+                    height={s.bottom - top}
                     fill={colors[j]}
                     opacity={hover == null || hover === i ? 1 : 0.55}
                   />

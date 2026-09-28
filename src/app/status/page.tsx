@@ -57,8 +57,8 @@ export default async function StatusPage() {
           {h.byWeek.map((w) => (
             <div key={w.week} className="grid grid-cols-[110px_1fr_70px] items-center gap-3 text-sm">
               <span className="text-ink-300">Week of {fmtShortDate(w.week).replace(/, \d{4}$/, "")}</span>
-              <span className="h-3 overflow-hidden rounded-full bg-ink-800">
-                <span className="block h-full rounded-full bg-claude/60" style={{ width: `${(w.n / maxWeek) * 100}%` }} />
+              <span className="h-2 overflow-hidden bg-ink-800">
+                <span className="bar-fill block h-full" style={{ width: `${(w.n / maxWeek) * 100}%` }} />
               </span>
               <span className="text-right tabular-nums text-ink-300">{fmtInt(w.n)}</span>
             </div>

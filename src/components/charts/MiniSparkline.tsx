@@ -88,7 +88,7 @@ export default function MiniSparkline({
         fill="none"
         stroke={stroke}
         strokeWidth={1.5}
-        strokeLinecap="round"
+        strokeLinecap="butt"
         strokeLinejoin="round"
         opacity={0.9}
       />

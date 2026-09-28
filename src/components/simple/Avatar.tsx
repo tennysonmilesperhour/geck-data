@@ -29,7 +29,7 @@ export default function Avatar({
     .toUpperCase();
   return (
     <span
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-ink-700 text-sm font-semibold text-ink-200"
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded bg-ink-700 text-sm font-semibold text-ink-200"
       style={{ width: size, height: size }}
     >
       {src && !failed ? (

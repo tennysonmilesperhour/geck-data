@@ -94,7 +94,7 @@ function MorphCard({
         </div>
         {ratio ? (
           <span
-            className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${
+            className={`rounded-sm px-1.5 py-0.5 text-xs tabular-nums ${
               ratio >= 1.15
                 ? "bg-claude/15 text-claude-glow"
                 : ratio <= 0.85

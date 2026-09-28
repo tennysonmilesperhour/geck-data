@@ -59,7 +59,7 @@ export default function DropZone() {
 
       {busy && (
         <p className="mt-4 text-sm text-ink-400">
-          Processing… (sql.js parses are server-side; can take 10–30s for a fresh .db)
+          Processing… (sql.js parses are server-side; can take 10 to 30s for a fresh .db)
         </p>
       )}
 
@@ -75,7 +75,7 @@ export default function DropZone() {
               <li key={i} className="flex items-start justify-between gap-4 px-3 py-2 text-sm">
                 <div>
                   <span
-                    className={`mr-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
+                    className={`mr-2 inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider ${
                       r.ok
                         ? "border-ready/40 bg-ready/10 text-ready"
                         : "border-danger/40 bg-danger/10 text-danger"

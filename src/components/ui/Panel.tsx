@@ -79,7 +79,7 @@ export function StatusPill({
   label: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">
+    <span className="inline-flex items-center gap-1.5 rounded-sm border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">
       <span className={`status-dot ${status}`} />
       {label}
     </span>

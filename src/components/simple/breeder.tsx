@@ -12,6 +12,7 @@ import {
   stagePhrase,
 } from "@/lib/simple/breeders";
 import Avatar from "./Avatar";
+import { seriesColor } from "@/components/charts/series";
 
 const PRICING_CLS = {
   below: "bg-claude/15 text-claude-glow",
@@ -23,7 +24,7 @@ export function PricingPill({ b }: { b: Breeder }) {
   const p = pricing(b);
   const phrase = pricingPhrase(b);
   if (!p || !phrase) return null;
-  return <span className={`rounded-full px-2 py-0.5 text-xs ${PRICING_CLS[p]}`}>{phrase}</span>;
+  return <span className={`rounded-sm px-1.5 py-0.5 text-xs ${PRICING_CLS[p]}`}>{phrase}</span>;
 }
 
 export function BreederCard({ b }: { b: Breeder }) {
@@ -65,7 +66,7 @@ export function BreederCard({ b }: { b: Breeder }) {
       <div className="flex flex-wrap gap-1.5">
         <PricingPill b={b} />
         {stageLine ? (
-          <span className="rounded-full bg-ink-800 px-2 py-0.5 text-xs text-ink-300">{stageLine}</span>
+          <span className="rounded-sm bg-ink-800 px-1.5 py-0.5 text-xs text-ink-300">{stageLine}</span>
         ) : null}
       </div>
 
@@ -74,8 +75,8 @@ export function BreederCard({ b }: { b: Breeder }) {
           {f.map((x) => (
             <div key={x.trait} className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-xs">
               <span className="truncate text-ink-300">{x.trait}</span>
-              <span className="h-1.5 overflow-hidden rounded-full bg-ink-800">
-                <span className="block h-full rounded-full bg-claude/60" style={{ width: `${Math.max(x.share * 100, 4)}%` }} />
+              <span className="h-1 overflow-hidden bg-ink-800">
+                <span className="bar-fill block h-full" style={{ width: `${Math.max(x.share * 100, 4)}%` }} />
               </span>
               <span className="tabular-nums text-ink-500">{Math.round(x.share * 100)}%</span>
             </div>
@@ -95,16 +96,17 @@ export function PricingSplit({ b }: { b: Breeder }) {
   const total = b.nLow + b.nTypical + b.nHigh;
   if (total < 5) return null;
   const parts = [
-    { key: "low", label: "Low for its kind", n: b.nLow, cls: "bg-claude/70" },
-    { key: "typical", label: "Typical price", n: b.nTypical, cls: "bg-ink-500" },
-    { key: "high", label: "High for its kind", n: b.nHigh, cls: "bg-ink-600" },
+    // One ordered scale from the series gradient: low is brightest.
+    { key: "low", label: "Low for its kind", n: b.nLow, color: seriesColor(0, 3) },
+    { key: "typical", label: "Typical price", n: b.nTypical, color: seriesColor(1, 3) },
+    { key: "high", label: "High for its kind", n: b.nHigh, color: seriesColor(2, 3) },
   ];
   return (
     <div className="space-y-3">
-      <div className="flex h-4 overflow-hidden rounded-full" role="img" aria-label={parts.map((p) => `${p.label}: ${p.n}`).join(", ")}>
+      <div className="flex h-3 overflow-hidden" role="img" aria-label={parts.map((p) => `${p.label}: ${p.n}`).join(", ")}>
         {parts.map((p) =>
           p.n ? (
-            <span key={p.key} className={`${p.cls} h-full border-r-2 border-ink-850 last:border-r-0`} style={{ width: `${(p.n / total) * 100}%` }} />
+            <span key={p.key} className="h-full border-r-2 border-ink-850 last:border-r-0" style={{ width: `${(p.n / total) * 100}%`, background: p.color }} />
           ) : null,
         )}
       </div>
@@ -112,7 +114,7 @@ export function PricingSplit({ b }: { b: Breeder }) {
         {parts.map((p) => (
           <div key={p.key}>
             <div className="flex items-center gap-1.5 text-ink-300">
-              <span className={`h-2 w-2 rounded-full ${p.cls}`} />
+              <span className="h-2 w-2 rounded-[1px]" style={{ background: p.color }} />
               {p.label}
             </div>
             <div className="tabular-nums text-ink-50">

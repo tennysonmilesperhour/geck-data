@@ -7,9 +7,9 @@
 import { useState } from "react";
 import type { MonthRow } from "@/lib/simple/data";
 import { MIN_PRICED, fmtMonth } from "@/lib/simple/trend";
+import { LINE } from "@/components/charts/series";
 
-
-const SLOT1 = "rgb(var(--chart-1))";
+const SLOT1 = "rgb(var(--series-a))";
 const SURFACE = "rgb(var(--ink-850))";
 const GRID = "rgb(var(--ink-700))";
 const MUTED = "rgb(var(--ink-400))";
@@ -72,11 +72,11 @@ export function MonthlyChart({ rows, kind }: { rows: MonthRow[]; kind: "price" |
       {kind === "price" ? (
         <div className="flex flex-wrap gap-4 text-sm text-ink-300" aria-hidden="true">
           <span className="inline-flex items-center gap-2">
-            <span className="h-0.5 w-5 rounded-full" style={{ background: SLOT1 }} />
+            <span className="h-[2px] w-4" style={{ background: SLOT1 }} />
             Middle asking price
           </span>
           <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-5 rounded-sm" style={{ background: SLOT1, opacity: 0.25 }} />
+            <span className="h-3 w-4" style={{ background: SLOT1, opacity: 0.18 }} />
             Middle half of prices
           </span>
         </div>
@@ -141,35 +141,37 @@ export function MonthlyChart({ rows, kind }: { rows: MonthRow[]; kind: "price" |
                       <>
                         <polygon
                           fill={SLOT1}
-                          opacity={0.18}
+                          opacity={0.12}
                           points={[
                             ...run.map((i) => `${cx(i)},${y(rows[i].p75 ?? rows[i].p50!)}`),
                             ...[...run].reverse().map((i) => `${cx(i)},${y(rows[i].p25 ?? rows[i].p50!)}`),
                           ].join(" ")}
                         />
                         <polyline
-                          fill="none"
+                          {...LINE}
                           stroke={SLOT1}
-                          strokeWidth={2}
-                          strokeLinejoin="round"
                           points={run.map((i) => `${cx(i)},${y(rows[i].p50!)}`).join(" ")}
                         />
                       </>
                     ) : null}
-                    {run.map((i) => (
-                      <circle key={i} cx={cx(i)} cy={y(rows[i].p50!)} r={hover === i ? 5.5 : 4} fill={SLOT1} stroke={SURFACE} strokeWidth={2} />
-                    ))}
+                    {run
+                      .filter((i) => i === hover || run.length === 1)
+                      .map((i) => (
+                        <rect key={i} x={cx(i) - 3} y={y(rows[i].p50!) - 3} width={6} height={6} fill={SLOT1} stroke={SURFACE} strokeWidth={1} />
+                      ))}
                   </g>
                 ))
               : rows.map((r, i) => {
                   if (!r.covered || r.estPosted <= 0) return null;
                   const top = y(r.estPosted);
                   const x0 = cx(i) - barW / 2;
-                  const rad = Math.min(4, barW / 2, bottom - top);
                   return (
-                    <path
+                    <rect
                       key={r.month}
-                      d={`M${x0},${bottom} V${top + rad} Q${x0},${top} ${x0 + rad},${top} H${x0 + barW - rad} Q${x0 + barW},${top} ${x0 + barW},${top + rad} V${bottom} Z`}
+                      x={x0}
+                      y={top}
+                      width={barW}
+                      height={bottom - top}
                       fill={SLOT1}
                       opacity={hover == null || hover === i ? 1 : 0.55}
                     />

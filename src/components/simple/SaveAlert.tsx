@@ -81,7 +81,9 @@ function SaveAlertInner({
       disabled={status === "saving" || authed === null}
       className={`${base} border-ink-600 text-ink-100 hover:border-ink-500 hover:bg-ink-800`}
     >
-      <span aria-hidden="true">🔔</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16zM10 20.5a2 2 0 0 0 4 0" />
+      </svg>
       {status === "saving" ? "Saving" : label}
       {status === "error" ? <span className="text-danger">Try again</span> : null}
     </button>
