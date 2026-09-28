@@ -52,6 +52,7 @@ from urllib.parse import urljoin
 import requests
 
 from lib.intl_markets import (
+    cursor_param_names,
     find_server_action_id,
     kr_listing_flags,
     parse_cafe24_list,
@@ -206,18 +207,25 @@ def discover_feedle_action_id(html: str, max_chunks: int = 40) -> str:
     404 while reporting nothing.
     """
     match = GETPETLIST_HASH_RE.search(html)
-    if match:
-        return match.group(1)
+    found: Optional[str] = match.group(1) if match else None
+    # Read every chunk: the action is declared in one, but the request's
+    # field names (the paging cursor among them) are set in another.
     for url in script_srcs(html, FEEDLE_ORIGIN)[:max_chunks]:
         try:
             js = polite_get(url).text
         except Exception as exc:  # noqa: BLE001
             log(f"WARN feedle chunk {url}: {exc}")
             continue
-        found = find_server_action_id(js, "getPetList")
-        if found:
-            log(f"feedle getPetList action found in {url.rsplit('/', 1)[-1]}")
-            return found
+        for name in cursor_param_names(js):
+            if name not in FEEDLE_CURSOR_PARAMS:
+                FEEDLE_CURSOR_PARAMS.append(name)
+        if not found:
+            found = find_server_action_id(js, "getPetList")
+            if found:
+                log(f"feedle getPetList action found in {url.rsplit('/', 1)[-1]}")
+    log(f"feedle cursor names in JS: {FEEDLE_CURSOR_PARAMS or 'none'}")
+    if found:
+        return found
     log("WARN feedle getPetList action not found in JS; using the stored fallback")
     return FEEDLE_ACTION_FALLBACK
 
@@ -510,6 +518,10 @@ FEEDLE_CURSOR_KEYS = (
     "createdAtCursor",
     "cursor",
 )
+# Request field names ending in "Cursor" found in Feedle's JS, filled in by
+# discover_feedle_action_id. The cursor is sent under each of them.
+FEEDLE_CURSOR_PARAMS: list[str] = []
+
 # Set when a Feedle walk ends well short of the catalog count, so the run
 # is recorded as partial instead of success.
 FEEDLE_SHORTFALL: list[str] = []
@@ -568,6 +580,8 @@ def _feedle_pages(
             # the one it knows.
             payload["createdAtCursor"] = cursor
             payload["listedAtOnHomePageCursor"] = cursor
+            for name in FEEDLE_CURSOR_PARAMS:
+                payload[name] = cursor
         if use_pages:
             payload["page"] = page
         log(f"POST getPetList page={page} cursor={cursor or 'start'}")

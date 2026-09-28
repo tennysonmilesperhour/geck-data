@@ -64,6 +64,24 @@ def find_server_action_id(js: str, name: str) -> Optional[str]:
     return None
 
 
+_CURSOR_KEY_RE = re.compile(r'(?:[{,]\s*|["\'])([a-z][A-Za-z0-9_]*[Cc]ursor)["\']?\s*:')
+
+
+def cursor_param_names(js: str) -> list[str]:
+    """Object keys ending in "cursor" in a JS chunk, price cursors excluded.
+
+    Feedle renames its paging field between deploys (createdAtCursor, then a
+    listed-at cursor). Reading the names from the live JS keeps the scraper
+    in step without a code change.
+    """
+    out: list[str] = []
+    for name in _CURSOR_KEY_RE.findall(js or ""):
+        if "price" in name.lower() or name in out:
+            continue
+        out.append(name)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Cafe24 (Korean shops)
 # ---------------------------------------------------------------------------

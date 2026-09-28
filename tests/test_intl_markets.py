@@ -159,3 +159,9 @@ class FeedleCursorTests(unittest.TestCase):
         self.assertEqual(scp.feedle_next_cursor({"listed_at_on_home_page_cursor": "b", "id": "1"}, {}), "b")
         self.assertEqual(scp.feedle_next_cursor({"created_at": "x"}, {"nextCursor": "n"}), "n")
         self.assertIsNone(scp.feedle_next_cursor({"id": "1"}, {"data": []}))
+
+
+class CursorNameTests(unittest.TestCase):
+    def test_finds_cursor_keys(self) -> None:
+        js = 'e={sort:t,sold:n,listedAtOnHomePageCursor:r,priceCursor:o};f({"listed_at_on_home_page_cursor":1})'
+        self.assertEqual(im.cursor_param_names(js), ["listedAtOnHomePageCursor", "listed_at_on_home_page_cursor"])
