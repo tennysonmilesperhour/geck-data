@@ -1,7 +1,8 @@
 """Ingest crested gecko markets outside MorphMarket into cross_platform_listings.
 
 Korea: Feedle (the main Korean reptile marketplace) and Korean breeder
-shops on Cafe24. Europe: terraristik.com classifieds. US: TikisGeckos and
+shops on Cafe24 and imweb. Japan: Repsuki, a search site listing stock
+from Japanese reptile shops. Europe: terraristik.com classifieds. US: TikisGeckos and
 Altitude Exotics. Each run also stores exchange rates (fx_rates) and one
 price snapshot per listing per day (cross_platform_observations) so the
 Markets page can show trends.
@@ -52,7 +53,11 @@ from urllib.parse import urljoin
 import requests
 
 from lib.intl_markets import (
+    JP_CRESTED_RE,
     cursor_param_names,
+    jp_listing_flags,
+    parse_imweb_list,
+    parse_repsuki_list,
     find_server_action_id,
     kr_listing_flags,
     parse_cafe24_list,
@@ -653,8 +658,15 @@ KR_SHOPS: tuple[tuple[str, str, str], ...] = (
     ("newrun", "New Run Reptile", "https://newrunreptile.co.kr/product/list.html?cate_no=197&page={page}"),
     ("thezoo", "The Zoo", "https://xn--9m1b023b.com/product/list.html?cate_no=90&page={page}"),
     ("jbr", "Jungbreu Insect Harmony", "https://xn--699at5i1sh8pu9yi.com/product/list.html?cate_no=162&page={page}"),
+    ("crepax", "Crepax", "https://katc2022.cafe24.com/product/list.html?cate_no=42&page={page}"),
+    ("themonster", "The Monster", "https://themonster.co.kr/product/list.html?cate_no=109&page={page}"),
 )
 KR_SHOP_MAX_PAGES = 20
+
+# Korean shops on imweb, not Cafe24: (slug, shop name, product list URL).
+KR_IMWEB_SHOPS: tuple[tuple[str, str, str], ...] = (
+    ("hellogecko", "Hello Gecko", "https://hellogcekogood.com/"),
+)
 
 
 def scrape_kr_shops(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
@@ -711,6 +723,112 @@ def scrape_kr_shops(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str
                 )
             time.sleep(page_sleep())
         log(f"{shop}: kept {kept}, skipped {skipped} (supplies or unpriced)")
+    for slug, shop, url in KR_IMWEB_SHOPS:
+        log(f"GET {url}")
+        try:
+            items = parse_imweb_list(polite_get(url).text, url)
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN {shop}: {exc}")
+            continue
+        kept = 0
+        for item in items:
+            flags = kr_listing_flags(item["name"])
+            if not flags["is_animal"]:
+                continue
+            kept += 1
+            collected.append(
+                (
+                    {
+                        "platform": "kr_shops",
+                        "external_id": f"{slug}:{item['product_no']}",
+                        "title": item["name"],
+                        "description": None,
+                        "price": item["price_krw"],
+                        "price_usd_equivalent": None,
+                        "currency": "KRW",
+                        "seller_name": shop,
+                        "seller_location": "Korea",
+                        "url": item["url"],
+                        "traits_raw": item["name"],
+                        "species": CRESTED_SPECIES,
+                        "last_seen_at": observed,
+                        "payload": {
+                            "shop": slug,
+                            "sold": item["sold_out"],
+                            "sex": flags["sex"],
+                            "is_group_lot": flags["is_group_lot"],
+                            "exclude_from_combo_arb": flags["is_group_lot"],
+                            "fetch_method": "imweb_list",
+                        },
+                    },
+                    None,
+                )
+            )
+        log(f"{shop}: kept {kept}")
+    return collected
+
+
+# ---------------------------------------------------------------------------
+# Repsuki (Japan)
+# ---------------------------------------------------------------------------
+
+REPSUKI_LIST = "https://repsuki.com/category/gecko/crested-gecko"
+
+
+def scrape_repsuki(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
+    """Every crested gecko Repsuki lists, across its Japanese shops."""
+    collected: list[tuple[dict[str, Any], Optional[str]]] = []
+    seen: set[str] = set()
+    observed = now_iso()
+    skipped = 0
+    for page in range(1, min(limit_pages, 40) + 1):
+        url = REPSUKI_LIST if page == 1 else f"{REPSUKI_LIST}?page={page}"
+        log(f"GET {url}")
+        try:
+            items = parse_repsuki_list(polite_get(url).text)
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN repsuki page {page}: {exc}")
+            break
+        new = [i for i in items if i["id"] not in seen]
+        if not new:
+            break
+        for item in new:
+            seen.add(item["id"])
+            text = f"{item['species']} {item['name']}"
+            if not JP_CRESTED_RE.search(text) or not item["price_jpy"]:
+                skipped += 1
+                continue
+            flags = jp_listing_flags(text)
+            collected.append(
+                (
+                    {
+                        "platform": "repsuki",
+                        "external_id": item["id"],
+                        "title": item["name"],
+                        "description": None,
+                        "price": item["price_jpy"],
+                        "price_usd_equivalent": None,
+                        "currency": "JPY",
+                        "seller_name": item["shop"],
+                        "seller_location": "Japan",
+                        "url": item["url"],
+                        "traits_raw": item["name"],
+                        "species": CRESTED_SPECIES,
+                        "last_seen_at": observed,
+                        "payload": {
+                            "shop": item["shop"],
+                            "sold": item["sold"],
+                            "sex": flags["sex"],
+                            "is_group_lot": flags["is_group_lot"],
+                            "exclude_from_combo_arb": flags["is_group_lot"],
+                            "fetch_method": "repsuki_list",
+                        },
+                    },
+                    None,
+                )
+            )
+        time.sleep(page_sleep())
+    log(f"repsuki: kept {len(collected)} of {len(seen)} listings, skipped {skipped}")
     return collected
 
 
@@ -1200,7 +1318,7 @@ def print_dry_run(pairs: list[tuple[dict[str, Any], Optional[str]]]) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
-SOURCES = ("all", "feedle_air", "feedle_kr", "tikis", "altitude", "kr_shops", "terraristik")
+SOURCES = ("all", "feedle_air", "feedle_kr", "tikis", "altitude", "kr_shops", "terraristik", "repsuki")
 
 
 def apply_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -1234,6 +1352,7 @@ def collect(source: str, pages: int) -> list[tuple[dict[str, Any], Optional[str]
     want_altitude = source in ("all", "altitude")
     want_kr_shops = source in ("all", "kr_shops")
     want_terra = source in ("all", "terraristik")
+    want_repsuki = source in ("all", "repsuki")
     pairs: list[tuple[dict[str, Any], Optional[str]]] = []
     if want_feedle:
         feedle_pairs = scrape_feedle(pages)
@@ -1250,6 +1369,7 @@ def collect(source: str, pages: int) -> list[tuple[dict[str, Any], Optional[str]
     for wanted, fn, name in (
         (want_kr_shops, scrape_kr_shops, "kr_shops"),
         (want_terra, scrape_terraristik, "terraristik"),
+        (want_repsuki, scrape_repsuki, "repsuki"),
     ):
         if not wanted:
             continue
@@ -1330,6 +1450,7 @@ def main() -> int:
         ("cross_platform_shops", ("tikis_geckos", "altitude_exotics"), args.source in ("all", "tikis", "altitude")),
         ("cross_platform_kr_shops", ("kr_shops",), args.source in ("all", "kr_shops")),
         ("cross_platform_terraristik", ("terraristik",), args.source in ("all", "terraristik")),
+        ("cross_platform_repsuki", ("repsuki",), args.source in ("all", "repsuki")),
     )
     exit_code = 0
     for scrape_type, platforms, wanted in groups:

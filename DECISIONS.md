@@ -7,6 +7,29 @@ deferred.
 
 ---
 
+## 2026-09-28: Japan and more Korean shops on Markets
+
+- Japan comes from Repsuki (repsuki.com), a reptile search site listing
+  stock from Japanese shops: 182 crested geckos from 25 shops, middle price
+  25,000 yen, when probed. Each card carries the morph in katakana, a yen
+  price and the shop. Scraping those shops one by one as well would count
+  animals twice, so Repsuki is the only Japanese source. Prices include
+  consumption tax, as Japanese listings must.
+- New Korean shops: Crepax (katc2022.cafe24.com, category 42; its own
+  domain no longer resolves), The Monster (Cafe24, category 109) and Hello
+  Gecko (imweb, a different shop platform, parsed separately). Crefactory's
+  domain is dead.
+- Japanese morph names (リリーホワイト, エクストリームハーレクイン, セーブル ...)
+  are aliases in market_trait_alias, and match_traits matches katakana
+  anywhere in a title, as it does Korean. クリームシクル is blocked from
+  matching Cream, like 크림시클.
+- The pages were read through a new probe workflow
+  (probe-market-pages.yml), which prints link shapes, prices and markup
+  from GitHub's runners because the build sandbox cannot reach these sites.
+  Parsers were then written against that real markup.
+
+---
+
 ## 2026-09-27: Markets page (US, South Korea, Europe, Canada) and morph comparison
 
 Context: Tennyson asked to compare trends across many morphs and for an

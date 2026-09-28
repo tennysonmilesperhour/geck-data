@@ -165,3 +165,53 @@ class CursorNameTests(unittest.TestCase):
     def test_finds_cursor_keys(self) -> None:
         js = 'e={sort:t,sold:n,listedAtOnHomePageCursor:r,priceCursor:o};f({"listed_at_on_home_page_cursor":1})'
         self.assertEqual(im.cursor_param_names(js), ["listedAtOnHomePageCursor", "listed_at_on_home_page_cursor"])
+
+
+REPSUKI = (
+    '<div class="grid"><a class="block bg-white rounded-xl" href="/reptile/r_45568_7262">'
+    '<div class="aspect-square"><img alt="クレステッドゲッコー エクストリームハーレクイン"/></div>'
+    '<div class="p-3 pb-5"><div class="mb-1"><h2><span class="text-xs text-repsuki-gray block truncate">クレステッドゲッコー</span>'
+    '<span class="text-sm text-repsuki-text block break-words">エクストリームハーレクイン</span></h2></div>'
+    '<div class="text-repsuki-red font-semibold text-base">18,000<span class="text-xs"> 円</span></div>'
+    '<div class="text-xs text-repsuki-gray flex items-center gap-1 mt-2"><svg viewBox="0 0 20 20"><path d="M3"></path></svg>'
+    '<span class="truncate">ファニーテール</span></div></div></a>'
+    '<a class="block" href="/reptile/r_45568_7271"><div class="p-3"><div class="mb-1"><h2><span>クレステッドゲッコー</span>'
+    '<span>リリーホワイト ♀</span></h2></div><div>298,000<span> 円</span></div>'
+    '<div><span class="truncate">WEASEL</span></div></div></a></div>'
+)
+
+IMWEB = (
+    '<div class="item-thumbs"><a href="/shop_view/?idx=139" class="_fade_link">'
+    '<div class="item-pay"><div><h2 style="font-weight:bold"> M.01 릴리화이트 💙 </h2>'
+    '<p class="pay no-margin" style="">250,000원</p></div></div></a></div>'
+    '<div class="item-detail"><a href="/shop_view/?idx=139">again</a></div>'
+    '<div class="item-thumbs"><a href="/shop_view/?idx=140"><h2> F.02 할리퀸 </h2>'
+    '<p class="pay no-margin">200,000원</p><span>품절</span></a></div>'
+)
+
+
+class RepsukiTests(unittest.TestCase):
+    def test_cards(self) -> None:
+        items = im.parse_repsuki_list(REPSUKI)
+        self.assertEqual([i["id"] for i in items], ["r_45568_7262", "r_45568_7271"])
+        self.assertEqual(items[0]["name"], "エクストリームハーレクイン")
+        self.assertEqual(items[0]["price_jpy"], 18000)
+        self.assertEqual(items[0]["shop"], "ファニーテール")
+        self.assertEqual(items[0]["url"], "https://repsuki.com/reptile/r_45568_7262")
+        self.assertEqual(items[1]["price_jpy"], 298000)
+        self.assertEqual(im.jp_listing_flags(items[1]["name"])["sex"], "female")
+
+    def test_flags(self) -> None:
+        self.assertTrue(im.jp_listing_flags("ハーレクイン ペア")["is_group_lot"])
+        self.assertEqual(im.jp_listing_flags("ハーレクイン♂")["sex"], "male")
+
+
+class ImwebTests(unittest.TestCase):
+    def test_cards(self) -> None:
+        items = im.parse_imweb_list(IMWEB, "https://hellogcekogood.com/")
+        self.assertEqual([i["product_no"] for i in items], ["139", "140"])
+        self.assertEqual(items[0]["name"], "M.01 릴리화이트")
+        self.assertEqual(items[0]["price_krw"], 250000)
+        self.assertFalse(items[0]["sold_out"])
+        self.assertTrue(items[1]["sold_out"])
+        self.assertEqual(items[0]["url"], "https://hellogcekogood.com/shop_view/?idx=139")

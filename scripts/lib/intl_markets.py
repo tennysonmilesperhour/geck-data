@@ -261,3 +261,101 @@ def parse_frankfurter(payload: dict[str, Any], wanted: tuple[str, ...]) -> dict[
         if value > 0:
             out[cur] = value
     return out
+
+
+# ---------------------------------------------------------------------------
+# Repsuki (Japan). A reptile search site that lists stock from Japanese
+# shops (182 crested geckos from 25 shops in Sep 2026). Each card links
+# /reptile/r_<shop>_<id> and holds the species, the morph, a yen price and
+# the shop name.
+# ---------------------------------------------------------------------------
+
+_REPSUKI_CARD_RE = re.compile(r'<a\b[^>]*href="(/reptile/(r_\d+_\d+))"[^>]*>(.*?)</a>', re.S)
+_REPSUKI_H2_RE = re.compile(r"<h2>(.*?)</h2>", re.S)
+_REPSUKI_PRICE_RE = re.compile(r"([0-9][0-9,]{2,})\s*(?:<[^>]+>\s*)*円")
+_REPSUKI_SHOP_RE = re.compile(r'<span class="truncate">([^<]+)</span>\s*</div>\s*</div>\s*$', re.S)
+JP_SOLD_RE = re.compile(r"売約済|売り切れ|SOLD\s*OUT|商談中", re.I)
+
+
+def parse_repsuki_list(html: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for href, rid, body in _REPSUKI_CARD_RE.findall(html or ""):
+        if rid in seen:
+            continue
+        seen.add(rid)
+        h2 = _REPSUKI_H2_RE.search(body)
+        spans = [ _text(x) for x in re.findall(r"<span[^>]*>(.*?)</span>", h2.group(1), re.S)] if h2 else []
+        species = spans[0] if spans else ""
+        name = " ".join(s for s in spans[1:] if s) or species
+        price_m = _REPSUKI_PRICE_RE.search(body)
+        shop_m = _REPSUKI_SHOP_RE.search(body)
+        out.append(
+            {
+                "id": rid,
+                "url": "https://repsuki.com" + href,
+                "species": species,
+                "name": name,
+                "price_jpy": int(price_m.group(1).replace(",", "")) if price_m else None,
+                "shop": html_lib.unescape(shop_m.group(1)).strip() if shop_m else None,
+                "sold": bool(JP_SOLD_RE.search(_text(body))),
+            }
+        )
+    return out
+
+
+JP_CRESTED_RE = re.compile(r"クレステッド|オウカンミカドヤモリ|crested", re.I)
+JP_GROUP_RE = re.compile(r"ペア|トリオ|セット|[2-9]\s*匹|まとめ", re.I)
+JP_SEX_RE = (
+    (re.compile(r"♂|オス|雄", re.I), "male"),
+    (re.compile(r"♀|メス|雌", re.I), "female"),
+)
+
+
+def jp_listing_flags(text: str) -> dict[str, Any]:
+    sex = None
+    for rx, value in JP_SEX_RE:
+        if rx.search(text or ""):
+            sex = value
+            break
+    return {"is_group_lot": bool(JP_GROUP_RE.search(text or "")), "sex": sex}
+
+
+# ---------------------------------------------------------------------------
+# imweb (Korean shops such as Hello Gecko). Product cards link
+# /shop_view/?idx=<n>; the name is in an <h2> and the price in class "pay".
+# ---------------------------------------------------------------------------
+
+_IMWEB_LINK_RE = re.compile(r'href="(/shop_view/\?idx=(\d+))"')
+_IMWEB_H2_RE = re.compile(r"<h2[^>]*>(.*?)</h2>", re.S)
+_IMWEB_PAY_RE = re.compile(r'class="pay[^"]*"[^>]*>\s*([0-9][0-9,]*)\s*원')
+
+
+def parse_imweb_list(html: str, base_url: str) -> list[dict[str, Any]]:
+    html = html or ""
+    starts: list[tuple[int, str, str]] = []
+    seen: set[str] = set()
+    for m in _IMWEB_LINK_RE.finditer(html):
+        if m.group(2) in seen:
+            continue
+        seen.add(m.group(2))
+        starts.append((m.start(), m.group(2), urljoin(base_url, html_lib.unescape(m.group(1)))))
+    out: list[dict[str, Any]] = []
+    for i, (start, idx, url) in enumerate(starts):
+        end = starts[i + 1][0] if i + 1 < len(starts) else min(len(html), start + 5000)
+        seg = html[start:end]
+        h2 = _IMWEB_H2_RE.search(seg)
+        pay = _IMWEB_PAY_RE.search(seg)
+        name = re.sub(r"[^\w\s가-힣./()%+-]", "", _text(h2.group(1))).strip() if h2 else ""
+        if not name or not pay:
+            continue
+        out.append(
+            {
+                "product_no": idx,
+                "name": name,
+                "price_krw": int(pay.group(1).replace(",", "")),
+                "sold_out": bool(_SOLD_OUT_RE.search(seg)),
+                "url": url,
+            }
+        )
+    return out

@@ -1,4 +1,4 @@
-// Crested gecko markets side by side: the US, South Korea, Europe, Canada
+// Crested gecko markets side by side: the US, South Korea, Japan, Europe, Canada
 // and the UK, all in US dollars. Leads with where prices differ enough to
 // matter (buy in one market, sell in another), then every morph in every
 // market, then how each market's prices move over time.
@@ -22,7 +22,7 @@ export const revalidate = 3600;
 export const metadata = {
   title: "Markets - Geck Inspect Market",
   description:
-    "Crested gecko asking prices in the US, South Korea, Europe and Canada, side by side in US dollars, with the morphs where the gap is big enough to trade.",
+    "Crested gecko asking prices in the US, South Korea, Japan, Europe and Canada, side by side in US dollars, with the morphs where the gap is big enough to trade.",
 };
 
 const NAME: Record<string, string> = Object.fromEntries(MARKETS.map((m) => [m.code, m.name]));
@@ -121,11 +121,13 @@ export default async function MarketsPage({ searchParams }: { searchParams: { t?
   const krExport = opportunities(grid, "KR", "export");
   const euImport = opportunities(grid, "EU", "import");
   const euExport = opportunities(grid, "EU", "export");
+  const jpImport = opportunities(grid, "JP", "import");
+  const jpExport = opportunities(grid, "JP", "export");
   const caImport = opportunities(grid, "CA", "import");
   const caExport = opportunities(grid, "CA", "export");
   const top = krImport[0];
 
-  const series: LineSeries[] = MARKETS.filter((m) => ["US", "KR", "EU"].includes(m.code))
+  const series: LineSeries[] = MARKETS.filter((m) => ["US", "KR", "JP", "EU"].includes(m.code))
     .map((m) => ({
       key: m.code,
       label: m.name,
@@ -145,7 +147,7 @@ export default async function MarketsPage({ searchParams }: { searchParams: { t?
   return (
     <div className="mx-auto max-w-5xl space-y-12">
       <PageIntro title="Markets">
-        Crested gecko asking prices in the United States, South Korea, Europe and Canada, side by side
+        Crested gecko asking prices in the United States, South Korea, Japan, Europe and Canada, side by side
         in US dollars. Where a morph asks much less in one market than another, there is room to buy
         there and sell here.
       </PageIntro>
@@ -203,6 +205,24 @@ export default async function MarketsPage({ searchParams }: { searchParams: { t?
         </div>
       </Section>
 
+      {jpImport.length || jpExport.length ? (
+        <Section
+          title="Japan"
+          note="Repsuki, a search site listing stock from Japanese reptile shops. Prices include Japanese consumption tax; shipping is not included."
+        >
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="min-w-0 space-y-2">
+              <h3 className="text-sm font-medium text-ink-200">Buy in Japan, sell in the US</h3>
+              <OppTable rows={jpImport} direction="import" slugOf={slugOf} />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <h3 className="text-sm font-medium text-ink-200">Buy in the US, sell in Japan</h3>
+              <OppTable rows={jpExport} direction="export" slugOf={slugOf} />
+            </div>
+          </div>
+        </Section>
+      ) : null}
+
       {euImport.length || euExport.length ? (
         <Section title="Europe" note="terraristik.com classifieds and MorphMarket listings in euros.">
           <div className="grid gap-6 lg:grid-cols-2">
@@ -238,7 +258,7 @@ export default async function MarketsPage({ searchParams }: { searchParams: { t?
         note={`Middle asking price in US dollars. "Few" means under ${MIN_N} listings. Blue is cheaper than the US, amber is pricier.`}
       >
         <div className="overflow-x-auto rounded-xl border border-ink-700">
-          <table className="plain w-full min-w-[44rem] text-left text-sm">
+          <table className="plain w-full min-w-[50rem] text-left text-sm">
             <thead className="bg-ink-850 text-ink-400">
               <tr>
                 <th className="px-3 py-2 font-medium">Morph</th>
@@ -333,7 +353,8 @@ export default async function MarketsPage({ searchParams }: { searchParams: { t?
           </p>
           <p>
             Sources: MorphMarket (US, Canada, Europe, UK), Feedle and Korean breeder shops such as Gecko
-            Village and New Run Reptile (South Korea), and terraristik.com classifieds (Europe). Prices
+            Village, New Run Reptile, Crepax, The Monster and Hello Gecko (South Korea), Repsuki, which
+            lists stock from Japanese reptile shops (Japan), and terraristik.com classifieds (Europe). Prices
             convert to dollars at the rate stored with each scrape. More in{" "}
             <Link href="/methodology" className="underline hover:text-ink-50">
               how prices work

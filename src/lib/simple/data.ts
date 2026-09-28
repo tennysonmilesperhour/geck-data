@@ -633,11 +633,11 @@ export async function getMonthlyHistory(trait: string | null): Promise<MonthRow[
 }
 
 // ---------------------------------------------------------------------------
-// Markets: asking prices in the US, South Korea, Europe, Canada and the UK,
+// Markets: asking prices in the US, South Korea, Japan, Europe, Canada and the UK,
 // converted to USD at the latest stored exchange rate. See
 // supabase/migrations/20260927030000_markets.sql for the sources.
 
-export type MarketCode = "US" | "KR" | "EU" | "CA" | "UK" | "US_SHOPS";
+export type MarketCode = "US" | "KR" | "JP" | "EU" | "CA" | "UK" | "US_SHOPS";
 
 export type MarketCell = {
   market: MarketCode;

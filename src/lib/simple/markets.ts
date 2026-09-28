@@ -12,6 +12,7 @@ export type MarketMeta = {
 export const MARKETS: MarketMeta[] = [
   { code: "US", name: "United States", currency: "USD", sources: "MorphMarket" },
   { code: "KR", name: "South Korea", currency: "KRW", sources: "Feedle and Korean breeder shops" },
+  { code: "JP", name: "Japan", currency: "JPY", sources: "Repsuki (Japanese reptile shops)" },
   { code: "EU", name: "Europe", currency: "EUR", sources: "terraristik.com and MorphMarket" },
   { code: "CA", name: "Canada", currency: "CAD", sources: "MorphMarket" },
   { code: "UK", name: "United Kingdom", currency: "GBP", sources: "MorphMarket" },
