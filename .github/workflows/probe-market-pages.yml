@@ -1,0 +1,27 @@
+name: Probe market pages
+
+# Prints the structure of pages we want to scrape (links, prices, markup),
+# so a scraper can be written against real markup. The development
+# sandbox cannot reach these sites; GitHub's runners can. Writes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Space-separated URLs"
+        required: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - name: Probe
+        working-directory: scripts
+        env:
+          URLS: ${{ inputs.urls }}
+        run: python probe_pages.py $URLS
