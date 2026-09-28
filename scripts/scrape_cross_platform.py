@@ -503,7 +503,16 @@ def scrape_feedle(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]
 
 # Feedle renamed fields on its Sep 2026 redeploy. Try every name seen so
 # far for the paging cursor, newest first.
-FEEDLE_CURSOR_KEYS = ("created_at_cursor", "createdAtCursor", "cursor", "created_at", "createdAt")
+FEEDLE_CURSOR_KEYS = (
+    "listed_at_on_home_page_cursor",  # since the Sep 2026 redeploy
+    "listedAtOnHomePageCursor",
+    "created_at_cursor",
+    "createdAtCursor",
+    "cursor",
+)
+# Set when a Feedle walk ends well short of the catalog count, so the run
+# is recorded as partial instead of success.
+FEEDLE_SHORTFALL: list[str] = []
 
 
 def feedle_next_cursor(last: dict[str, Any], result: dict[str, Any]) -> Optional[str]:
@@ -545,7 +554,10 @@ def _feedle_pages(
             "lineage": None,
         }
         if cursor:
+            # Send the cursor under the old and new names; the server reads
+            # the one it knows.
             payload["createdAtCursor"] = cursor
+            payload["listedAtOnHomePageCursor"] = cursor
         log(f"POST getPetList page={page} cursor={cursor or 'start'}")
         try:
             result = feedle_get_pet_list(action_id, payload)
@@ -580,6 +592,8 @@ def _feedle_pages(
             log(f"feedle pet fields: {sorted(last.keys())}")
         next_cursor = feedle_next_cursor(last, result)
         if not next_cursor or next_cursor == cursor or new_on_page == 0:
+            if sold_flag is None and len(seen_ids) < 0.5 * (count or 0):
+                FEEDLE_SHORTFALL.append(f"read {len(seen_ids)} of {count} Feedle listings")
             if len(seen_ids) < (count or 0):
                 log(
                     f"WARN feedle stopped at {len(seen_ids)} of {count}: no usable "
@@ -1214,6 +1228,7 @@ def run_group(
     scrape_type: str,
     pairs: list[tuple[dict[str, Any], Optional[str]]],
     dry_run: bool,
+    shortfall: Optional[str] = None,
 ) -> tuple[int, int, int]:
     attempted = len(pairs)
     if dry_run:
@@ -1222,7 +1237,7 @@ def run_group(
     try:
         succeeded, failed = upsert_rows(supabase, pairs)
         status = "success"
-        if failed and succeeded:
+        if (failed and succeeded) or shortfall:
             status = "partial"
         elif failed and not succeeded:
             status = "failed"
@@ -1233,6 +1248,7 @@ def run_group(
             attempted=attempted,
             succeeded=succeeded,
             failed=failed,
+            error_message=shortfall,
         )
         return attempted, succeeded, failed
     except Exception as exc:
@@ -1290,7 +1306,8 @@ def main() -> int:
             exit_code = 1
             continue
         try:
-            run_group(supabase, scrape_type, group, False)
+            shortfall = "; ".join(FEEDLE_SHORTFALL) if scrape_type == "cross_platform_feedle" and FEEDLE_SHORTFALL else None
+            run_group(supabase, scrape_type, group, False, shortfall)
             record_observations(supabase, group)
         except Exception:
             traceback.print_exc()

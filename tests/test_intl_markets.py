@@ -156,6 +156,6 @@ class FeedleCursorTests(unittest.TestCase):
         import scrape_cross_platform as scp
 
         self.assertEqual(scp.feedle_next_cursor({"created_at_cursor": "a"}, {}), "a")
-        self.assertEqual(scp.feedle_next_cursor({"created_at": "2026-09-01T00:00:00Z"}, {}), "2026-09-01T00:00:00Z")
+        self.assertEqual(scp.feedle_next_cursor({"listed_at_on_home_page_cursor": "b", "id": "1"}, {}), "b")
         self.assertEqual(scp.feedle_next_cursor({"created_at": "x"}, {"nextCursor": "n"}), "n")
         self.assertIsNone(scp.feedle_next_cursor({"id": "1"}, {"data": []}))
