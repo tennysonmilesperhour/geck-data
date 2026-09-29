@@ -14,6 +14,7 @@ import "server-only";
 //   - Anything that fails to load returns an empty result instead of
 //     throwing, so one bad query never blanks a whole page.
 
+import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { slugifyTrait } from "@/lib/filters/schema";
 import type { SexClass, ValueGrid } from "./estimate";
@@ -119,9 +120,54 @@ const SOLD_LOOKBACK_DAYS = 730;
 // matching the SQL functions (coalesce(species, 'unknown')).
 const CRESTED = "species.is.null,species.in.(crested,unknown)";
 
+// Market data only changes when the hourly scrape and view refresh land, so
+// every read in this file goes through the Next.js data cache for 30 minutes
+// per set of inputs. Before 29 Sep 2026 nothing here was cached: the value
+// report reads its query string, which makes Next.js render it on every
+// request, and crawlers drove about 32,500 calls a day into each of the five
+// price functions plus 93,000 listing reads. Bursts pushed some of them past
+// the database's 3-second limit for signed-out requests, and those pages
+// rendered as "not enough data".
+const MARKET_CACHE_SECONDS = 1800;
+const MARKET_CACHE_TAG = "market-data";
+
+type ReadResult = { data: unknown; error: unknown; count?: number | null };
+
+/**
+ * Runs one Supabase read through the data cache, keyed by name and inputs.
+ * A failed read throws inside the cache so it is never stored, and comes
+ * back as { data: null, error } for the caller's existing fallback.
+ */
+async function cachedRead(
+  key: string,
+  input: unknown,
+  run: () => PromiseLike<ReadResult>,
+): Promise<ReadResult> {
+  try {
+    return await unstable_cache(
+      async () => {
+        const { data, error, count } = await run();
+        if (error) throw error;
+        return { data, error: null, count: count ?? null };
+      },
+      ["simple-data", key, JSON.stringify(input ?? null)],
+      { revalidate: MARKET_CACHE_SECONDS, tags: [MARKET_CACHE_TAG] },
+    )();
+  } catch (error) {
+    return { data: null, error, count: null };
+  }
+}
+
+function rpc(fn: string, args?: Record<string, unknown>): Promise<ReadResult> {
+  return cachedRead(`rpc:${fn}`, args, () => createPublicClient().rpc(fn, args));
+}
+
+/** These functions treat traits as a set, so sorting raises cache hits. */
+const traitSet = (traits: string[]) => [...traits].sort();
+
 export async function getMorphs(): Promise<Morph[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("morph_summary");
+    const { data, error } = await rpc("morph_summary");
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       trait: String(r.trait),
@@ -152,8 +198,8 @@ export function traitsFromSlugs(morphs: Morph[], slugs: string[]): Morph[] {
 
 export async function getAskingBand(traits: string[]): Promise<PriceBand | null> {
   try {
-    const { data, error } = await createPublicClient().rpc("asking_price_band", {
-      p_traits: traits,
+    const { data, error } = await rpc("asking_price_band", {
+      p_traits: traitSet(traits),
     });
     const r = (data as Array<Record<string, unknown>> | null)?.[0];
     if (error || !r || !Number(r.n)) return null;
@@ -175,8 +221,8 @@ export async function getAskingBand(traits: string[]): Promise<PriceBand | null>
 
 export async function getSoldBand(traits: string[]): Promise<PriceBand | null> {
   try {
-    const { data, error } = await createPublicClient().rpc("sold_price_band", {
-      p_traits: traits,
+    const { data, error } = await rpc("sold_price_band", {
+      p_traits: traitSet(traits),
       p_lookback_days: SOLD_LOOKBACK_DAYS,
       p_include_inferred: true,
     });
@@ -279,11 +325,14 @@ export async function getListings(
 
     const limit = q.limit ?? 24;
     const offset = q.offset ?? 0;
-    const { data, count, error } = await query.range(offset, offset + limit - 1);
+    const { data, count, error } = await cachedRead("listings", { ...q, status, sort, limit, offset }, () =>
+      query.range(offset, offset + limit - 1),
+    );
     if (error || !data) return { rows: [], total: 0 };
+    const rows = data as Array<Record<string, unknown>>;
     return {
-      rows: (data as Array<Record<string, unknown>>).map(toListing),
-      total: count ?? data.length,
+      rows: rows.map(toListing),
+      total: count ?? rows.length,
     };
   } catch {
     return { rows: [], total: 0 };
@@ -293,7 +342,7 @@ export async function getListings(
 /** Asking prices for a trait, for the little distribution chart. */
 export async function getAskingPrices(trait: string): Promise<number[]> {
   try {
-    const { data, error } = await createPublicClient()
+    const { data, error } = await cachedRead("asking-prices", trait, () => createPublicClient()
       .from("listings")
       .select("price")
       .or(CRESTED)
@@ -303,7 +352,7 @@ export async function getAskingPrices(trait: string): Promise<number[]> {
       .gt("price", 0)
       .lt("price", 100000)
       .contains("trait_array", [trait])
-      .limit(2000);
+      .limit(2000));
     if (error || !data) return [];
     return (data as Array<{ price: number | string }>)
       .map((r) => Number(r.price))
@@ -315,12 +364,12 @@ export async function getAskingPrices(trait: string): Promise<number[]> {
 
 export async function getBreeders(): Promise<Breeder[]> {
   try {
-    const { data, error } = await createPublicClient()
+    const { data, error } = await cachedRead("breeders", null, () => createPublicClient()
       .from("breeder_market_v")
       .select("*")
       .order("for_sale", { ascending: false })
       .order("sold", { ascending: false })
-      .limit(2000);
+      .limit(2000));
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => {
       const raw = decodeEntities(r.name as string | null)?.trim();
@@ -353,12 +402,12 @@ export async function getBreeders(): Promise<Breeder[]> {
 /** Newest time any listing was checked. The honest "data as of" stamp. */
 export async function getDataAsOf(): Promise<string | null> {
   try {
-    const { data } = await createPublicClient()
+    const { data } = await cachedRead("data-as-of", null, () => createPublicClient()
       .from("listings")
       .select("last_seen_at")
       .order("last_seen_at", { ascending: false, nullsFirst: false })
       .limit(1)
-      .maybeSingle();
+      .maybeSingle());
     return (data as { last_seen_at: string | null } | null)?.last_seen_at ?? null;
   } catch {
     return null;
@@ -373,7 +422,7 @@ export async function getDataAsOf(): Promise<string | null> {
 export async function getValueGrid(traits: string[]): Promise<ValueGrid> {
   const grid: ValueGrid = new Map();
   try {
-    const { data, error } = await createPublicClient().rpc("value_grid", { p_traits: traits });
+    const { data, error } = await rpc("value_grid", { p_traits: traitSet(traits) });
     if (error || !data) return grid;
     for (const r of data as Array<Record<string, unknown>>) {
       grid.set(`${r.age_class}|${r.sex_class}`, {
@@ -393,7 +442,7 @@ export type GrowthPoint = { bucket: number; label: string; sex: "all" | SexClass
 
 export async function getGrowthCurve(traits: string[]): Promise<GrowthPoint[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("growth_curve", { p_traits: traits });
+    const { data, error } = await rpc("growth_curve", { p_traits: traitSet(traits) });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       bucket: Number(r.bucket),
@@ -411,7 +460,7 @@ export type Upgrade = { trait: string; n: number; p50: number; baseN: number; ba
 
 export async function getTraitUpgrades(traits: string[]): Promise<Upgrade[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("trait_upgrades", { p_traits: traits });
+    const { data, error } = await rpc("trait_upgrades", { p_traits: traitSet(traits) });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>)
       .map((r) => ({
@@ -429,7 +478,7 @@ export async function getTraitUpgrades(traits: string[]): Promise<Upgrade[]> {
 
 export async function getBaseline(): Promise<{ n: number; p50: number | null }> {
   try {
-    const { data, error } = await createPublicClient().rpc("market_baseline");
+    const { data, error } = await rpc("market_baseline");
     const r = (data as Array<Record<string, unknown>> | null)?.[0];
     if (error || !r) return { n: 0, p50: null };
     return { n: Number(r.n ?? 0), p50: num(r.p50) };
@@ -453,7 +502,7 @@ export type DataHealth = {
 
 export async function getDataHealth(): Promise<DataHealth | null> {
   try {
-    const { data, error } = await createPublicClient().rpc("data_health");
+    const { data, error } = await rpc("data_health");
     const r = (data as Array<Record<string, unknown>> | null)?.[0];
     if (error || !r) return null;
     return {
@@ -478,11 +527,11 @@ export async function getDataHealth(): Promise<DataHealth | null> {
 
 export async function getListing(id: string): Promise<(Listing & { ageClass: string | null; sexClass: string | null; basis: string | null }) | null> {
   try {
-    const { data, error } = await createPublicClient()
+    const { data, error } = await cachedRead("listing", id, () => createPublicClient()
       .from("listing_market_mv")
       .select(`${LISTING_COLUMNS}, age_class, sex_class, basis`)
       .eq("listing_id", id)
-      .maybeSingle();
+      .maybeSingle());
     if (error || !data) return null;
     const r = data as Record<string, unknown>;
     return {
@@ -517,7 +566,7 @@ export async function getComparablePrices(opts: {
     const useSex = opts.basis === "trait_age_sex" || opts.basis === "market_age_sex";
     if (useAge && opts.ageClass) q = q.eq("age_class", opts.ageClass);
     if (useSex && opts.sexClass) q = q.eq("sex_class", opts.sexClass);
-    const { data, error } = await q;
+    const { data, error } = await cachedRead("comparable-prices", opts, () => q);
     if (error || !data) return [];
     return (data as Array<{ price: number | string }>).map((r) => Number(r.price)).filter(Number.isFinite);
   } catch {
@@ -549,7 +598,7 @@ export type TrendWeek = {
 
 export async function getMarketTrend(trait: string | null): Promise<TrendWeek[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("market_trend", { p_trait: trait });
+    const { data, error } = await rpc("market_trend", { p_trait: trait });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       week: String(r.week),
@@ -575,7 +624,7 @@ export type PricePoint = { at: string; price: number; currency: string | null };
 /** Every recorded price for one listing, oldest first, with repeats collapsed. */
 export async function getListingPriceHistory(id: string): Promise<PricePoint[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("listing_price_history", { p_listing_id: id });
+    const { data, error } = await rpc("listing_price_history", { p_listing_id: id });
     if (error || !data) return [];
     const out: PricePoint[] = [];
     for (const r of data as Array<Record<string, unknown>>) {
@@ -613,7 +662,7 @@ export type MonthRow = {
 
 export async function getMonthlyHistory(trait: string | null): Promise<MonthRow[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("monthly_history", { p_trait: trait });
+    const { data, error } = await rpc("monthly_history", { p_trait: trait });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       month: String(r.month),
@@ -651,7 +700,7 @@ export type MarketCell = {
 
 export async function getMarketCompare(min = 5): Promise<MarketCell[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("market_compare", { p_min: min });
+    const { data, error } = await rpc("market_compare", { p_min: min });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       market: String(r.market) as MarketCode,
@@ -671,12 +720,12 @@ export type FxRate = { currency: string; perUsd: number; asOf: string; source: s
 
 export async function getFxRates(): Promise<FxRate[]> {
   try {
-    const { data, error } = await createPublicClient()
+    const { data, error } = await cachedRead("fx-rates", null, () => createPublicClient()
       .from("fx_rates")
       .select("currency, per_usd, as_of, source")
-      .order("currency");
+      .order("currency"));
     if (error || !data) return [];
-    return data.map((r) => ({
+    return (data as Array<Record<string, unknown>>).map((r) => ({
       currency: String(r.currency),
       perUsd: Number(r.per_usd),
       asOf: String(r.as_of),
@@ -689,7 +738,7 @@ export async function getFxRates(): Promise<FxRate[]> {
 
 export async function getImportMarkup(): Promise<number | null> {
   try {
-    const { data, error } = await createPublicClient().rpc("feedle_import_markup");
+    const { data, error } = await rpc("feedle_import_markup");
     if (error) return null;
     return num(data);
   } catch {
@@ -701,7 +750,7 @@ export type MarketWeek = { market: MarketCode; week: string; n: number; p50: num
 
 export async function getMarketWeekly(trait: string | null): Promise<MarketWeek[]> {
   try {
-    const { data, error } = await createPublicClient().rpc("market_weekly", { p_trait: trait });
+    const { data, error } = await rpc("market_weekly", { p_trait: trait });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       market: String(r.market) as MarketCode,
@@ -720,7 +769,7 @@ export type TraitWeek = { trait: string; week: string; n: number; p50: number | 
 export async function getCompareTrends(traits: string[]): Promise<TraitWeek[]> {
   if (!traits.length) return [];
   try {
-    const { data, error } = await createPublicClient().rpc("compare_trends", { p_traits: traits.slice(0, 6) });
+    const { data, error } = await rpc("compare_trends", { p_traits: traits.slice(0, 6) });
     if (error || !data) return [];
     return (data as Array<Record<string, unknown>>).map((r) => ({
       trait: String(r.trait),
