@@ -1,10 +1,13 @@
 "use client";
-// Client-side telemetry. Writes to public.user_events + public.error_logs via
-// the anon key (both tables allow anon INSERT and only admins can read back —
-// see 0003_admin_analytics.sql).
+// Client-side telemetry. Writes to user_events and error_logs in the schema
+// the browser client uses (geck_data in production) with the anon key. Both
+// tables allow anon INSERT and only admins can read them back. The anon
+// INSERT grant went missing when the tables moved into geck_data on 4 Sep
+// 2026, so the log was empty from 3 to 30 Sep; the Geck Inspect migration
+// geck_data_visit_log_anon_insert restored it.
 //
 // We explicitly do NOT crash the app on telemetry failures. Every insert is
-// wrapped in try/catch and the promise is "fire-and-forget" — a user flow
+// wrapped in try/catch and the promise is "fire-and-forget": a user flow
 // continuing to work is always more important than a clean event stream.
 //
 // PostHog (if we ever add it) captures raw click/pageview noise. This module
@@ -14,10 +17,11 @@ import { createClient } from "@/lib/supabase/client";
 
 const SESSION_KEY = "geck_session_id";
 const THROTTLE_MS = 2000;
-const SOURCE = "geck-inspect";
+// Which app wrote the row. Geck Inspect writes to public.user_events itself.
+const SOURCE = "geck-data";
 
 // ----------------------------------------------------------------------------
-// Session id — one per browser tab session, stable across navigations within
+// Session id: one per browser tab session, stable across navigations within
 // that tab. Falls back to a sentinel if sessionStorage is unavailable (SSR,
 // private mode lockdown).
 // ----------------------------------------------------------------------------
@@ -36,7 +40,7 @@ function getSessionId(): string {
 }
 
 // ----------------------------------------------------------------------------
-// Throttle — drop repeat events for 2s. Specifically targets double-fire
+// Throttle: drop repeat events for 2s. Specifically targets double-fire
 // loops (React StrictMode double-invokes, effects that re-run on state
 // changes, etc.). Keyed by name + first 80 chars of properties.
 // ----------------------------------------------------------------------------
@@ -60,7 +64,7 @@ async function currentEmail(): Promise<string | null> {
 }
 
 // ----------------------------------------------------------------------------
-// trackEvent — primary instrumentation entry point.
+// trackEvent: primary instrumentation entry point.
 //
 // Usage:
 //   trackEvent("upload_started", { filename, bytes });
@@ -102,7 +106,7 @@ export async function trackEvent(
 }
 
 // ----------------------------------------------------------------------------
-// trackPageView — thin convenience wrapper. Pass an explicit page name to
+// trackPageView: thin convenience wrapper. Pass an explicit page name to
 // override the pathname (useful for routes with dynamic segments you want
 // to collapse, e.g. trackPageView("/sellers/[id]")).
 // ----------------------------------------------------------------------------
@@ -113,7 +117,7 @@ export function trackPageView(pageName?: string): void {
 }
 
 // ----------------------------------------------------------------------------
-// reportError — insert into public.error_logs. Accepts an Error or a string.
+// reportError: insert into public.error_logs. Accepts an Error or a string.
 // Truncates message@1000 and stack@4000 to keep row sizes bounded.
 // ----------------------------------------------------------------------------
 type ErrorInfo = {
@@ -153,7 +157,7 @@ export async function reportError(
 }
 
 // ----------------------------------------------------------------------------
-// installGlobalErrorHandlers — idempotent. Wires window.error +
+// installGlobalErrorHandlers: idempotent. Wires window.error +
 // unhandledrejection so uncaught exceptions and rejected promises show up in
 // the admin Errors tab alongside React ErrorBoundary catches.
 // ----------------------------------------------------------------------------
