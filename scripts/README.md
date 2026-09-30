@@ -90,12 +90,12 @@ Other tunables:
 Cost per run:
 - Daily delta on a quiet day: 1 Decodo Premium+JS credit (~30s wall).
 - Daily delta on a busy day: 1 credit per page until the early-exit
-  fires; typically 1–3 credits.
+  fires; typically 1 to 3 credits.
 - Weekly full sweep: ~270 credits (~90 min wall).
 
 ### scrape_listings_api.py
 
-MorphMarket JSON API ingest. No Decodo. Two modes:
+MorphMarket JSON API ingest. No Decodo. Three modes:
 
 - **`--mode=windowed`** (default, Monday weekly workflow): crested geckos
   first-listed in the last `WINDOW_HOURS` (168). New-ad enrichment.
@@ -105,6 +105,20 @@ MorphMarket JSON API ingest. No Decodo. Two modes:
   Correlophus ciliatus / `/crested-geckos/` rows. After a complete
   walk, call `mark_unseen` and flip matching `market_listings` off
   live. A truncated page cap or an abort skips that sweep.
+- **`--mode=newest`** (every 30 minutes: `scrape-listings-newest.yml`, or
+  the Mac's second launchd job): the first pages of the newest-first list
+  (`MAX_PAGES`, default 3). Stops at the first page with no new crested
+  listing and reads details only for new or re-priced listings. Never
+  calls `mark_unseen` or bumps `last_seen_at`. All runs in a UTC day share
+  one `scrape_runs` row with `scrape_type = listings_newest`.
+
+After a run that wrote rows, each mode (and `scrape_cross_platform.py`)
+calls `geck_data.request_after_scrape` (`lib/after_scrape.py`). A database
+job picks the request up within 5 minutes, refreshes the market views and
+runs the watchlist matcher. A `newest` request refreshes only the two
+listing views (about 2 seconds); every other source runs the full refresh
+(about a minute). The scrapers never refresh the views themselves: the
+full refresh is close to the service role's 60-second statement timeout.
 
 `category=crested-geckos` is not a valid list filter. Traits come from
 `cached_traits` names only. Photos are `images[].image` originals.

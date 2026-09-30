@@ -389,10 +389,197 @@ class SkipUnchangedWalkTests(unittest.TestCase):
             patch.object(api, "write_image_and_gallery_rows"), \
             patch.object(api, "patch_canonical_extras"), \
             patch.object(api, "mark_unseen_if_safe", return_value=False), \
+            patch.object(api, "request_after_scrape"), \
             patch.object(api.time, "sleep"):
             self.assertEqual(api.main(), 0)
         self.assertEqual(touched, ["1"])
         self.assertEqual(fetched, ["2", "3"])
+
+
+class _RunsTable:
+    """Just enough of the supabase-py query builder for scrape_runs."""
+
+    def __init__(self, existing):
+        self.existing = existing
+        self.updates: list[dict] = []
+        self.inserts: list[dict] = []
+        self._op = None
+
+    def select(self, *_a, **_k):
+        self._op = "select"
+        return self
+
+    def eq(self, *_a, **_k):
+        return self
+
+    def gte(self, *_a, **_k):
+        return self
+
+    def order(self, *_a, **_k):
+        return self
+
+    def limit(self, *_a, **_k):
+        return self
+
+    def update(self, payload):
+        self._op = "update"
+        self.updates.append(payload)
+        return self
+
+    def insert(self, payload):
+        self._op = "insert"
+        self.inserts.append(payload)
+        return self
+
+    def execute(self):
+        if self._op == "select":
+            return mock.Mock(data=self.existing)
+        if self._op == "insert":
+            return mock.Mock(data=[{"id": 99}])
+        return mock.Mock(data=[])
+
+
+class _RunsSupabase:
+    def __init__(self, existing):
+        self.runs = _RunsTable(existing)
+
+    def table(self, name):
+        assert name == "scrape_runs", name
+        return self.runs
+
+
+class NewestCheckTests(unittest.TestCase):
+    def test_mode_names_and_no_sweep(self) -> None:
+        for raw in ("newest", "latest", "NEW"):
+            with self.subTest(raw=raw), patch.dict(os.environ, {"INGEST_MODE": raw}):
+                self.assertEqual(api.ingest_mode(), "newest")
+        self.assertFalse(
+            api.should_mark_unseen(mode="newest", complete=True, succeeded=500, min_writes=50)
+        )
+
+    def test_reuses_todays_run_row(self) -> None:
+        fake = _RunsSupabase(
+            [{"id": 7, "records_attempted": 10, "records_succeeded": 4, "records_failed": 1}]
+        )
+        run_id, before = api.start_newest_run(fake)
+        self.assertEqual(run_id, 7)
+        self.assertEqual(before, {"attempted": 10, "succeeded": 4, "failed": 1})
+        self.assertEqual(fake.runs.updates[0]["status"], "running")
+        self.assertEqual(fake.runs.inserts, [])
+
+    def test_opens_a_row_on_the_first_run_of_the_day(self) -> None:
+        fake = _RunsSupabase([])
+        run_id, before = api.start_newest_run(fake)
+        self.assertEqual(run_id, 99)
+        self.assertEqual(before, {"attempted": 0, "succeeded": 0, "failed": 0})
+        self.assertEqual(fake.runs.inserts[0]["scrape_type"], "listings_newest")
+
+    def _run(self, pages, known, before):
+        recent = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)).isoformat()
+        stored = {
+            lid: {"listing_id": lid, "price": price, "currency": "USD",
+                  "last_updated_at": recent, "is_active": True, "sold_at": None}
+            for lid, price in known.items()
+        }
+        fetched: list[str] = []
+        listed_pages: list[int] = []
+        requested: list[str] = []
+        finalised: dict = {}
+
+        def list_page(page, _fetcher):
+            listed_pages.append(page)
+            if page <= len(pages):
+                return {"results": pages[page - 1], "next": "more"}
+            return {"results": [], "next": None}
+
+        def detail(listing_id, _fetcher):
+            fetched.append(listing_id)
+            return {"id": listing_id, "price": 1, "owner": {"slug": "s", "name": "S"},
+                    "category": {"name": "Crested Geckos"}}
+
+        def lookup(_sb, ids):
+            return {i: stored[i] for i in ids if i in stored}
+
+        def finalise(_sb, run_id, **kwargs):
+            finalised.update(kwargs, run_id=run_id)
+
+        class Fetcher:
+            def close(self):
+                pass
+
+        env = {"INGEST_MODE": "newest", "SKIP_UNCHANGED": "1", "TRIGGERED_BY": "test"}
+        with patch.dict(os.environ, env), \
+            patch.object(api, "apply_cli_args", return_value=False), \
+            patch.object(api, "get_supabase", return_value=object()), \
+            patch.object(api, "start_newest_run", return_value=(5, before)), \
+            patch.object(api, "start_scrape_run") as catalog_run, \
+            patch.object(api, "finalise_scrape_run", side_effect=finalise), \
+            patch.object(api, "load_known_live") as load_all, \
+            patch.object(api, "load_known_for", side_effect=lookup), \
+            patch.object(api, "touch_seen") as touch, \
+            patch.object(api, "MorphMarketFetcher", return_value=Fetcher()), \
+            patch.object(api, "fetch_list_page", side_effect=list_page), \
+            patch.object(api, "fetch_detail", side_effect=detail), \
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)), \
+            patch.object(api, "write_image_and_gallery_rows"), \
+            patch.object(api, "patch_canonical_extras"), \
+            patch.object(api, "mark_unseen_after_complete_catalog") as sweep, \
+            patch.object(api, "request_after_scrape",
+                         side_effect=lambda _sb, source: requested.append(source)), \
+            patch.object(api.time, "sleep"):
+            self.assertEqual(api.main(), 0)
+        catalog_run.assert_not_called()
+        load_all.assert_not_called()
+        touch.assert_not_called()
+        sweep.assert_not_called()
+        return fetched, listed_pages, requested, finalised
+
+    def test_reads_new_and_repriced_then_stops_at_a_page_with_nothing_new(self) -> None:
+        crested = {"category_name": "Crested Gecko"}
+        pages = [
+            [
+                {"key": "1", "price": 200, **crested},
+                {"key": "2", "price": 150, **crested},
+                {"key": "x", "price": 90, "category_name": "Leopard Gecko"},
+                {"key": "3", "price": 250, **crested},
+            ],
+            [{"key": "4", "price": 400, **crested}],
+            [{"key": "5", "price": 500, **crested}],
+        ]
+        known = {"1": 200, "3": 300, "4": 400}
+        fetched, listed_pages, requested, finalised = self._run(
+            pages, known, {"attempted": 10, "succeeded": 5, "failed": 0}
+        )
+        self.assertEqual(fetched, ["2", "3"])
+        self.assertEqual(listed_pages, [1, 2])
+        self.assertEqual(requested, ["newest:test"])
+        self.assertEqual(finalised["run_id"], 5)
+        self.assertEqual(finalised["attempted"], 14)
+        self.assertEqual(finalised["succeeded"], 7)
+        self.assertEqual(finalised["status"], "success")
+
+    def test_nothing_new_reads_one_page_and_asks_for_no_refresh(self) -> None:
+        pages = [[{"key": "1", "price": 200, "category_name": "Crested Gecko"}]]
+        fetched, listed_pages, requested, finalised = self._run(
+            pages, {"1": 200}, {"attempted": 0, "succeeded": 0, "failed": 0}
+        )
+        self.assertEqual(fetched, [])
+        self.assertEqual(listed_pages, [1])
+        self.assertEqual(requested, [])
+        self.assertEqual(finalised["succeeded"], 0)
+
+
+class AfterScrapeRequestTests(unittest.TestCase):
+    def test_request_is_sent_and_failures_are_swallowed(self) -> None:
+        from lib.after_scrape import request_after_scrape
+
+        ok = mock.Mock()
+        self.assertTrue(request_after_scrape(ok, "catalog:test"))
+        ok.rpc.assert_called_once_with("request_after_scrape", {"p_source": "catalog:test"})
+
+        broken = mock.Mock()
+        broken.rpc.side_effect = RuntimeError("timeout")
+        self.assertFalse(request_after_scrape(broken, "newest:test"))
 
 
 import backfill_history as bf  # noqa: E402

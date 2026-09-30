@@ -1,8 +1,10 @@
 #!/bin/zsh
-# One-time setup for the daily MorphMarket scrape on this Mac.
+# One-time setup for the MorphMarket scrape on this Mac.
 #
-#   scripts/local/setup_mac.sh              install or update
-#   scripts/local/setup_mac.sh --uninstall  stop the daily schedule
+#   scripts/local/setup_mac.sh               install or update
+#   scripts/local/setup_mac.sh --daily-only  install the morning scrape but
+#                                            not the 30-minute newest check
+#   scripts/local/setup_mac.sh --uninstall   stop both schedules
 #
 # Safe to run again at any time. It will:
 #   1. Check for Python 3.
@@ -15,20 +17,31 @@
 #   5. Schedule scripts/local/run_scraper.sh every day at 8:35am with
 #      launchd, the Mac's built-in scheduler. If the Mac is asleep at
 #      8:35, the run starts when it wakes up.
+#   6. Schedule the newest check (run_scraper.sh newest) every 30
+#      minutes. It reads only the newest listings, takes a minute or less,
+#      and is what makes new crested listings show up on the Geck Inspect
+#      Market page and in members' watchlists within the hour. While the
+#      Mac sleeps it pauses, and it runs again when the Mac wakes.
 
 set -eu
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 LABEL="com.geckinspect.scraper"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/geck-scraper.log"
+LABEL_NEWEST="com.geckinspect.scraper-newest"
+PLIST_NEWEST="$HOME/Library/LaunchAgents/$LABEL_NEWEST.plist"
+LOG_NEWEST="$HOME/Library/Logs/geck-scraper-newest.log"
 DOMAIN="gui/$(id -u)"
+DAILY_ONLY=0
+[ "${1:-}" = "--daily-only" ] && DAILY_ONLY=1
 
 step() { echo; echo "==> $*"; }
 
 if [ "${1:-}" = "--uninstall" ]; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-  rm -f "$PLIST"
-  echo "Daily scrape removed. Nothing else was changed."
+  launchctl bootout "$DOMAIN/$LABEL_NEWEST" 2>/dev/null || true
+  rm -f "$PLIST" "$PLIST_NEWEST"
+  echo "Both schedules removed. Nothing else was changed."
   exit 0
 fi
 
@@ -114,9 +127,49 @@ PLISTEOF
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
 
+launchctl bootout "$DOMAIN/$LABEL_NEWEST" 2>/dev/null || true
+if [ "$DAILY_ONLY" = "1" ]; then
+  rm -f "$PLIST_NEWEST"
+  echo "Skipped the 30-minute newest check (--daily-only)."
+else
+  step "Scheduling the newest check every 30 minutes"
+  cat > "$PLIST_NEWEST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$LABEL_NEWEST</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>$REPO/scripts/local/run_scraper.sh</string>
+    <string>newest</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$LOG_NEWEST</string>
+  <key>StandardErrorPath</key>
+  <string>$LOG_NEWEST</string>
+</dict>
+</plist>
+PLISTEOF
+  launchctl bootstrap "$DOMAIN" "$PLIST_NEWEST"
+fi
+
 echo
-echo "Done. The scrape runs every day at 8:35am and logs to:"
+echo "Done. The full scrape runs every day at 8:35am and logs to:"
 echo "  $LOG"
+if [ "$DAILY_ONLY" != "1" ]; then
+  echo "The newest check runs every 30 minutes while the Mac is awake and logs to:"
+  echo "  $LOG_NEWEST"
+fi
 echo "Run one right now with:"
 echo "  $REPO/scripts/local/run_scraper.sh"
 echo "Check results on the website's Data status page (/status)."

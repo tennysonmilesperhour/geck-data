@@ -1,0 +1,81 @@
+name: Newest listings check (about every 30 minutes)
+
+# Reads the first page or two of MorphMarket's newest-first list so new
+# crested listings reach the Geck Inspect Market page (the Live tape,
+# members' watchlists, the morning brief) within the hour instead of the
+# next morning. It stops at the first page with no new crested listing,
+# reads details only for new or re-priced listings, never runs the
+# came-down sweep, and keeps one scrape_runs row per UTC day
+# (scrape_type listings_newest) so the status pages are not buried.
+#
+# After a run that wrote rows, the scraper queues a market refresh
+# (geck_data.request_after_scrape). The database picks it up within 5
+# minutes, refreshes the two listing views and runs the watchlist matcher.
+#
+# Minutes 7 and 37 stay clear of the top of the hour, when GitHub delays
+# scheduled runs the most. Scheduled runs can still start late or be
+# dropped when GitHub is busy, so this is "about every 30 minutes".
+#
+# No Discord message on failure: a broken route would post 48 times a
+# day. The weekday catalog job reports the same problem once, and the
+# Data status page shows this check's latest result.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-listings-newest
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # MorphMarket blocks GitHub-hosted runners. Without a residential
+      # proxy this check cannot succeed, so it skips with a notice. Adding
+      # the MORPHMARKET_PROXY_URL secret turns it on, together with the
+      # weekday catalog job.
+      - name: Check MorphMarket access route
+        id: route
+        env:
+          PROXY: ${{ secrets.MORPHMARKET_PROXY_URL }}
+        run: |
+          if [ -z "$PROXY" ]; then
+            echo "::notice title=Skipped::MorphMarket blocks GitHub-hosted runners. Add the MORPHMARKET_PROXY_URL secret to run the newest check here, or run it from the Mac (docs/SCRAPER_SETUP.md)."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out repo
+        if: steps.route.outputs.run == 'true'
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        if: steps.route.outputs.run == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.route.outputs.run == 'true'
+        run: pip install -r scripts/requirements.txt
+
+      - name: Install Chromium
+        if: steps.route.outputs.run == 'true'
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run scrape_listings_api.py (newest check)
+        if: steps.route.outputs.run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
+          MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
+          TRIGGERED_BY: github_action_newest
+          INGEST_MODE: newest
+        working-directory: scripts
+        run: python scrape_listings_api.py --mode=newest

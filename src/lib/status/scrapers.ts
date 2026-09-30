@@ -40,6 +40,17 @@ export const LISTINGS_SCRAPER = {
   thresholdHours: 96,
 } as const;
 
+// The newest check reads the first pages of the list every 30 minutes and
+// keeps one scrape_runs row per UTC day, so a healthy row's started_at can
+// be up to a day old. Down after 30 hours means a whole day without a
+// successful check.
+export const NEWEST_SCRAPER = {
+  scrapeType: "listings_newest",
+  label: "Newest listings check",
+  cadence: "every 30 minutes, one row per day",
+  thresholdHours: 30,
+} as const;
+
 export const FEEDLE_SCRAPER = {
   scrapeType: "cross_platform_feedle",
   label: "Feedle Air / KR catalog",
@@ -61,6 +72,7 @@ const EXPECTED: Array<{
   thresholdHours: number;
 }> = [
   LISTINGS_SCRAPER,
+  NEWEST_SCRAPER,
   FEEDLE_SCRAPER,
   SHOPS_SCRAPER,
   { scrapeType: "details", label: "Listing detail re-scrape", cadence: "weekly", thresholdHours: 204 },

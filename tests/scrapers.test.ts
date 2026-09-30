@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LISTINGS_SCRAPER, FEEDLE_SCRAPER, SHOPS_SCRAPER } from "../src/lib/status/scrapers";
+import { LISTINGS_SCRAPER, NEWEST_SCRAPER, FEEDLE_SCRAPER, SHOPS_SCRAPER } from "../src/lib/status/scrapers";
 
 test("listings scraper copy is the API catalog plus weekly pulse, not hourly Decodo", () => {
   assert.match(LISTINGS_SCRAPER.label, /API catalog/i);
@@ -17,4 +17,10 @@ test("cross-platform scrapers are weekday Denver jobs, not MorphMarket listings"
   assert.match(FEEDLE_SCRAPER.cadence, /weekday/i);
   assert.match(SHOPS_SCRAPER.cadence, /weekday/i);
   assert.doesNotMatch(FEEDLE_SCRAPER.scrapeType, /listings/);
+});
+
+test("the newest check has its own scrape_type and allows a day-old daily row", () => {
+  assert.equal(NEWEST_SCRAPER.scrapeType, "listings_newest");
+  assert.notEqual(NEWEST_SCRAPER.scrapeType, LISTINGS_SCRAPER.scrapeType);
+  assert.ok(NEWEST_SCRAPER.thresholdHours > 24);
 });

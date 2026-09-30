@@ -72,6 +72,15 @@ work. To fill the whole year in one sitting instead (a few hours):
 `../scripts/.venv/bin/python backfill_history.py --all`. To turn the daily
 step off, add `BACKFILL_DAILY_IDS=0` to `.env.local`.
 
+**The newest check:** the setup also schedules a quick check every 30 minutes
+that reads only MorphMarket's newest listings. It takes a minute or less, and
+it is what makes a new crested gecko listing show up on the Geck Inspect
+Market page (the Live tab) and in members' watchlist alerts within the hour
+instead of the next morning. It pauses while the Mac sleeps and runs again
+when it wakes. Its log is `~/Library/Logs/geck-scraper-newest.log`, and it
+shows as "Newest listings check" on the Data status page. To keep only the
+morning scrape: `scripts/local/setup_mac.sh --daily-only`.
+
 **Checking it worked:** open the website's Data status page. "Rechecked
 recently" should jump from 8% toward 100% after the first full run. The log on
 your Mac is at `~/Library/Logs/geck-scraper.log`.
@@ -100,8 +109,10 @@ address.
    variables, then Actions, then New repository secret. Name it
    `MORPHMARKET_PROXY_URL` and paste the URL.
 
-The weekday GitHub job turns itself back on as soon as that secret exists.
-Until then it skips each morning with a notice instead of failing.
+The weekday GitHub job and the 30-minute newest check turn themselves back on
+as soon as that secret exists. Until then they skip with a notice instead of
+failing. The newest check adds a little proxy traffic (a page or two of
+listings every 30 minutes, well under 1 GB a month).
 
 If you do both A and B, the two schedules both refresh the same data. That is
 harmless, but you only need one.

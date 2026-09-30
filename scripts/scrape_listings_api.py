@@ -1,6 +1,6 @@
 """MorphMarket listings ingest via the public JSON API.
 
-Two modes, selected by --mode or INGEST_MODE:
+Three modes, selected by --mode or INGEST_MODE:
 
   windowed (default)  Crested geckos first_listed in WINDOW_HOURS
                       (default 168). New-ad enrichment. Never calls
@@ -9,6 +9,20 @@ Two modes, selected by --mode or INGEST_MODE:
                       client-side to Crested Gecko. After a complete
                       walk, calls mark_unseen so stale live flags drop.
                       A truncated or aborted walk does not mark unseen.
+  newest              The first pages of the newest-first list (MAX_PAGES,
+                      default 3), meant to run every 30 minutes so a new
+                      crested listing reaches the Market page's Live tape
+                      and members' watchlists within the hour. Stops at
+                      the first page with no new crested listing, reads
+                      details only for new or re-priced listings, and
+                      never marks anything unseen. Every newest run in a
+                      UTC day shares one scrape_runs row (scrape_type
+                      listings_newest), so a check every 30 minutes does
+                      not bury the daily and weekly jobs on the status
+                      pages.
+
+After a run that wrote rows, the scraper asks the database to refresh the
+market views and run the watchlist matcher (lib/after_scrape.py).
 
 Walks GET /api/v1/listings/?ordering=-first_posted&page_size=100.
 category=crested-geckos is not a valid list filter; keep a row when
@@ -24,9 +38,9 @@ Env vars:
   SUPABASE_URL / SUPABASE_SERVICE_KEY
   MORPHMARKET_PROXY_URL optional residential/mobile proxy used after a 403
   TRIGGERED_BY          optional label, defaults to 'manual'
-  INGEST_MODE           windowed | catalog (overridden by --mode)
+  INGEST_MODE           windowed | catalog | newest (overridden by --mode)
   WINDOW_HOURS          lookback for first_listed in windowed mode
-  MAX_PAGES             list-page cap (windowed 250, catalog 800)
+  MAX_PAGES             list-page cap (windowed 250, catalog 800, newest 3)
   MIN_CATALOG_WRITES    refuse mark_unseen below this many upserts
   DETAIL_SLEEP_S        pause between detail fetches (default 0.15)
   PAGE_SLEEP_S          pause between list pages (default 0.5)
@@ -55,6 +69,7 @@ from urllib.parse import unquote, urlencode, urlsplit
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from lib.after_scrape import request_after_scrape
 from lib.supabase_client import get_supabase
 from scrape_listings import (
     finalise_scrape_run,
@@ -458,6 +473,88 @@ def touch_seen(supabase, listing_ids: list[str], seen_at: str) -> int:
     return touched
 
 
+# The newest check
+#
+# Every 30 minutes the newest check reads the first page or two of the
+# newest-first list, so new crested listings reach the Market page and
+# members' watchlists soon after they go up. It looks up only the listings
+# on those pages, reads details only for new or re-priced ones, and leaves
+# "seen" bookkeeping and the came-down sweep to the catalog walk.
+
+NEWEST_SCRAPE_TYPE = "listings_newest"
+
+
+def load_known_for(supabase, listing_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Stored rows for just these listings, live or not."""
+    known: dict[str, dict[str, Any]] = {}
+    ids = [i for i in dict.fromkeys(listing_ids) if i]
+    for start in range(0, len(ids), TOUCH_BATCH_SIZE):
+        batch = ids[start : start + TOUCH_BATCH_SIZE]
+        rows = (
+            supabase.table("listings")
+            .select("listing_id,price,currency,last_updated_at,is_active,sold_at")
+            .in_("listing_id", batch)
+            .execute()
+            .data
+            or []
+        )
+        for row in rows:
+            lid = str(row.get("listing_id") or "").strip()
+            if lid:
+                known[lid] = row
+    return known
+
+
+def start_newest_run(supabase) -> tuple[int, dict[str, int]]:
+    """Open today's listings_newest scrape_runs row, or reuse it.
+
+    The status pages read the latest few hundred scrape_runs rows, and a
+    check every 30 minutes would add 48 a day. So every newest run in a
+    UTC day shares one row: its counts are the day's totals and its status
+    is the latest run's. Returns the row id and the counts already on it.
+    """
+    day_start = dt.datetime.now(dt.timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    rows = (
+        supabase.table("scrape_runs")
+        .select("id,records_attempted,records_succeeded,records_failed")
+        .eq("scrape_type", NEWEST_SCRAPE_TYPE)
+        .gte("started_at", day_start.isoformat())
+        .order("started_at", desc=True)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if rows:
+        row = rows[0]
+        run_id = int(row["id"])
+        supabase.table("scrape_runs").update(
+            {"status": "running", "finished_at": None, "error_message": None}
+        ).eq("id", run_id).execute()
+        log(f"newest check: adding to today's scrape_runs row id={run_id}")
+        return run_id, {
+            "attempted": int(row.get("records_attempted") or 0),
+            "succeeded": int(row.get("records_succeeded") or 0),
+            "failed": int(row.get("records_failed") or 0),
+        }
+    created = (
+        supabase.table("scrape_runs")
+        .insert(
+            {
+                "scrape_type": NEWEST_SCRAPE_TYPE,
+                "status": "running",
+                "triggered_by": os.environ.get("TRIGGERED_BY", "manual"),
+            }
+        )
+        .execute()
+    )
+    run_id = int(created.data[0]["id"])
+    log(f"newest check: opened today's scrape_runs row id={run_id}")
+    return run_id, {"attempted": 0, "succeeded": 0, "failed": 0}
+
+
 def _window_hours() -> int:
     raw = os.environ.get("WINDOW_HOURS", "168")
     return max(1, int(raw))
@@ -488,8 +585,11 @@ def apply_cli_args(argv: Optional[list[str]] = None) -> bool:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",
-        choices=("windowed", "catalog"),
-        help="windowed = 7-day first_listed pulse; catalog = full live recrawl",
+        choices=("windowed", "catalog", "newest"),
+        help=(
+            "windowed = 7-day first_listed pulse; catalog = full live "
+            "recrawl; newest = first pages only, for a 30-minute check"
+        ),
     )
     parser.add_argument(
         "--dry-run-page-one",
@@ -511,6 +611,8 @@ def ingest_mode() -> str:
     text = raw.strip().lower()
     if text in ("catalog", "full", "recrawl"):
         return "catalog"
+    if text in ("newest", "latest", "new"):
+        return "newest"
     return "windowed"
 
 
@@ -1038,8 +1140,8 @@ def main() -> int:
     mode = ingest_mode()
     window_hours = _window_hours()
     # Catalog walks the whole live list; windowed only needs enough
-    # newest-first pages to cover WINDOW_HOURS.
-    default_pages = "800" if mode == "catalog" else "250"
+    # newest-first pages to cover WINDOW_HOURS; newest reads a page or two.
+    default_pages = {"catalog": "800", "newest": "3"}.get(mode, "250")
     if os.environ.get("MAX_PAGES") is None:
         os.environ["MAX_PAGES"] = default_pages
     max_pages = _max_pages()
@@ -1050,8 +1152,12 @@ def main() -> int:
     cutoff_date = cutoff.date()
 
     supabase = get_supabase()
-    close_abandoned_runs(supabase)
-    run_id = start_scrape_run(supabase)
+    if mode == "newest":
+        run_id, before = start_newest_run(supabase)
+    else:
+        close_abandoned_runs(supabase)
+        run_id = start_scrape_run(supabase)
+        before = {"attempted": 0, "succeeded": 0, "failed": 0}
     attempted = 0
     succeeded = 0
     failed = 0
@@ -1066,7 +1172,8 @@ def main() -> int:
     skip_unchanged = _skip_unchanged_enabled()
     refetch_after = dt.timedelta(days=_refetch_after_days())
     known_live: dict[str, dict[str, Any]] = {}
-    if skip_unchanged:
+    # The newest check looks up each page's listings as it goes instead.
+    if skip_unchanged and mode != "newest":
         try:
             known_live = load_known_live(supabase)
             log(
@@ -1084,6 +1191,11 @@ def main() -> int:
         log(
             f"API catalog recrawl: MAX_PAGES={max_pages} "
             f"MIN_CATALOG_WRITES={min_writes}"
+        )
+    elif mode == "newest":
+        log(
+            f"API newest check: up to {max_pages} pages, stopping at the "
+            "first page with no new crested listing"
         )
     else:
         log(
@@ -1133,6 +1245,21 @@ def main() -> int:
                 logged_item_keys = True
 
             in_window_on_page = 0
+            new_on_page = 0
+            if mode == "newest":
+                page_ids = [
+                    str(it.get("key") or "").strip()
+                    for it in results
+                    if isinstance(it, dict) and is_crested(it)
+                ]
+                try:
+                    known_live = load_known_for(supabase, page_ids)
+                except Exception as exc:  # noqa: BLE001
+                    log(f"WARN: could not look up page {page} listings, reading all: {exc}")
+                    known_live = {}
+                new_on_page = sum(
+                    1 for lid in page_ids if lid and lid not in known_live
+                )
             page_rows: list[dict[str, Any]] = []
             page_unchanged: list[str] = []
             walk_now = dt.datetime.now(dt.timezone.utc)
@@ -1212,7 +1339,12 @@ def main() -> int:
                     (row["listing_id"], detail, listed_at, row.get("seller_slug"))
                 )
 
-            if page_unchanged:
+            if page_unchanged and mode == "newest":
+                # The catalog walk keeps last_seen_at; this check only
+                # reads what is new or re-priced.
+                skipped += len(page_unchanged)
+                log(f"page {page}: {len(page_unchanged)} already stored and unchanged")
+            elif page_unchanged:
                 touched = touch_seen(supabase, page_unchanged, walk_now.isoformat())
                 skipped += touched
                 # A confirmed sighting counts toward the catalog write floor,
@@ -1238,22 +1370,36 @@ def main() -> int:
                         listed_at,
                         seller_slug,
                     )
-                label = "crested" if mode == "catalog" else "crested in window"
+                label = {
+                    "catalog": "crested",
+                    "newest": "new or re-priced crested",
+                }.get(mode, "crested in window")
                 log(f"page {page}: {len(page_rows)} {label}, wrote {wrote}")
             else:
-                log(
-                    f"page {page}: no "
-                    f"{'crested' if mode == 'catalog' else 'in-window crested'} "
-                    "listings"
-                )
+                label = {
+                    "catalog": "crested",
+                    "newest": "new or re-priced crested",
+                }.get(mode, "in-window crested")
+                log(f"page {page}: no {label} listings")
+
+            if mode == "newest" and new_on_page == 0:
+                saw_natural_end = True
+                log(f"stopping: no new crested listings on page {page}")
+                break
 
             if page >= max_pages:
                 if has_next:
                     hit_page_cap = True
-                    log(
-                        f"page cap reached at {max_pages} with another page "
-                        "remaining; walk is truncated"
-                    )
+                    if mode == "newest":
+                        log(
+                            f"still finding new listings at page {max_pages}; "
+                            "the next catalog walk reads the rest"
+                        )
+                    else:
+                        log(
+                            f"page cap reached at {max_pages} with another page "
+                            "remaining; walk is truncated"
+                        )
                 else:
                     saw_natural_end = True
                 break
@@ -1306,10 +1452,16 @@ def main() -> int:
             supabase,
             run_id,
             status=status,
-            attempted=attempted,
-            succeeded=succeeded,
-            failed=failed,
+            attempted=before["attempted"] + attempted,
+            succeeded=before["succeeded"] + succeeded,
+            failed=before["failed"] + failed,
         )
+        # The newest check counts only rows it wrote; a catalog or windowed
+        # run also counts confirmed sightings, which matter to the
+        # came-down sweep and the day's market numbers.
+        if succeeded > 0:
+            triggered_by = os.environ.get("TRIGGERED_BY", "manual")
+            request_after_scrape(supabase, f"{mode}:{triggered_by}"[:80])
         if skip_unchanged and attempted and list_prices_seen == 0:
             log(
                 "skip-unchanged had no effect: list rows carry no price, so "
@@ -1329,9 +1481,9 @@ def main() -> int:
             supabase,
             run_id,
             status="failed",
-            attempted=attempted,
-            succeeded=succeeded,
-            failed=failed + 1,
+            attempted=before["attempted"] + attempted,
+            succeeded=before["succeeded"] + succeeded,
+            failed=before["failed"] + failed + 1,
             error_message=str(exc),
         )
         return 1

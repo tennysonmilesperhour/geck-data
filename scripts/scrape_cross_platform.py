@@ -1441,6 +1441,7 @@ def main() -> int:
         log("dry-run: no writes")
         return 0 if pairs else 2
 
+    from lib.after_scrape import request_after_scrape
     from lib.supabase_client import get_supabase
 
     supabase = get_supabase()
@@ -1453,6 +1454,7 @@ def main() -> int:
         ("cross_platform_repsuki", ("repsuki",), args.source in ("all", "repsuki")),
     )
     exit_code = 0
+    wrote = 0
     for scrape_type, platforms, wanted in groups:
         if not wanted:
             continue
@@ -1465,11 +1467,19 @@ def main() -> int:
             continue
         try:
             shortfall = "; ".join(FEEDLE_SHORTFALL) if scrape_type == "cross_platform_feedle" and FEEDLE_SHORTFALL else None
-            run_group(supabase, scrape_type, group, False, shortfall)
+            _attempted, succeeded, _failed = run_group(
+                supabase, scrape_type, group, False, shortfall
+            )
+            wrote += succeeded
             record_observations(supabase, group)
         except Exception:
             traceback.print_exc()
             exit_code = 1
+    if wrote:
+        # Korea, Japan and Europe feed the Market page's Live tape and the
+        # morning brief, so ask for the market refresh right away instead
+        # of waiting for the hourly one.
+        request_after_scrape(supabase, f"cross_platform:{args.source}"[:80])
     return exit_code
 
 
