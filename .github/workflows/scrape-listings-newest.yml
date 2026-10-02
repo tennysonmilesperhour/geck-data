@@ -1,27 +1,30 @@
-name: Newest listings check (about every 30 minutes)
+name: Newest listings check (twice a day)
 
-# Reads the first page or two of MorphMarket's newest-first list so new
-# crested listings reach the Geck Inspect Market page (the Live tape,
-# members' watchlists, the morning brief) within the hour instead of the
-# next morning. It stops at the first page with no new crested listing,
-# reads details only for new or re-priced listings, never runs the
-# came-down sweep, and keeps one scrape_runs row per UTC day
-# (scrape_type listings_newest) so the status pages are not buried.
+# Reads MorphMarket's newest-first list twice a day so new crested listings
+# reach the Geck Inspect Market page (the Live tape, members' watchlists,
+# the morning brief) within about 12 hours. Each run may read up to 40
+# pages (MAX_PAGES below), enough for roughly 12 hours of new ads across
+# all species; newest mode's own default is only 3. It stops at the first
+# page with no new crested listing, reads details only for new or
+# re-priced listings, never runs the came-down sweep, and keeps one
+# scrape_runs row per UTC day (scrape_type listings_newest) so the status
+# pages are not buried.
 #
 # After a run that wrote rows, the scraper queues a market refresh
 # (geck_data.request_after_scrape). The database picks it up within 5
 # minutes, refreshes the two listing views and runs the watchlist matcher.
 #
-# Minutes 7 and 37 stay clear of the top of the hour, when GitHub delays
-# scheduled runs the most. Scheduled runs can still start late or be
-# dropped when GitHub is busy, so this is "about every 30 minutes".
+# Runs at 01:07 and 13:07 UTC: 7:07pm and 7:07am in Denver during
+# daylight time, an hour earlier after it ends. Minute 7 stays clear of
+# the top of the hour, when GitHub delays scheduled runs the most.
+# Scheduled runs can still start late or be dropped when GitHub is busy.
 #
-# No Discord message on failure: a broken route would post 48 times a
-# day. The weekday catalog job reports the same problem once, and the
-# Data status page shows this check's latest result.
+# No Discord message on failure: a broken route would post twice a day,
+# every day. The weekday catalog job reports the same problem once, and
+# the Data status page shows this check's latest result.
 on:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '7 1,13 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -77,5 +80,6 @@ jobs:
           MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
           TRIGGERED_BY: github_action_newest
           INGEST_MODE: newest
+          MAX_PAGES: '40'
         working-directory: scripts
         run: python scrape_listings_api.py --mode=newest
