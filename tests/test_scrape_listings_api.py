@@ -360,7 +360,7 @@ class SkipUnchangedWalkTests(unittest.TestCase):
         fetched: list[str] = []
         touched: list[str] = []
 
-        def detail(listing_id, _fetcher):
+        def detail(listing_id, _fetcher, backoffs):
             fetched.append(listing_id)
             return {"id": listing_id, "price": 1, "owner": {"slug": "s", "name": "S"},
                     "category": {"name": "Crested Geckos"}}
@@ -486,13 +486,14 @@ class NewestCheckTests(unittest.TestCase):
         requested: list[str] = []
         finalised: dict = {}
 
-        def list_page(page, _fetcher):
+        def list_page(page, _fetcher, backoffs):
+            self.assertEqual(backoffs, api.QUICK_RETRY_BACKOFF_S)
             listed_pages.append(page)
             if page <= len(pages):
                 return {"results": pages[page - 1], "next": "more"}
             return {"results": [], "next": None}
 
-        def detail(listing_id, _fetcher):
+        def detail(listing_id, _fetcher, backoffs):
             fetched.append(listing_id)
             return {"id": listing_id, "price": 1, "owner": {"slug": "s", "name": "S"},
                     "category": {"name": "Crested Geckos"}}
@@ -629,3 +630,193 @@ class BackfillTests(unittest.TestCase):
         self.assertFalse(row["is_crested"])
         self.assertNotIn("price", row)
         self.assertFalse(row["is_sold"])
+
+
+class FetchRetryTests(unittest.TestCase):
+    def test_list_recovers_after_two_tunnel_errors(self):
+        fetcher = mock.Mock()
+        result = {"results": [], "next": None}
+        fetcher.fetch_json.side_effect = [
+            api.MorphMarketFetchError("net::ERR_TUNNEL_CONNECTION_FAILED"),
+            api.MorphMarketFetchError("net::ERR_TUNNEL_CONNECTION_FAILED"),
+            result,
+        ]
+        events = mock.Mock()
+        events.attach_mock(fetcher.fetch_json, "fetch")
+        events.attach_mock(fetcher.restart, "restart")
+        with patch.object(api.time, "sleep") as sleep:
+            events.attach_mock(sleep, "sleep")
+            self.assertIs(api.fetch_list_page(78, fetcher, backoffs=(15, 30)), result)
+        url = fetcher.fetch_json.call_args.args[0]
+        self.assertIn("page=78", url)
+        self.assertEqual(events.mock_calls, [
+            mock.call.fetch(url), mock.call.sleep(15), mock.call.restart(),
+            mock.call.fetch(url), mock.call.sleep(30), mock.call.restart(),
+            mock.call.fetch(url),
+        ])
+
+    def test_raises_last_error_after_last_backoff(self):
+        fetcher = mock.Mock()
+        errors = [api.MorphMarketFetchError(f"failure {i}") for i in range(5)]
+        fetcher.fetch_json.side_effect = errors
+        with patch.object(api.time, "sleep") as sleep:
+            with self.assertRaises(api.MorphMarketFetchError) as caught:
+                api.fetch_list_page(1, fetcher, backoffs=api.CATALOG_LIST_RETRY_BACKOFF_S)
+        self.assertIs(caught.exception, errors[-1])
+        self.assertEqual(sleep.call_args_list, [mock.call(s) for s in (15, 30, 60, 120)])
+        self.assertEqual(fetcher.fetch_json.call_count, 5)
+        self.assertEqual(fetcher.restart.call_count, 4)
+
+    def test_no_retry_for_404_or_access_denied(self):
+        for error in (api.MorphMarketFetchError("HTTP 404", retryable=False),
+                      api.MorphMarketAccessDeniedError("HTTP 403")):
+            with self.subTest(error=error), patch.object(api.time, "sleep") as sleep:
+                fetcher = mock.Mock()
+                fetcher.fetch_json.side_effect = error
+                with self.assertRaises(api.MorphMarketFetchError) as caught:
+                    api.fetch_detail("removed", fetcher)
+                self.assertIs(caught.exception, error)
+                fetcher.fetch_json.assert_called_once()
+                fetcher.restart.assert_not_called()
+                sleep.assert_not_called()
+
+    def test_failed_restart_still_retries_without_logging_raw_error(self):
+        fetcher = mock.Mock()
+        fetcher.fetch_json.side_effect = [api.MorphMarketFetchError("tunnel"), {"id": 1}]
+        fetcher.restart.side_effect = RuntimeError("private proxy credentials")
+        with patch.object(api.time, "sleep"), patch.object(api, "log") as log:
+            self.assertEqual(api.fetch_detail("1", fetcher), {"id": 1})
+        self.assertEqual(fetcher.fetch_json.call_count, 2)
+        self.assertIn("restart failed", str(log.call_args_list))
+        self.assertNotIn("private proxy credentials", str(log.call_args_list))
+
+    def test_quick_defaults_retry_once_for_lists_and_details(self):
+        for fetch, key in ((api.fetch_list_page, 1), (api.fetch_detail, "1")):
+            with self.subTest(fetch=fetch), patch.object(api.time, "sleep") as sleep:
+                fetcher = mock.Mock()
+                fetcher.fetch_json.side_effect = api.MorphMarketFetchError("tunnel")
+                with self.assertRaises(api.MorphMarketFetchError):
+                    fetch(key, fetcher)
+                self.assertEqual(fetcher.fetch_json.call_count, 2)
+                fetcher.restart.assert_called_once_with()
+                sleep.assert_called_once_with(10)
+
+    def test_no_backoffs_means_one_attempt(self):
+        fetcher = mock.Mock()
+        fetcher.fetch_json.side_effect = api.MorphMarketFetchError("tunnel")
+        with patch.object(api.time, "sleep") as sleep:
+            with self.assertRaises(api.MorphMarketFetchError):
+                api.fetch_list_page(1, fetcher, backoffs=())
+        fetcher.fetch_json.assert_called_once()
+        fetcher.restart.assert_not_called()
+        sleep.assert_not_called()
+
+
+class FetchStatusTests(unittest.TestCase):
+    def fetcher(self):
+        fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
+        fetcher._page = mock.Mock()
+        fetcher._using_proxy = True
+        fetcher.proxy_url = ""
+        fetcher.last_status = None
+        return fetcher
+
+    def test_http_status_retry_classification(self):
+        for status, retryable in ((503, True), (429, True), (404, False), (403, False), (400, False), (302, False)):
+            with self.subTest(status=status):
+                fetcher = self.fetcher()
+                fetcher._page.goto.return_value.status = status
+                with self.assertRaises(api.MorphMarketFetchError) as caught:
+                    fetcher._fetch_bytes(api.LIST_URL)
+                self.assertEqual(caught.exception.retryable, retryable)
+                self.assertEqual(fetcher.last_status, status)
+
+    def test_last_status_cleared_after_failed_request(self):
+        fetcher = self.fetcher()
+        fetcher._page.goto.return_value.status = 404
+        with self.assertRaises(api.MorphMarketFetchError):
+            fetcher._fetch_bytes(api.LIST_URL)
+        self.assertEqual(fetcher.last_status, 404)
+        fetcher._page.goto.side_effect = api.PlaywrightError("tunnel failed")
+        with self.assertRaises(api.MorphMarketFetchError):
+            fetcher._fetch_bytes(api.LIST_URL)
+        self.assertIsNone(fetcher.last_status)
+
+    def test_last_status_cleared_with_no_page_or_response(self):
+        for missing_page in (True, False):
+            with self.subTest(missing_page=missing_page):
+                fetcher = self.fetcher()
+                fetcher.last_status = 404
+                if missing_page:
+                    fetcher._page = None
+                else:
+                    fetcher._page.goto.return_value = None
+                with self.assertRaises(api.MorphMarketFetchError):
+                    fetcher._fetch_bytes(api.LIST_URL)
+                self.assertIsNone(fetcher.last_status)
+
+    def test_restart_preserves_route(self):
+        for using_proxy in (True, False):
+            with self.subTest(using_proxy=using_proxy):
+                fetcher = self.fetcher()
+                fetcher._using_proxy = using_proxy
+                browser = fetcher._browser = mock.Mock()
+                fetcher._context = mock.Mock()
+                with patch.object(fetcher, "_launch") as launch:
+                    fetcher.restart()
+                browser.close.assert_called_once_with()
+                launch.assert_called_once_with(use_proxy=using_proxy)
+                self.assertIsNone(fetcher._page)
+                self.assertIsNone(fetcher._context)
+
+
+class ShortCatalogTests(unittest.TestCase):
+    def test_ended_too_early_truth_table(self):
+        for mode in ("catalog", "newest", "windowed"):
+            for natural in (True, False):
+                for pages in (0, 3, 99, 100, 101):
+                    with self.subTest(mode=mode, natural=natural, pages=pages):
+                        self.assertEqual(
+                            api.catalog_ended_too_early(mode, natural, pages, 100),
+                            mode == "catalog" and natural and pages < 100,
+                        )
+
+    def test_three_page_catalog_fails_and_preserves_written_rows(self):
+        pages = [
+            {"results": [{"key": "1", "category_name": "Crested Gecko"}], "next": "more"},
+            {"results": [{"key": "2", "category_name": "Crested Gecko"}], "next": "more"},
+            {"results": [{"key": "3", "category_name": "Ball Python"}], "next": None},
+        ]
+        env = {"INGEST_MODE": "catalog", "MAX_PAGES": "1200", "SKIP_UNCHANGED": "0"}
+        # Leave MIN_CATALOG_PAGES absent to exercise its default of 100.
+        env = {k: v for k, v in os.environ.items() if k != "MIN_CATALOG_PAGES"} | env
+        with patch.dict(os.environ, env, clear=True), \
+            patch.object(api, "apply_cli_args", return_value=False), \
+            patch.object(api, "get_supabase", return_value=object()), \
+            patch.object(api, "close_abandoned_runs"), \
+            patch.object(api, "start_scrape_run", return_value=42), \
+            patch.object(api, "MorphMarketFetcher"), \
+            patch.object(api, "fetch_list_page", side_effect=pages) as list_page, \
+            patch.object(api, "fetch_detail", side_effect=lambda lid, _f, backoffs: {
+                "id": lid, "owner": {"id": "seller"}}) as detail, \
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)) as upsert, \
+            patch.object(api, "write_image_and_gallery_rows"), \
+            patch.object(api, "patch_canonical_extras"), \
+            patch.object(api, "mark_unseen_if_safe", return_value=False) as mark, \
+            patch.object(api, "finalise_scrape_run") as finalise, \
+            patch.object(api, "request_after_scrape"), \
+            patch.object(api, "log") as log, \
+            patch.object(api.time, "sleep"):
+            self.assertEqual(api.main(), 1)
+        self.assertEqual(list_page.call_count, 3)
+        self.assertEqual(upsert.call_count, 2)
+        self.assertEqual(list_page.call_args.kwargs["backoffs"], (15, 30, 60, 120))
+        self.assertEqual(detail.call_args.kwargs["backoffs"], (5, 15))
+        self.assertFalse(mark.call_args.kwargs["complete"])
+        result = finalise.call_args.kwargs
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["succeeded"], 2)
+        self.assertIn("3 pages", result["error_message"])
+        self.assertIn("minimum 100", result["error_message"])
+        self.assertIn("MORPHMARKET_PROXY_URL exits in the US", result["error_message"])
+        log.assert_any_call(f'ERROR: {result["error_message"]}')

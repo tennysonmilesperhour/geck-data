@@ -103,16 +103,30 @@ address.
 
 1. Sign up for a residential or mobile proxy provider. Several work; expect
    roughly $5 to $15 a month for this volume. Decodo's scraping API is not
-   supported; it has to be a plain proxy address.
+   supported; it has to be a plain proxy address. Choose United States only if
+   the provider lets you pick a country. On October 2, 2026, the catalog stopped
+   after just three sparse pages instead of about 820, likely because the proxy
+   exited outside the US and MorphMarket served a partial regional list.
 2. Copy the proxy URL. It looks like `http://username:password@host:port`.
 3. In GitHub, open the geck-data repository, then Settings, then Secrets and
    variables, then Actions, then New repository secret. Name it
    `MORPHMARKET_PROXY_URL` and paste the URL.
 
-The weekday GitHub job and the 30-minute newest check turn themselves back on
+The weekday GitHub job and the twice-a-day newest check turn themselves back on
 as soon as that secret exists. Until then they skip with a notice instead of
-failing. The newest check adds a little proxy traffic (a page or two of
-listings every 30 minutes, well under 1 GB a month).
+failing. The newest check reads up to 40 list pages twice a day, stopping at
+the first page with no new crested listing.
+
+For temporary connection failures, HTTP 429, or server errors (5xx), the catalog
+retries the same list page after waits of 15, 30, 60, and 120 seconds. Detail
+requests retry after 5 and 15 seconds. Other modes, including the newest check,
+retry once after 10 seconds to keep waits short within its 15-minute job limit.
+Each retry restarts the browser on the same route. Removed listings (404) and
+access-denied errors (403 after the direct-to-proxy fallback) are not retried.
+
+A catalog that ends naturally before `MIN_CATALOG_PAGES` (default 100, capped
+at `MAX_PAGES`) now fails and asks you to check the US proxy location. Rows
+already saved stay, but it does not mark unseen listings inactive.
 
 If you do both A and B, the two schedules both refresh the same data. That is
 harmless, but you only need one.

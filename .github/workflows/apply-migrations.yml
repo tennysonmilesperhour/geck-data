@@ -7,10 +7,6 @@ name: legacy-migrations-read-only
 # repository instead.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "supabase/migrations/**.sql"
   pull_request:
     paths:
       - "supabase/migrations/**.sql"

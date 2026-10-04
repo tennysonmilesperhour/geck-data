@@ -41,6 +41,7 @@ Env vars:
   INGEST_MODE           windowed | catalog | newest (overridden by --mode)
   WINDOW_HOURS          lookback for first_listed in windowed mode
   MAX_PAGES             list-page cap (windowed 250, catalog 800, newest 3)
+  MIN_CATALOG_PAGES     fail a natural catalog end below this many pages (100)
   MIN_CATALOG_WRITES    refuse mark_unseen below this many upserts
   DETAIL_SLEEP_S        pause between detail fetches (default 0.15)
   PAGE_SLEEP_S          pause between list pages (default 0.5)
@@ -63,7 +64,7 @@ import re
 import sys
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 from urllib.parse import unquote, urlencode, urlsplit
 
 from playwright.sync_api import Error as PlaywrightError
@@ -86,6 +87,11 @@ CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
 REQUEST_TIMEOUT_S = 45
 MIN_DETAIL_SLEEP_S = 0.15
 MIN_PAGE_SLEEP_S = 0.5
+QUICK_RETRY_BACKOFF_S = (10,)
+CATALOG_LIST_RETRY_BACKOFF_S = (15, 30, 60, 120)
+CATALOG_DETAIL_RETRY_BACKOFF_S = (5, 15)
+
+_FetchResult = TypeVar("_FetchResult")
 
 _SELLER_ANCHOR_RE = re.compile(
     r'<a\b[^>]*\bhref=["\']/stores/(?P<slug>[^/"\']+)/?["\'][^>]*>'
@@ -97,6 +103,10 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 class MorphMarketFetchError(RuntimeError):
     """A browser fetch failed without exposing proxy credentials."""
+
+    def __init__(self, message: str, *, retryable: bool = True) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class MorphMarketAccessDeniedError(MorphMarketFetchError):
@@ -179,13 +189,20 @@ class MorphMarketFetcher:
                 "'python -m playwright install chromium'"
             ) from exc
 
+    def restart(self) -> None:
+        """Relaunch Chromium on the current direct or proxy route."""
+        self._restart_browser(use_proxy=self._using_proxy)
+
     def _restart_with_proxy(self) -> None:
+        self._restart_browser(use_proxy=True)
+
+    def _restart_browser(self, *, use_proxy: bool) -> None:
         if self._browser is not None:
             self._browser.close()
         self._browser = None
         self._context = None
         self._page = None
-        self._launch(use_proxy=True)
+        self._launch(use_proxy=use_proxy)
 
     def _safe_error(self, exc: Exception) -> str:
         text = str(exc)
@@ -202,6 +219,7 @@ class MorphMarketFetcher:
         return text
 
     def _fetch_bytes(self, url: str) -> bytes:
+        self.last_status = None
         if self._page is None:
             raise MorphMarketFetchError("Chromium page is not available")
         try:
@@ -225,7 +243,8 @@ class MorphMarketFetcher:
                 raise MorphMarketAccessDeniedError(
                     "MorphMarket returned HTTP 403. Add a residential or mobile "
                     "proxy URL as the GitHub Actions secret "
-                    "MORPHMARKET_PROXY_URL. Decodo is not supported."
+                    "MORPHMARKET_PROXY_URL. Decodo is not supported.",
+                    retryable=False,
                 )
             log(
                 "MorphMarket returned HTTP 403 directly; retrying through "
@@ -237,18 +256,21 @@ class MorphMarketFetcher:
                 raise MorphMarketAccessDeniedError(
                     "MorphMarket returned HTTP 403 directly and the browser "
                     "could not start with MORPHMARKET_PROXY_URL: "
-                    f"{self._safe_error(exc)}"
+                    f"{self._safe_error(exc)}",
+                    retryable=False,
                 ) from exc
             return self._fetch_bytes(url)
         if response.status == 403:
             raise MorphMarketAccessDeniedError(
                 "MorphMarket returned HTTP 403 through MORPHMARKET_PROXY_URL; "
-                "verify that it is an active residential or mobile proxy"
+                "verify that it is an active residential or mobile proxy",
+                retryable=False,
             )
         if response.status != 200:
             route = " through MORPHMARKET_PROXY_URL" if self._using_proxy else ""
             raise MorphMarketFetchError(
-                f"MorphMarket returned HTTP {response.status}{route}"
+                f"MorphMarket returned HTTP {response.status}{route}",
+                retryable=response.status == 429 or 500 <= response.status < 600,
             )
         try:
             return response.body()
@@ -289,6 +311,35 @@ class MorphMarketFetcher:
             except PlaywrightError:
                 pass
             self._playwright = None
+
+
+def fetch_with_retries(
+    fetch: Callable[[], _FetchResult],
+    *,
+    what: str,
+    fetcher: MorphMarketFetcher,
+    backoffs: tuple[float, ...],
+) -> _FetchResult:
+    """Retry transient failures, restarting the browser before each retry."""
+    waits = iter(backoffs)
+    while True:
+        try:
+            return fetch()
+        except MorphMarketAccessDeniedError:
+            raise
+        except MorphMarketFetchError as exc:
+            if not exc.retryable:
+                raise
+            wait = next(waits, None)
+            if wait is None:
+                raise
+            log(f"WARN {what}: {exc}; retrying in {wait}s")
+            time.sleep(wait)
+            try:
+                fetcher.restart()
+            except Exception:  # noqa: BLE001
+                # Browser errors may contain proxy credentials; omit raw text.
+                log(f"WARN {what}: browser restart failed; continuing retry")
 
 
 # A run killed from outside (a CI timeout, a laptop going to sleep, a
@@ -687,7 +738,8 @@ def list_page_has_next(payload: dict[str, Any]) -> bool:
 
 
 def fetch_list_page(
-    page: int, fetcher: MorphMarketFetcher
+    page: int, fetcher: MorphMarketFetcher,
+    backoffs: tuple[float, ...] = QUICK_RETRY_BACKOFF_S,
 ) -> dict[str, Any]:
     query = urlencode(
         {
@@ -696,13 +748,20 @@ def fetch_list_page(
             "page": page,
         }
     )
-    return fetcher.fetch_json(f"{LIST_URL}?{query}")
+    return fetch_with_retries(
+        lambda: fetcher.fetch_json(f"{LIST_URL}?{query}"),
+        what=f"list page {page}", fetcher=fetcher, backoffs=backoffs,
+    )
 
 
 def fetch_detail(
-    listing_id: str, fetcher: MorphMarketFetcher
+    listing_id: str, fetcher: MorphMarketFetcher,
+    backoffs: tuple[float, ...] = QUICK_RETRY_BACKOFF_S,
 ) -> dict[str, Any]:
-    return fetcher.fetch_json(DETAIL_URL.format(id=listing_id))
+    return fetch_with_retries(
+        lambda: fetcher.fetch_json(DETAIL_URL.format(id=listing_id)),
+        what=f"detail {listing_id}", fetcher=fetcher, backoffs=backoffs,
+    )
 
 
 def extract_seller_from_html(html: str) -> tuple[Optional[str], Optional[str]]:
@@ -1127,6 +1186,12 @@ def mark_unseen_if_safe(
     return True
 
 
+def catalog_ended_too_early(
+    mode: str, saw_natural_end: bool, pages_read: int, min_pages: int
+) -> bool:
+    return mode == "catalog" and saw_natural_end and pages_read < min_pages
+
+
 def main() -> int:
     dry_run = apply_cli_args()
     if dry_run:
@@ -1145,6 +1210,13 @@ def main() -> int:
     if os.environ.get("MAX_PAGES") is None:
         os.environ["MAX_PAGES"] = default_pages
     max_pages = _max_pages()
+    min_pages = min(int(os.environ.get("MIN_CATALOG_PAGES", "100")), max_pages)
+    list_backoffs = (
+        CATALOG_LIST_RETRY_BACKOFF_S if mode == "catalog" else QUICK_RETRY_BACKOFF_S
+    )
+    detail_backoffs = (
+        CATALOG_DETAIL_RETRY_BACKOFF_S if mode == "catalog" else QUICK_RETRY_BACKOFF_S
+    )
     sleep_s = _detail_sleep()
     page_sleep_s = _page_sleep()
     min_writes = _min_catalog_writes()
@@ -1167,6 +1239,7 @@ def main() -> int:
     walk_incomplete = False
     saw_natural_end = False
     hit_page_cap = False
+    pages_read = 0
     fetcher: Optional[MorphMarketFetcher] = None
 
     skip_unchanged = _skip_unchanged_enabled()
@@ -1208,7 +1281,7 @@ def main() -> int:
         for page in range(1, max_pages + 1):
             log(f"GET list page {page}")
             try:
-                payload = fetch_list_page(page, fetcher)
+                payload = fetch_list_page(page, fetcher, backoffs=list_backoffs)
             except MorphMarketAccessDeniedError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -1224,6 +1297,7 @@ def main() -> int:
                 time.sleep(page_sleep_s)
                 continue
             consecutive_fetch_failures = 0
+            pages_read = page
 
             results = payload.get("results") or []
             has_next = list_page_has_next(payload)
@@ -1294,7 +1368,7 @@ def main() -> int:
                     page_unchanged.append(listing_id)
                     continue
                 try:
-                    detail = fetch_detail(listing_id, fetcher)
+                    detail = fetch_detail(listing_id, fetcher, backoffs=detail_backoffs)
                     if sleep_s:
                         time.sleep(sleep_s)
                 except MorphMarketAccessDeniedError:
@@ -1425,6 +1499,15 @@ def main() -> int:
 
             time.sleep(page_sleep_s)
 
+        short_walk_error = None
+        if catalog_ended_too_early(mode, saw_natural_end, pages_read, min_pages):
+            short_walk_error = (
+                f"catalog ended too early after {pages_read} pages "
+                f"(minimum {min_pages}); check that MORPHMARKET_PROXY_URL exits in the US"
+            )
+            log(f"ERROR: {short_walk_error}")
+            walk_incomplete = True
+
         complete = catalog_walk_complete(
             aborted=aborted or walk_incomplete,
             saw_natural_end=saw_natural_end,
@@ -1447,7 +1530,7 @@ def main() -> int:
                 f"walk_incomplete={walk_incomplete})"
             )
 
-        status = "success" if failed == 0 else "partial"
+        status = "failed" if short_walk_error else ("success" if failed == 0 else "partial")
         finalise_scrape_run(
             supabase,
             run_id,
@@ -1455,6 +1538,7 @@ def main() -> int:
             attempted=before["attempted"] + attempted,
             succeeded=before["succeeded"] + succeeded,
             failed=before["failed"] + failed,
+            error_message=short_walk_error,
         )
         # The newest check counts only rows it wrote; a catalog or windowed
         # run also counts confirmed sightings, which matter to the
@@ -1472,7 +1556,7 @@ def main() -> int:
             f"succeeded={succeeded} failed={failed} skipped_unchanged={skipped} "
             f"complete={complete}"
         )
-        return 0
+        return 1 if short_walk_error else 0
     except Exception as exc:  # noqa: BLE001
         aborted = True
         log(f"FATAL: {exc}")
