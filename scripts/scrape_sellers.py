@@ -2,14 +2,13 @@
 Weekly per-seller scrape. Walks the subset of MorphMarket stores that
 are linked from at least one of our active listings and that we haven't
 refreshed in the last 7 days, then upserts a row per seller into
-public.sellers.
+sellers in the configured database schema.
 
-Env vars consumed: DECODO_AUTH, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-TRIGGERED_BY, MAX_SELLERS (optional cap for smoke tests).
+Env vars consumed: MORPHMARKET_PROXY_URL, SUPABASE_URL, SUPABASE_SERVICE_KEY,
+TRIGGERED_BY, MAX_SELLERS (optional cap for recovery checks).
 
-Concurrency: 2 parallel workers with a 2s per-worker delay. The Decodo
-wrapper enforces a global rate ceiling, so we stay well under the plan's
-10 req/s cap.
+Requests run sequentially through one Chromium browser, with a two-second
+pause per store and the catalog detail retry policy. No Decodo API is used.
 """
 from __future__ import annotations
 
@@ -18,22 +17,18 @@ import html as html_lib
 import os
 import re
 import sys
-import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple, Optional
 
-from lib.budget import BudgetExceededError, DecodoBudget
-from lib.decodo_client import DecodoClient
+from lib.morphmarket_html import MorphMarketHtmlClient
+from scrape_listings_api import MorphMarketAccessDeniedError
 from lib.supabase_client import get_supabase
-
-WORKER_COUNT = 2
 
 # If this many fetches in a row come back as hard failures (proxy quota
 # exhausted, provider outage), abort the whole run as 'failed' instead of
-# burning credits on the rest of the queue. Parse skips and write
+# sending requests for the rest of the queue. Parse skips and write
 # failures do not count; only fetch-layer exceptions do.
 CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
-PER_WORKER_DELAY_SECONDS = 2.0
+REQUEST_DELAY_SECONDS = 2.0
 
 # Same status codes the details scraper deactivates on. If a store URL
 # returns 404 / 410 we don't update the sellers row; we just skip and
@@ -41,14 +36,6 @@ PER_WORKER_DELAY_SECONDS = 2.0
 # rotated out of is_active=true.
 SKIP_STATUSES = frozenset({404, 410})
 
-# Same browser_actions recipe the listings grid uses. The store page is
-# similarly React-driven and needs hydration time before the stats
-# blocks paint into the DOM.
-SELLER_BROWSER_ACTIONS = [
-    {"type": "wait", "wait_time_s": 5},
-    {"type": "scroll_to_bottom", "timeout_s": 10},
-    {"type": "wait", "wait_time_s": 3},
-]
 
 
 class FetchResult(NamedTuple):
@@ -107,20 +94,14 @@ def finalise_scrape_run(
     )
 
 
-def fetch_seller(decodo: DecodoClient, slug: str) -> FetchResult:
-    """Fetch one store page through Decodo with the listings recipe."""
+def fetch_seller(client: MorphMarketHtmlClient, slug: str) -> FetchResult:
+    """Fetch one hydrated store page through the shared browser route."""
     import time
 
-    time.sleep(PER_WORKER_DELAY_SECONDS)
+    time.sleep(REQUEST_DELAY_SECONDS)
     url = f"https://www.morphmarket.com/stores/{slug}"
     log(f"GET {url}")
-    resp = decodo.fetch(
-        url,
-        headless="html",
-        proxy_pool="premium",
-        browser_actions=SELLER_BROWSER_ACTIONS,
-        timeout_seconds=180,
-    )
+    resp = client.fetch(url)
     if resp.status_code in SKIP_STATUSES:
         log(f"seller {slug} status={resp.status_code}; skipping")
         return FetchResult(action="skip", seller_slug=slug, reason=f"status_{resp.status_code}")
@@ -235,9 +216,9 @@ def parse_seller_html(html: str, *, seller_slug: str) -> Optional[dict[str, Any]
     if avatar_match:
         row["avatar_url"] = avatar_match.group(1).strip()
 
-    # If we didn't pull at least the store name or listings_count, the
-    # parse is too thin to bother writing.
-    if not row.get("store_name") and row.get("listings_count") is None:
+    # A generic error/challenge page can have a title. Require store-specific
+    # metadata before refreshing a seller or overwriting a real store name.
+    if not any(row.get(key) for key in ("owner_name", "location_raw", "member_since")) and row.get("listings_count") is None:
         return None
     return row
 
@@ -252,8 +233,7 @@ def main() -> int:
     max_sellers = int(max_sellers_env) if max_sellers_env else None
 
     supabase = get_supabase()
-    budget = DecodoBudget(supabase)
-    decodo = DecodoClient(budget=budget)
+    client = None
 
     run_id = start_scrape_run(supabase)
     attempted = 0
@@ -278,54 +258,47 @@ def main() -> int:
             return 0
 
         consecutive_fetch_failures = 0
-        with ThreadPoolExecutor(max_workers=WORKER_COUNT) as pool:
-            futures = {pool.submit(fetch_seller, decodo, slug): slug for slug in slugs}
-            for future in as_completed(futures):
-                slug = futures[future]
-                attempted += 1
+        client = MorphMarketHtmlClient()
+        for slug in slugs:
+            attempted += 1
+            try:
+                result = fetch_seller(client, slug)
+            except MorphMarketAccessDeniedError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log(f"ERROR fetching page: {exc}")
+                failed += 1
+                consecutive_fetch_failures += 1
+                if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                    raise RuntimeError(
+                        f"aborting run: {consecutive_fetch_failures} fetches "
+                        f"failed in a row; last error: {exc}"
+                    ) from exc
+                continue
+            consecutive_fetch_failures = 0
+
+            if result.action == "upsert" and result.row:
                 try:
-                    result = future.result()
-                except BudgetExceededError:
-                    # Monthly quota threshold hit; stop the whole run now.
-                    pool.shutdown(wait=False, cancel_futures=True)
-                    raise
+                    supabase.table("sellers").upsert(
+                        result.row, on_conflict="seller_slug"
+                    ).execute()
+                    succeeded += 1
                 except Exception as exc:  # noqa: BLE001
-                    log(f"ERROR seller {slug}: {exc}")
+                    log(f"WARN write failed for {slug}: {exc}")
                     failed += 1
-                    consecutive_fetch_failures += 1
-                    if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
-                        # Cancel everything still queued so the with-block
-                        # does not sit around executing doomed fetches.
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        raise RuntimeError(
-                            f"aborting run: {consecutive_fetch_failures} fetches "
-                            f"failed in a row; last error: {exc}"
-                        ) from exc
-                    continue
-                consecutive_fetch_failures = 0
+            else:
+                failed += 1
 
-                if result.action == "upsert" and result.row:
-                    try:
-                        supabase.table("sellers").upsert(
-                            result.row, on_conflict="seller_slug"
-                        ).execute()
-                        succeeded += 1
-                    except Exception as exc:  # noqa: BLE001
-                        log(f"WARN write failed for {slug}: {exc}")
-                        failed += 1
-                else:
-                    failed += 1
-
-                if attempted % 25 == 0:
-                    log(
-                        f"progress: attempted={attempted} succeeded={succeeded} "
-                        f"failed={failed}"
-                    )
+            if attempted % 25 == 0:
+                log(
+                    f"progress: attempted={attempted} succeeded={succeeded} "
+                    f"failed={failed}"
+                )
 
         log(
             f"final tally: attempted={attempted} succeeded={succeeded} failed={failed}"
         )
-        status = "success" if failed == 0 else "partial"
+        status = "failed" if failed and succeeded == 0 else ("success" if failed == 0 else "partial")
         finalise_scrape_run(
             supabase,
             run_id,
@@ -334,10 +307,10 @@ def main() -> int:
             succeeded=succeeded,
             failed=failed,
         )
-        return 0
+        return 1 if status == "failed" else 0
     except Exception as exc:  # noqa: BLE001
         log(f"FATAL: {exc}")
-        traceback.print_exc()
+        # Raw chained browser exceptions can contain proxy credentials.
         finalise_scrape_run(
             supabase,
             run_id,
@@ -349,7 +322,8 @@ def main() -> int:
         )
         return 1
     finally:
-        budget.flush()
+        if client is not None:
+            client.close()
 
 
 if __name__ == "__main__":

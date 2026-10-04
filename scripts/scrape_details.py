@@ -1,18 +1,13 @@
 """
 Weekly listings-detail scrape. Walks the subset of listings that need
 richer data (new since the last detail scrape, or older than 7 days) and
-upserts the detail fields into public.listings.
+upserts the detail fields into listings in the configured database schema.
 
-Why incremental: a full re-scrape of every listing burns ~6,000 Decodo
-Premium+JS credits. Our monthly cap is 19,000. Re-scraping only the
-listings that actually need updating keeps us comfortably under budget.
+Env vars consumed: MORPHMARKET_PROXY_URL, SUPABASE_URL, SUPABASE_SERVICE_KEY,
+TRIGGERED_BY, MAX_LISTINGS (optional cap for recovery checks).
 
-Env vars consumed: DECODO_AUTH, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-TRIGGERED_BY, MAX_LISTINGS (optional cap for smoke tests).
-
-Concurrency: 3 parallel workers with a 2 sec hard delay between requests
-per worker. The Decodo wrapper enforces a global rate ceiling too, so we
-stay under the 10 req/s plan limit.
+Requests run sequentially through one Chromium browser, with a two-second
+pause per listing and the catalog detail retry policy. No Decodo API is used.
 """
 from __future__ import annotations
 
@@ -22,12 +17,10 @@ import os
 import re
 import sys
 import time
-import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, NamedTuple, Optional
 
-from lib.budget import BudgetExceededError, DecodoBudget
-from lib.decodo_client import DecodoClient
+from lib.morphmarket_html import MorphMarketHtmlClient
+from scrape_listings_api import MorphMarketAccessDeniedError
 from lib.supabase_client import get_supabase
 from transform_and_load import (
     coerce_float,
@@ -36,14 +29,12 @@ from transform_and_load import (
     split_traits,
 )
 
-WORKER_COUNT = 3
-
 # If this many fetches in a row come back as hard failures (proxy quota
 # exhausted, provider outage), abort the whole run as 'failed' instead of
-# burning credits on the rest of the queue. Parse skips and write
+# sending requests for the rest of the queue. Parse skips and write
 # failures do not count; only fetch-layer exceptions do.
 CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
-PER_WORKER_DELAY_SECONDS = 2.0
+REQUEST_DELAY_SECONDS = 2.0
 
 # Detail page status codes that mean the listing is permanently gone
 # (sold, removed, expired). Anything else — 403 bot block, 5xx hiccup —
@@ -141,7 +132,7 @@ def finalise_scrape_run(
 
 
 def fetch_listing_detail(
-    decodo: DecodoClient,
+    client: MorphMarketHtmlClient,
     listing: dict[str, Any],
 ) -> FetchResult:
     """Scrape one listing's detail page.
@@ -151,17 +142,15 @@ def fetch_listing_detail(
       - deactivate: MorphMarket returned 404/410 — listing is gone
       - skip:       transient error; leave the row alone, try next pass
 
-    The per-worker delay is implemented here (time.sleep before fetch) so
-    each worker pauses individually; the global rate cap in DecodoClient
-    keeps total throughput safe.
+    Requests stay on the browser-owning thread with a two-second pause.
     """
-    time.sleep(PER_WORKER_DELAY_SECONDS)
+    time.sleep(REQUEST_DELAY_SECONDS)
     listing_id = str(listing.get("listing_id") or "")
     url = listing.get("listing_url")
     if not url:
         log(f"skip {listing_id}: no listing_url")
         return FetchResult(action="skip", listing_id=listing_id, reason="no_url")
-    resp = decodo.fetch(url, headless="html")
+    resp = client.fetch(url)
     if resp.status_code in DEACTIVATE_STATUSES:
         log(f"listing {listing_id} status={resp.status_code}; marking inactive")
         return FetchResult(
@@ -334,8 +323,7 @@ def main() -> int:
     max_listings = int(max_listings_env) if max_listings_env else None
 
     supabase = get_supabase()
-    budget = DecodoBudget(supabase)
-    decodo = DecodoClient(budget=budget)
+    client = None
 
     run_id = start_scrape_run(supabase)
     attempted = 0
@@ -365,77 +353,67 @@ def main() -> int:
             return 0
 
         consecutive_fetch_failures = 0
-        with ThreadPoolExecutor(max_workers=WORKER_COUNT) as pool:
-            futures = {
-                pool.submit(fetch_listing_detail, decodo, listing): listing
-                for listing in todo
-            }
-            for future in as_completed(futures):
-                listing = futures[future]
-                attempted += 1
+        client = MorphMarketHtmlClient()
+        for listing in todo:
+            attempted += 1
+            try:
+                result = fetch_listing_detail(client, listing)
+            except MorphMarketAccessDeniedError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log(f"ERROR fetching page: {exc}")
+                failed += 1
+                consecutive_fetch_failures += 1
+                if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                    raise RuntimeError(
+                        f"aborting run: {consecutive_fetch_failures} fetches "
+                        f"failed in a row; last error: {exc}"
+                    ) from exc
+                continue
+            consecutive_fetch_failures = 0
+
+            if result.action == "deactivate":
+                deactivate_listing(
+                    supabase, run_id, result.listing_id, result.reason or "gone"
+                )
+                deactivated += 1
+                succeeded += 1
+            elif result.action == "upsert" and result.row:
+                row = result.row
                 try:
-                    result = future.result()
-                except BudgetExceededError:
-                    # Monthly quota threshold hit; stop the whole run now.
-                    pool.shutdown(wait=False, cancel_futures=True)
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    log(f"ERROR listing {listing.get('listing_id')}: {exc}")
-                    failed += 1
-                    consecutive_fetch_failures += 1
-                    if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
-                        # Cancel everything still queued so the with-block
-                        # does not sit around executing doomed fetches.
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        raise RuntimeError(
-                            f"aborting run: {consecutive_fetch_failures} fetches "
-                            f"failed in a row; last error: {exc}"
-                        ) from exc
-                    continue
-                consecutive_fetch_failures = 0
-
-                if result.action == "deactivate":
-                    deactivate_listing(
-                        supabase, run_id, result.listing_id, result.reason or "gone"
-                    )
-                    deactivated += 1
+                    supabase.table("listings").upsert(
+                        row, on_conflict="listing_id"
+                    ).execute()
+                    supabase.table("listings_history").insert(
+                        {
+                            "listing_id": row["listing_id"],
+                            "scrape_run_id": run_id,
+                            "price": row.get("price"),
+                            "is_active": True,
+                            "raw_snapshot": row,
+                        }
+                    ).execute()
                     succeeded += 1
-                elif result.action == "upsert" and result.row:
-                    row = result.row
-                    try:
-                        supabase.table("listings").upsert(
-                            row, on_conflict="listing_id"
-                        ).execute()
-                        supabase.table("listings_history").insert(
-                            {
-                                "listing_id": row["listing_id"],
-                                "scrape_run_id": run_id,
-                                "price": row.get("price"),
-                                "is_active": True,
-                                "raw_snapshot": row,
-                            }
-                        ).execute()
-                        succeeded += 1
-                    except Exception as exc:  # noqa: BLE001
-                        log(
-                            f"WARN write failed for {row.get('listing_id')}: {exc}"
-                        )
-                        failed += 1
-                else:
-                    # skip: transient error or unparseable page; try next pass
-                    failed += 1
-
-                if attempted % 25 == 0:
+                except Exception as exc:  # noqa: BLE001
                     log(
-                        f"progress: attempted={attempted} succeeded={succeeded} "
-                        f"deactivated={deactivated} failed={failed}"
+                        f"WARN write failed for {row.get('listing_id')}: {exc}"
                     )
+                    failed += 1
+            else:
+                # skip: transient error or unparseable page; try next pass
+                failed += 1
+
+            if attempted % 25 == 0:
+                log(
+                    f"progress: attempted={attempted} succeeded={succeeded} "
+                    f"deactivated={deactivated} failed={failed}"
+                )
 
         log(
             f"final tally: attempted={attempted} succeeded={succeeded} "
             f"deactivated={deactivated} failed={failed}"
         )
-        status = "success" if failed == 0 else "partial"
+        status = "failed" if failed and succeeded == 0 else ("success" if failed == 0 else "partial")
         finalise_scrape_run(
             supabase,
             run_id,
@@ -444,10 +422,10 @@ def main() -> int:
             succeeded=succeeded,
             failed=failed,
         )
-        return 0
+        return 1 if status == "failed" else 0
     except Exception as exc:  # noqa: BLE001
         log(f"FATAL: {exc}")
-        traceback.print_exc()
+        # Raw chained browser exceptions can contain proxy credentials.
         finalise_scrape_run(
             supabase,
             run_id,
@@ -459,7 +437,8 @@ def main() -> int:
         )
         return 1
     finally:
-        budget.flush()
+        if client is not None:
+            client.close()
 
 
 if __name__ == "__main__":

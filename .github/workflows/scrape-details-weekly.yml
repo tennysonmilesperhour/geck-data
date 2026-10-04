@@ -1,11 +1,19 @@
 name: Weekly Details Scrape
 
 on:
-  # PAUSED 2026-08-26: Decodo has returned HTTP 429 for every request since
-  # June. Keep manual dispatch for diagnosis after the account is repaired.
-  # schedule:
-  #   - cron: '0 10 * * 1'   # Mondays 10 AM UTC
+  # Still paused until a capped manual run validates the replacement browser
+  # route and current page parser. Do not restore a schedule based on CI alone.
   workflow_dispatch:
+    inputs:
+      max_records:
+        description: 'Maximum records for recovery check (0 runs the full backlog)'
+        required: true
+        default: '5'
+        type: string
+
+concurrency:
+  group: scrape-details
+  cancel-in-progress: false
 
 jobs:
   scrape:
@@ -24,9 +32,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
       - name: Run scrape_details.py
         env:
-          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
+          MAX_LISTINGS: ${{ inputs.max_records }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}

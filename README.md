@@ -18,7 +18,7 @@ geck-inspect/
 ├── next.config.mjs, tsconfig.json, tailwind.config.ts, postcss.config.js
 ├── .env.local.example                     ← copy to .env.local and fill in
 ├── supabase/
-│   └── migrations/0001_init_geck_inspect.sql   ← run in Supabase SQL editor
+│   └── migrations/                              ← archived, do not replay
 └── src/
     ├── middleware.ts                      ← gates /upload to logged-in users
     ├── app/
@@ -242,9 +242,10 @@ Content-Type: application/json
 ]}
 ```
 
-Schema for the tables each event writes to lives in
-`supabase/migrations/0002_extension_streams.sql`. Run it once in the Supabase
-SQL Editor — safe to re-run.
+The historical event-table definitions are archived in
+`supabase/migrations/0002_extension_streams.sql`. Do not replay this file in
+the consolidated project. Maintain the current schema through migrations in
+the Geck Inspect repository.
 
 ## Analytics routes
 
@@ -308,9 +309,10 @@ dashboard.
 
 ### Enabling it
 
-1. Run `supabase/migrations/0003_admin_analytics.sql` (creates `profiles`,
-   `user_events`, `error_logs`, indexes, RLS, and the `v_daily_activity`
-   view — see `README_admin_analytics_prod.md` for details).
+1. Verify that the consolidated project has the analytics schema using the
+   Geck Inspect repository instructions. The local
+   `supabase/migrations/0003_admin_analytics.sql` is historical reference only;
+   do not replay it. Add any missing schema through Geck Inspect migrations.
 2. Promote yourself to admin once, in the Supabase SQL editor:
    ```sql
    update public.profiles set role = 'admin' where email = 'you@example.com';

@@ -137,3 +137,10 @@ GitHub can also run its jobs on your Mac ("self-hosted runner"). This repository
 is public, and GitHub warns that on public repositories a stranger's pull
 request can end up running code on that machine. The Mac schedule above avoids
 that risk entirely.
+
+## Recovery checks and late GitHub schedules
+
+See [the October 4 recovery notes](SCRAPER_RECOVERY.md) for measured scheduling
+delays and the replacement Details and Sellers browser route. Both weekly jobs
+remain paused pending capped live checks; their manual runs default to five
+records. The new route uses `MORPHMARKET_PROXY_URL`, not `DECODO_AUTH`.

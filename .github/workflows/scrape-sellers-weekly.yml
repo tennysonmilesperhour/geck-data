@@ -1,28 +1,18 @@
 name: Weekly Sellers Scrape
 
-# Walks each distinct seller_slug from active listings and upserts the
-# seller's store-page metadata (display name, owner, location, member
-# since, listings count, avatar) into public.sellers.
-#
-# Seller slugs come from listings.seller_slug, which scrape_details.py
-# populates from each listing's per-listing JSON-LD `seller.url`. Until
-# scrape_details has run at least once on a given listing, that
-# listing's seller_slug is NULL and it does not contribute a slug to
-# the sellers_needing_scrape view.
-#
-# Cost envelope: ~700 active sellers in the catalog -> 1 Decodo
-# Premium+JS credit per seller -> ~700 credits/week or ~2,800/month.
-#
-# Schedule sits at Mon 12:00 UTC: one hour after the weekly images job
-# (Mon 11:00) and two after the weekly details job (Mon 10:00). The
-# details job feeds the slugs view, so running this after it gives the
-# fresh slug data a chance to land first.
+# Refreshes stores linked from active listings using Chromium and the same
+# residential proxy route as the catalog. Catalog API reads supply seller slugs.
+# Requests are sequential because a Playwright browser belongs to one thread.
 on:
-  # PAUSED 2026-08-26: Decodo has returned HTTP 429 for every request since
-  # June. Keep manual dispatch for diagnosis after the account is repaired.
-  # schedule:
-  #   - cron: '0 12 * * 1'   # Mondays 12:00 UTC
+  # Still paused until a capped manual run validates the replacement browser
+  # route and current page parser. Do not restore a schedule based on CI alone.
   workflow_dispatch:
+    inputs:
+      max_records:
+        description: 'Maximum records for recovery check (0 runs the full backlog)'
+        required: true
+        default: '5'
+        type: string
 
 # Sellers scrape is independent of the listings concurrency group,
 # but we still want only one of these in flight at a time so a
@@ -34,9 +24,7 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    # ~700 sellers * (2s per-worker delay + ~20s render) / 2 workers
-    # ~= 130 min worst case. The 180 ceiling protects against retry
-    # storms.
+    # Full-backlog duration needs validation before restoring the schedule.
     timeout-minutes: 180
     steps:
       - name: Check out repo
@@ -51,9 +39,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
       - name: Run scrape_sellers.py
         env:
-          DECODO_AUTH: ${{ secrets.DECODO_AUTH }}
+          MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
+          MAX_SELLERS: ${{ inputs.max_records }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}

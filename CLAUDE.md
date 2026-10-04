@@ -40,17 +40,19 @@ those, ask first.
 This repo's `main` branch deploys directly to
 `https://geck-data.vercel.app` (production). The Supabase project it
 talks to is the live one used by the Eye in the Sky extension and the
-Geck Inspect web app. Schema migrations land in `supabase/migrations/`.
-Apply them directly via the Supabase MCP (`mcp__supabase__apply_migration`
-for DDL, or `execute_sql` for idempotent `CREATE OR REPLACE` and data
-backfills) at the same time you push the migration file to main, so the
-schema state in prod always matches what `main` expects. Flag any DDL
-that drops or rewrites existing data; ask the user before running it.
+Geck Inspect web app. Geck Data now uses the `geck_data` schema in the
+consolidated Geck Inspect Supabase project.
+
+All new migrations belong in `tennysonmilesperhour/geck-inspect`. Add and apply
+schema changes from that repository, following its instructions and using
+explicit schema qualification. Do not add or apply migrations from this repo:
+`supabase/migrations/` is an archived record of the retired standalone database,
+and many files target `public`. Do not replay these files or run `supabase db
+push` here. Destructive schema changes still require explicit approval.
+
 The `apply-migrations` GitHub workflow is a pull-request-only read-only guard.
 It rejects changes to archived migration files and directs new migrations to
-the Geck Inspect repository; it does not apply migrations. The
-legacy filenames include duplicate versions, so do not replace it with
-`supabase db push` until migration history has been reconciled deliberately.
+the Geck Inspect repository; it does not apply migrations.
 
 ## Companion repos
 

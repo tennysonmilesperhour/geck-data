@@ -296,6 +296,17 @@ class MorphMarketFetcher:
     def fetch_text(self, url: str) -> str:
         return self._fetch_bytes(url).decode("utf-8", errors="replace")
 
+    def fetch_rendered_text(self, url: str) -> str:
+        """Read the hydrated DOM for the legacy detail and seller parsers."""
+        self._fetch_bytes(url)
+        try:
+            self._page.wait_for_timeout(5000)
+            return self._page.content()
+        except PlaywrightError as exc:
+            raise MorphMarketFetchError(
+                f"could not render MorphMarket page: {self._safe_error(exc)}"
+            ) from exc
+
     def close(self) -> None:
         if self._browser is not None:
             try:
