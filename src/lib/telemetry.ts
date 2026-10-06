@@ -14,6 +14,7 @@
 // is for the small set of events we want to slice *inside* the admin dashboard
 // and join against relational tables (auth.users, market_listings, alerts…).
 import { createClient } from "@/lib/supabase/client";
+import posthog from "posthog-js";
 
 const SESSION_KEY = "geck_session_id";
 const THROTTLE_MS = 2000;
@@ -88,6 +89,8 @@ export async function trackEvent(
     }
   })();
   if (shouldThrottle(`${name}|${propsStr}`)) return;
+
+  posthog.capture(name, properties);
 
   try {
     const supabase = createClient();
