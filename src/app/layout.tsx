@@ -43,13 +43,34 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
+const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://geck-data.vercel.app"
+).replace(/\/$/, "");
+
 export const metadata: Metadata = {
-  title: "Geck Inspect Market: what is your crested gecko worth?",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Geck Inspect Market: what is your crested gecko worth?",
+    template: "%s",
+  },
   description: "Crested gecko prices by morph, from real MorphMarket listings and sales.",
-  icons: {
-    icon: "/geck-logo.png",
-    shortcut: "/geck-logo.png",
-    apple: "/geck-logo.png",
+  alternates: { canonical: "./" },
+  openGraph: {
+    type: "website",
+    siteName: "Geck Inspect Market",
+    url: "./",
+    images: [
+      {
+        url: "/og.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Geck Inspect Market: what is your crested gecko worth?",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: ["/og.jpg"],
   },
 };
 
@@ -66,6 +87,7 @@ export default function RootLayout({
       className={`dark ${body.variable} ${mono.variable}`}
     >
       <head>
+        <link rel="preload" as="image" href="/geck-logo.webp" type="image/webp" />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="geck-app min-h-screen bg-ink-950 font-sans text-ink-100 antialiased">

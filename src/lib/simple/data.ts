@@ -120,15 +120,13 @@ const SOLD_LOOKBACK_DAYS = 730;
 // matching the SQL functions (coalesce(species, 'unknown')).
 const CRESTED = "species.is.null,species.in.(crested,unknown)";
 
-// Market data only changes when the hourly scrape and view refresh land, so
-// every read in this file goes through the Next.js data cache for 30 minutes
-// per set of inputs. Before 29 Sep 2026 nothing here was cached: the value
-// report reads its query string, which makes Next.js render it on every
-// request, and crawlers drove about 32,500 calls a day into each of the five
-// price functions plus 93,000 listing reads. Bursts pushed some of them past
-// the database's 3-second limit for signed-out requests, and those pages
-// rendered as "not enough data".
-const MARKET_CACHE_SECONDS = 1800;
+// Market data changes on the hourly scrape, and the public pages revalidate
+// on that same hour. Every read goes through the Next.js data cache so an
+// edge revalidation, or the first request for a trait that is not cached yet,
+// does not stampede the database. Before 29 Sep 2026 nothing here was cached:
+// the value report read its query string on every request, and crawlers drove
+// about 32,500 calls a day into each of the five price functions.
+const MARKET_CACHE_SECONDS = 3600;
 const MARKET_CACHE_TAG = "market-data";
 
 type ReadResult = { data: unknown; error: unknown; count?: number | null };

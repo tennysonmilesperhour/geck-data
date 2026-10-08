@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-// Geck Inspect brand mark. Expects public/geck-logo.png (transparent PNG
-// preferred). If the asset is missing or fails to load, falls back to the
-// Claude-Code-style asterisk so the page never shows a broken-image icon.
+// Geck Inspect brand mark. public/geck-logo.webp is a small WebP of the
+// painted mark. If it fails to load, fall back to the asterisk so the page
+// never shows a broken-image icon.
 //
 // The useEffect double-checks the image post-mount: if the <img> already
 // finished loading before React hydration (and failed — naturalWidth===0),
@@ -42,10 +42,12 @@ export default function Logo({
     /* eslint-disable-next-line @next/next/no-img-element */
     <img
       ref={imgRef}
-      src="/geck-logo.png"
+      src="/geck-logo.webp"
       alt="Geck Inspect"
       width={size}
       height={size}
+      fetchPriority="high"
+      decoding="async"
       onError={() => setFailed(true)}
       className={className}
       style={{ width: size, height: size }}

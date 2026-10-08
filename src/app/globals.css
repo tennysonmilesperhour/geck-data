@@ -364,6 +364,14 @@ body::before {
   border-radius: 4px;
 }
 
+/* Filter URLs share the cached page. Hide the default prices before paint. */
+.report-pending { display: none; }
+html[data-report-filter="1"] .report-pending { display: block; }
+html[data-report-filter="1"] .report-body { display: none; }
+.market-chart-pending { display: none; }
+html[data-market-trait="1"] .market-chart-pending { display: block; }
+html[data-market-trait="1"] .market-chart-body { display: none; }
+
 .market-theme .tick text { fill: rgb(var(--ink-400)); }
 .market-theme .domain,
 .market-theme .tick line { stroke: rgb(var(--ink-600)); }
