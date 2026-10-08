@@ -4,6 +4,8 @@ const FOOTER_LINKS = [
   { href: "/methodology", label: "How prices work" },
   { href: "/status", label: "Data status" },
   { href: "/api-docs", label: "API" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
 ] as const;
 
 export default function SiteFooter() {
