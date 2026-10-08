@@ -2,6 +2,7 @@
 // and the UK, all in US dollars. Leads with where prices differ enough to
 // matter (buy in one market, sell in another), then every morph in every
 // market, then how each market's prices move over time.
+import { Suspense } from "react";
 import Link from "next/link";
 import {
   getFxRates,
@@ -12,9 +13,9 @@ import {
   type MarketCell,
   type MarketCode,
 } from "@/lib/simple/data";
-import { MARKETS, MIN_N, comparableTraits, opportunities, pivot, vsUs, type Opportunity } from "@/lib/simple/markets";
-import { Card, Chip, PageIntro, Section, Stat, fmtShortDate } from "@/components/simple/ui";
-import MultiLineChart, { type LineSeries } from "@/components/simple/MultiLineChart";
+import { MARKETS, MIN_N, comparableTraits, marketPriceSeries, opportunities, pivot, vsUs, type Opportunity } from "@/lib/simple/markets";
+import { Card, PageIntro, Section, Stat, fmtShortDate } from "@/components/simple/ui";
+import { MarketChart, MarketOverTime } from "@/components/simple/MarketOverTime";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 3600;
@@ -98,20 +99,21 @@ function PriceCell({ cell, us }: { cell: MarketCell | undefined; us: MarketCell 
   );
 }
 
-export default async function MarketsPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
-  const params = await searchParams;
-  const [cells, morphs, fx, markup] = await Promise.all([
+// Query string is intentionally unread. /markets?t= is the same cached page;
+// the chart below loads that morph from /api/market-weekly.
+const marketTraitBoot = `(function(){try{if(location.pathname==="/markets"&&/[?&]t=/.test(location.search))document.documentElement.setAttribute("data-market-trait","1");}catch(e){}})();`;
+
+export default async function MarketsPage() {
+  const [cells, morphs, fx, markup, weekly] = await Promise.all([
     getMarketCompare(5),
     getMorphs(),
     getFxRates(),
     getImportMarkup(),
+    getMarketWeekly(null),
   ]);
   const grid = pivot(cells);
-  const bySlug = new Map(morphs.map((m) => [m.slug, m.trait]));
   const slugByLower = new Map(morphs.map((m) => [m.trait.toLowerCase(), m.slug]));
   const slugOf = (t: string) => slugByLower.get(t.toLowerCase()) ?? null;
-  const picked = params.t ? bySlug.get(params.t) ?? null : null;
-  const weekly = await getMarketWeekly(picked);
 
   const overall = grid.get(null) ?? new Map<MarketCode, MarketCell>();
   const rate = new Map(fx.map((r) => [r.currency, r]));
@@ -128,22 +130,12 @@ export default async function MarketsPage({ searchParams }: { searchParams: Prom
   const caExport = opportunities(grid, "CA", "export");
   const top = krImport[0];
 
-  const series: LineSeries[] = MARKETS.filter((m) => ["US", "KR", "JP", "EU"].includes(m.code))
-    .map((m) => ({
-      key: m.code,
-      label: m.name,
-      points: (() => {
-        // A week where a market's scrape read under half its usual count
-        // is a partial check (Korea on Sep 8 read 12 listings), not a
-        // price move, so it is left off the line.
-        const rows = weekly.filter((w) => w.market === m.code && w.p50 != null && w.n >= MIN_N);
-        const most = Math.max(0, ...rows.map((w) => w.n));
-        return rows.filter((w) => w.n >= most * 0.5).map((w) => ({ x: w.week, y: w.p50 as number, n: w.n }));
-      })(),
-    }))
-    .filter((s) => s.points.length);
+  const series = marketPriceSeries(weekly);
   const chartTraits = traits.slice(0, 16);
-  if (picked && !chartTraits.includes(picked)) chartTraits.unshift(picked);
+  const chips = chartTraits.flatMap((t) => {
+    const slug = slugOf(t);
+    return slug ? [{ slug, trait: t }] : [];
+  });
 
   return (
     <div className="mx-auto max-w-5xl space-y-12">
@@ -299,37 +291,17 @@ export default async function MarketsPage({ searchParams }: { searchParams: Prom
       </Section>
 
       <section id="over-time" className="scroll-mt-24">
-        <Section
-          title={`${picked ?? "All crested geckos"}: prices over time`}
-          note="Middle asking price each week, in US dollars at today's exchange rate, so the lines show local prices moving rather than currencies."
-        >
-          <div className="space-y-4">
-            <nav aria-label="Morph" className="flex flex-wrap gap-2">
-              <Chip href="/markets#over-time" active={!picked}>
-                All crested
-              </Chip>
-              {chartTraits.map((t) => {
-                const s = slugOf(t);
-                return s ? (
-                  <Chip key={t} href={`/markets?t=${s}#over-time`} active={picked === t}>
-                    {t}
-                  </Chip>
-                ) : null;
-              })}
-            </nav>
-            <Card>
-              {series.length ? (
-                <MultiLineChart series={series} maxGapDays={7} />
-              ) : (
-                <p className="text-ink-300">Not enough weekly history for this morph yet.</p>
-              )}
-              <p className="mt-3 text-sm text-ink-400">
-                The US line goes back to May 2026. Korea and Europe start with the first run of the new
-                market scrapers and add a point each week.
-              </p>
-            </Card>
-          </div>
-        </Section>
+        <script dangerouslySetInnerHTML={{ __html: marketTraitBoot }} />
+        <div className="market-chart-pending">
+          <Section title="Prices over time" note="Loading this morph.">
+            <p className="text-ink-300">Loading this morph&apos;s prices…</p>
+          </Section>
+        </div>
+        <div className="market-chart-body">
+          <Suspense fallback={<MarketChart series={series} title="All crested geckos" chips={chips} active={null} />}>
+            <MarketOverTime overall={series} chips={chips} />
+          </Suspense>
+        </div>
       </section>
 
       <Section title="How to read this">

@@ -25,7 +25,14 @@ import ListingImage from "@/components/media/ListingImage";
 import { BreederCard } from "@/components/simple/breeder";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
-export const revalidate = 1800;
+export const revalidate = 3600;
+export const dynamicParams = true;
+
+// Listing ids are too many to prebuild. The first request renders next to the
+// database and the edge keeps that page for an hour.
+export function generateStaticParams() {
+  return [];
+}
 
 const AGE: Record<string, string> = {
   hatchling: "hatchling",

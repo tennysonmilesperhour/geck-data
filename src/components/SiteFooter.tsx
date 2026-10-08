@@ -16,6 +16,10 @@ export default function SiteFooter() {
           <a href="https://geckinspect.com" className="text-ink-300 hover:text-ink-50">
             Geck Inspect
           </a>
+          {" · "}
+          <a href="https://tennysontaggart.com" className="text-ink-300 hover:text-ink-50">
+            by Tennyson Taggart
+          </a>
           .
         </p>
         <nav className="flex flex-wrap gap-x-5 gap-y-2 text-ink-400" aria-label="Footer">

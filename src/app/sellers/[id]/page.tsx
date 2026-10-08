@@ -25,7 +25,13 @@ import { BreederCard, PricingPill, PricingSplit } from "@/components/simple/bree
 import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
-export const revalidate = 1800;
+export const revalidate = 3600;
+export const dynamicParams = true;
+
+// Breeder pages are rendered on first view and then kept at the edge.
+export function generateStaticParams() {
+  return [];
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

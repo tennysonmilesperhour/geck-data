@@ -95,6 +95,30 @@ export function comparableTraits(grid: Grid): string[] {
   return out.sort((a, b) => b.n - a.n).map((r) => r.trait);
 }
 
+export type MarketWeekLike = { market: string; week: string; n: number; p50: number | null };
+
+/** Weekly middle price for the four markets drawn on the markets chart.
+ *  A week under half that market's fullest count is a partial check and is left off. */
+export function marketPriceSeries(weekly: MarketWeekLike[]): Array<{
+  key: string;
+  label: string;
+  points: Array<{ x: string; y: number; n: number }>;
+}> {
+  return MARKETS.filter((m) => ["US", "KR", "JP", "EU"].includes(m.code))
+    .map((m) => {
+      const rows = weekly.filter((w) => w.market === m.code && w.p50 != null && w.n >= MIN_N);
+      const most = Math.max(0, ...rows.map((w) => w.n));
+      return {
+        key: m.code,
+        label: m.name,
+        points: rows
+          .filter((w) => w.n >= most * 0.5)
+          .map((w) => ({ x: w.week, y: w.p50 as number, n: w.n })),
+      };
+    })
+    .filter((s) => s.points.length);
+}
+
 /** "42% less" / "2.6x" style comparison of a price against the US price. */
 export function vsUs(price: number, us: number): { text: string; dir: "below" | "above" | "same" } {
   const r = price / us;

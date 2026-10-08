@@ -32,7 +32,15 @@ import { BreederCard } from "@/components/simple/breeder";
 import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
-export const revalidate = 1800;
+export const revalidate = 3600;
+export const dynamicParams = true;
+
+// Prebuild every known morph so the first visit is the edge cache, not a
+// cross-country render. A morph that appears later is rendered once, then cached.
+export async function generateStaticParams() {
+  const morphs = await getMorphs();
+  return morphs.map((m) => ({ slug: m.slug }));
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
