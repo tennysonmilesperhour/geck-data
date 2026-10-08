@@ -15,6 +15,8 @@ const PUBLIC_ROUTES = [
   "/methodology",
   "/status",
   "/api-docs",
+  "/privacy",
+  "/terms",
 ] as const;
 
 export const revalidate = 86400;
