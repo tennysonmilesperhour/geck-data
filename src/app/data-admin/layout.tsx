@@ -35,7 +35,7 @@ export default async function DataAdminLayout({
 }: {
   children: ReactNode;
 }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const user = userData?.user;
   if (!user) redirect("/login?next=/data-admin");

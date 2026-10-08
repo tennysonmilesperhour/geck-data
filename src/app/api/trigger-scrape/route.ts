@@ -24,7 +24,7 @@ const ALLOWED_WORKFLOWS = new Set([
 ]);
 
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const user = userData?.user;
   if (!user) {

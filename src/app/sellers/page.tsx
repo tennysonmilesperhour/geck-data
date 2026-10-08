@@ -38,13 +38,14 @@ const SORT_OPTS = [
   { value: "value", label: "Lowest prices vs similar" },
 ];
 
-export default async function BreedersPage({ searchParams }: { searchParams?: SearchParams }) {
-  const q = one(searchParams?.q).slice(0, 60);
-  const focusSlug = one(searchParams?.focus);
-  const pricingF = one(searchParams?.pricing);
-  const stageF = one(searchParams?.stage);
-  const sort = one(searchParams?.sort);
-  const page = Math.max(1, Number(one(searchParams?.page)) || 1);
+export default async function BreedersPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const params = await searchParams;
+  const q = one(params?.q).slice(0, 60);
+  const focusSlug = one(params?.focus);
+  const pricingF = one(params?.pricing);
+  const stageF = one(params?.stage);
+  const sort = one(params?.sort);
+  const page = Math.max(1, Number(one(params?.page)) || 1);
 
   const [all, morphs] = await Promise.all([getBreeders(), getMorphs()]);
   const focusMorph = morphs.find((m) => m.slug === focusSlug) ?? null;

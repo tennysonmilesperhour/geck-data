@@ -65,12 +65,13 @@ function SaleNote({ weeks }: { weeks: TrendWeek[] }) {
   );
 }
 
-export default async function TrendsPage({ searchParams }: { searchParams: { t?: string; c?: string } }) {
+export default async function TrendsPage({ searchParams }: { searchParams: Promise<{ t?: string; c?: string }> }) {
+  const params = await searchParams;
   const morphs = await getMorphs();
-  const picked = searchParams.t ? morphs.find((m) => m.slug === searchParams.t) ?? null : null;
+  const picked = params.t ? morphs.find((m) => m.slug === params.t) ?? null : null;
   const topMorphsForCompare = [...morphs].sort((a, b) => b.forSale + b.sold - (a.forSale + a.sold));
   const bySlug = new Map(morphs.map((m) => [m.slug, m]));
-  const requested = (searchParams.c ?? "").split(",").map((x) => x.trim()).filter((x) => bySlug.has(x));
+  const requested = (params.c ?? "").split(",").map((x) => x.trim()).filter((x) => bySlug.has(x));
   // No choice yet: start with the four most-listed morphs.
   const compareSlugs = [...new Set(requested.length ? requested : topMorphsForCompare.slice(0, 4).map((m) => m.slug))].slice(0, 6);
   const compareTraits = compareSlugs.map((x) => bySlug.get(x)!.trait);

@@ -71,7 +71,7 @@ async function pageSelect<T>(
 export async function GET() {
   let supabase;
   try {
-    supabase = createClient();
+    supabase = await createClient();
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "supabase" },

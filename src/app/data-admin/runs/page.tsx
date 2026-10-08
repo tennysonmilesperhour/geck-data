@@ -30,9 +30,10 @@ function statusBadge(status: string): string {
 export default async function RunsPage({
   searchParams,
 }: {
-  searchParams: { page?: string };
+  searchParams: Promise<{ page?: string }>;
 }) {
-  const page = Math.max(1, Number(searchParams.page ?? "1") || 1);
+  const params = await searchParams;
+  const page = Math.max(1, Number(params.page ?? "1") || 1);
   const { rows, total } = await getAllScrapeRuns(page, PAGE_SIZE);
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

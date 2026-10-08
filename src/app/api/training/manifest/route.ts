@@ -32,7 +32,7 @@ type TrainingRow = {
 const PAGE_SIZE = 1000;
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const split = req.nextUrl.searchParams.get("split") ?? "train";
   if (!["train", "val", "test"].includes(split)) {
     return NextResponse.json(

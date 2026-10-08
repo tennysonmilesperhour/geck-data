@@ -99,7 +99,7 @@ function classify(
 }
 
 export default async function StatusPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
 
   let scrapers: ScraperHealth[] = [];

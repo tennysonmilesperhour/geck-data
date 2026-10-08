@@ -2,8 +2,9 @@
 // with both morphs selected.
 import { redirect } from "next/navigation";
 
-export default function ComboRedirect({ params }: { params: { slug: string } }) {
-  const parts = decodeURIComponent(params.slug)
+export default async function ComboRedirect({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const parts = decodeURIComponent(slug)
     .split("__")
     .map((s) => s.trim().toLowerCase())
     .filter((s) => /^[a-z0-9-]+$/.test(s));

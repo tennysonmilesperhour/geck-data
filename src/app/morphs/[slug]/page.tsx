@@ -34,8 +34,9 @@ import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 1800;
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const morph = (await getMorphs()).find((m) => m.slug === params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const morph = (await getMorphs()).find((m) => m.slug === slug);
   const name = morph?.trait ?? "Morph";
   return {
     title: `${name} crested gecko prices - Geck Inspect`,
@@ -56,10 +57,11 @@ function histogram(prices: number[]) {
   });
 }
 
-export default async function MorphPage({ params }: { params: { slug: string } }) {
-  if (!/^[a-z0-9-]+$/.test(params.slug)) notFound();
+export default async function MorphPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  if (!/^[a-z0-9-]+$/.test(slug)) notFound();
   const morphs = await getMorphs();
-  const morph = morphs.find((m) => m.slug === params.slug);
+  const morph = morphs.find((m) => m.slug === slug);
   if (!morph) notFound();
 
   const traits = [morph.trait];

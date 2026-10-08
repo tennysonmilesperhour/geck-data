@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 type Body = { key?: string; value?: unknown };
 
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const user = userData?.user;
   if (!user) {

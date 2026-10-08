@@ -88,8 +88,9 @@ function toggle(slugs: string[], slug: string): string[] {
   return slugs.includes(slug) ? slugs.filter((s) => s !== slug) : [...slugs, slug];
 }
 
-export default async function ValueReportPage({ searchParams }: { searchParams?: SearchParams }) {
-  const state = parse(searchParams);
+export default async function ValueReportPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const params = await searchParams;
+  const state = parse(params);
   const morphs = await getMorphs();
   const selected = traitsFromSlugs(morphs, state.slugs);
   const cur: State = { ...state, slugs: selected.map((m) => m.slug) };

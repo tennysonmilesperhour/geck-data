@@ -23,7 +23,7 @@ type ExampleImage = {
 };
 
 export default async function MorphIdTrainingPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [statsRes, taxRes] = await Promise.all([
     supabase

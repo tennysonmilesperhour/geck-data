@@ -34,17 +34,19 @@ const AGE: Record<string, string> = {
   adult: "adult",
 };
 
-export async function generateMetadata({ params }: { params: { id: string } }) {
-  const l = await getListing(params.id);
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const l = await getListing(id);
   return {
     title: l ? `${l.traits.join(" ") || l.name || "Crested gecko"} ${fmtUsd(l.price)} - Geck Inspect` : "Listing - Geck Inspect",
     description: "How this crested gecko's asking price compares with similar geckos.",
   };
 }
 
-export default async function ListingPage({ params }: { params: { id: string } }) {
-  if (!/^[A-Za-z0-9_-]{1,40}$/.test(params.id)) notFound();
-  const l = await getListing(params.id);
+export default async function ListingPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) notFound();
+  const l = await getListing(id);
   if (!l) notFound();
 
   const [morphs, comps, similar, breeders, history] = await Promise.all([

@@ -9,7 +9,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getPublicSupabaseEnv } from "./env";
 
-export function createClient() {
+export async function createClient() {
   const config = getPublicSupabaseEnv();
 
   if (!config) {
@@ -25,7 +25,7 @@ export function createClient() {
     );
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   return createServerClient(config.url, config.key, {
     db: { schema: config.schema },
     cookies: {

@@ -25,7 +25,7 @@ export type EvalRun = {
 };
 
 export async function getEvalRuns(limit = 50): Promise<EvalRun[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("morph_eval_runs")
     .select("*")

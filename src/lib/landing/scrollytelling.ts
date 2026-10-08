@@ -21,7 +21,7 @@ const WINDOW_DAYS = 365;
 const SOLD_FRESH_DAYS = 30;
 
 export async function getScrollytellingData(): Promise<ScrollytellingData> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [listingsQ, regionalQ, soldEventsQ, newestSoldQ] = await Promise.all([
     supabase

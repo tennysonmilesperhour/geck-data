@@ -25,21 +25,22 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 
 const PAGE_SIZE = 24;
 
-export default async function ListingsPage({ searchParams }: { searchParams?: SearchParams }) {
-  const status = one(searchParams?.status) === "sold" ? "sold" : "for-sale";
-  const sexRaw = one(searchParams?.sex);
+export default async function ListingsPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const queryParams = await searchParams;
+  const status = one(queryParams?.status) === "sold" ? "sold" : "for-sale";
+  const sexRaw = one(queryParams?.sex);
   const sex: "male" | "female" | null = sexRaw === "male" || sexRaw === "female" ? sexRaw : null;
-  const ageRaw = one(searchParams?.age);
+  const ageRaw = one(queryParams?.age);
   const age = ["hatchling", "juvenile", "subadult", "adult"].includes(ageRaw) ? ageRaw : null;
-  const maxRaw = Number(one(searchParams?.max));
+  const maxRaw = Number(one(queryParams?.max));
   const maxPrice = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.round(maxRaw) : null;
-  const sortRaw = one(searchParams?.sort);
+  const sortRaw = one(queryParams?.sort);
   const sort =
     sortRaw === "price-low" || sortRaw === "price-high" || sortRaw === "value" ? sortRaw : "newest";
-  const lowOnly = one(searchParams?.low) === "1";
-  const page = Math.max(1, Math.min(200, Number(one(searchParams?.page)) || 1));
-  const tRaw = one(searchParams?.t);
-  const sellerRaw = one(searchParams?.seller);
+  const lowOnly = one(queryParams?.low) === "1";
+  const page = Math.max(1, Math.min(200, Number(one(queryParams?.page)) || 1));
+  const tRaw = one(queryParams?.t);
+  const sellerRaw = one(queryParams?.seller);
   const seller = /^[A-Za-z0-9_.-]{1,80}$/.test(sellerRaw) ? sellerRaw : null;
 
   const morphs = await getMorphs();

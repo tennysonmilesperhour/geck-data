@@ -32,7 +32,7 @@ function classify(name: string, mime: string): ResultEntry["kind"] {
 
 export async function POST(req: NextRequest) {
   // Double-check the session (middleware already gated us, but be explicit).
-  const session = createSessionClient();
+  const session = await createSessionClient();
   const {
     data: { user },
   } = await session.auth.getUser();

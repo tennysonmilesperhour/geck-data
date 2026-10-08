@@ -27,16 +27,18 @@ import { fmtInt, fmtUsd } from "@/lib/format";
 
 export const revalidate = 1800;
 
-export async function generateMetadata({ params }: { params: { id: string } }) {
-  const b = (await getBreeders()).find((x) => x.slug === params.id);
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const b = (await getBreeders()).find((x) => x.slug === id);
   return {
     title: `${b?.name ?? "Breeder"} - crested gecko breeder - Geck Inspect`,
     description: `What ${b?.name ?? "this breeder"} sells, how their prices compare with similar crested geckos, and their current listings.`,
   };
 }
 
-export default async function BreederPage({ params }: { params: { id: string } }) {
-  const slug = decodeURIComponent(params.id);
+export default async function BreederPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const slug = decodeURIComponent(id);
   if (!/^[A-Za-z0-9_.-]+$/.test(slug)) notFound();
 
   const [breeders, morphs, forSale, sold] = await Promise.all([

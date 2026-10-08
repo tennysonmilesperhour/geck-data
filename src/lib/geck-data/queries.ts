@@ -69,7 +69,7 @@ export type AdminHomeStats = {
 };
 
 export async function getAdminHomeStats(): Promise<AdminHomeStats> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const [activeCountRes, sellerCountRes, priceRes, recentRunRes] =
     await Promise.all([
@@ -121,7 +121,7 @@ export async function getAdminHomeStats(): Promise<AdminHomeStats> {
 }
 
 export async function getRecentScrapeRuns(limit = 10): Promise<ScrapeRun[]> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data } = await supabase
     .from("scrape_runs")
     .select("*")
@@ -134,7 +134,7 @@ export async function getAllScrapeRuns(
   page = 1,
   pageSize = 50,
 ): Promise<{ rows: ScrapeRun[]; total: number }> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data, count } = await supabase
@@ -149,7 +149,7 @@ export async function getListings(
   page = 1,
   pageSize = 50,
 ): Promise<{ rows: Listing[]; total: number }> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data, count } = await supabase
@@ -164,7 +164,7 @@ export async function getListings(
 }
 
 export async function getListingFull(listingId: string) {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data } = await supabase
     .from("listings")
     .select("*")
@@ -174,7 +174,7 @@ export async function getListingFull(listingId: string) {
 }
 
 export async function getMorphPriceStats(): Promise<MorphPriceStat[]> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("morph_price_stats")
     .select("*")
@@ -188,7 +188,7 @@ export async function getMorphPriceStats(): Promise<MorphPriceStat[]> {
 }
 
 export async function getSellerStats(): Promise<SellerStat[]> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("seller_stats")
     .select("*")
@@ -224,7 +224,7 @@ export type SpendTotals = {
 };
 
 export async function getSpend7d(): Promise<SpendTotals> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("v_model_spend_7d")
     .select("*");
@@ -294,7 +294,7 @@ export type CombinedRun = {
 };
 
 export async function getCombinedRuns(limit = 20): Promise<CombinedRun[]> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const [scrapeRes, evalRes] = await Promise.all([
     supabase
       .from("scrape_runs")
@@ -378,7 +378,7 @@ export type Reconciliation = {
 };
 
 export async function getReconciliation7d(): Promise<Reconciliation> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
   sevenDaysAgo.setUTCHours(0, 0, 0, 0);
@@ -447,7 +447,7 @@ export async function getReconciliation7d(): Promise<Reconciliation> {
 }
 
 export async function getRuntimeConfig(): Promise<RuntimeConfigRow[]> {
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("runtime_config")
     .select("*")

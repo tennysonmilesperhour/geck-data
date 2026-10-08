@@ -98,7 +98,8 @@ function PriceCell({ cell, us }: { cell: MarketCell | undefined; us: MarketCell 
   );
 }
 
-export default async function MarketsPage({ searchParams }: { searchParams: { t?: string } }) {
+export default async function MarketsPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
+  const params = await searchParams;
   const [cells, morphs, fx, markup] = await Promise.all([
     getMarketCompare(5),
     getMorphs(),
@@ -109,7 +110,7 @@ export default async function MarketsPage({ searchParams }: { searchParams: { t?
   const bySlug = new Map(morphs.map((m) => [m.slug, m.trait]));
   const slugByLower = new Map(morphs.map((m) => [m.trait.toLowerCase(), m.slug]));
   const slugOf = (t: string) => slugByLower.get(t.toLowerCase()) ?? null;
-  const picked = searchParams.t ? bySlug.get(searchParams.t) ?? null : null;
+  const picked = params.t ? bySlug.get(params.t) ?? null : null;
   const weekly = await getMarketWeekly(picked);
 
   const overall = grid.get(null) ?? new Map<MarketCode, MarketCell>();

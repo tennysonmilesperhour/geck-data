@@ -20,13 +20,13 @@ export const dynamic = "force-dynamic";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const alertId = params.id;
+  const { id: alertId } = await params;
   if (!alertId) return NextResponse.json({ error: "missing id" }, { status: 400 });
 
   // Identify the user via the session-aware server client.
-  const supa = createServerClient();
+  const supa = await createServerClient();
   const {
     data: { user },
   } = await supa.auth.getUser();
