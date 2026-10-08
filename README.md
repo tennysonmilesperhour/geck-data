@@ -329,3 +329,20 @@ dashboard.
 - In-UI alert creation / editing (currently insert directly into `alerts`).
 - CSV parsing in `/api/upload` — route to the right staging table by filename
   prefix.
+
+## Baseline checklist
+
+```
+[ ] private repo + main protected + CI   [x] dependabot + lockfile
+[ ] advisors clean (or exceptions noted)  [ ] backups/PITR confirmed
+[ ] PostHog + exceptions on               [ ] uptime incl. checkout URL
+[ ] privacy / terms / contact (+refund/shipping/disclaimers if selling)
+[ ] support@ email works                  [ ] domain auto-renew on
+[ ] revenue lands in business account     [ ] sales tax configured (physical goods)
+```
+
+The repository is public, so the private-repo item stays open. CI already runs on pull requests and on pushes to `main`. Dependabot is configured for npm, pip (`/scripts`), and GitHub Actions, and `package-lock.json` is committed. PostHog initializes only when `NEXT_PUBLIC_POSTHOG_KEY` is set; exception autocapture is enabled in that init, and this checklist stays unticked until that is confirmed in production.
+
+## Public data access
+
+The site reads `geck_data.listing_market_mv`, `listing_week_mv`, `market_asks_mv`, `cross_platform_traits_mv`, and `v_sold_reconciled` with the publishable (anon) key, directly or via SECURITY INVOKER RPCs (`market_trend`, `market_weekly`, `compare_trends`, `market_compare`, `sold_price_band`, `v_regional_heatmap`, `data_health`). Anon read access to those 5 materialized views is intentional.
