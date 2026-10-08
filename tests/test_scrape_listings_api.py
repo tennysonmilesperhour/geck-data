@@ -167,6 +167,79 @@ class ProxySettingsTests(unittest.TestCase):
         self.assertEqual(settings["username"], "proxy-user")
         self.assertEqual(settings["password"], "p@ssword")
 
+    def test_existing_proxy_query_parameters_are_preserved(self) -> None:
+        settings = api._proxy_settings(
+            "http://user:pass@proxy.example:8080?country=us&session=stable"
+        )
+        self.assertEqual(
+            settings["server"],
+            "http://proxy.example:8080?country=us&session=stable",
+        )
+
+
+class ProxyGeoPreflightTests(unittest.TestCase):
+    def test_non_us_exit_rotates_and_retries_until_us(self) -> None:
+        fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
+        fetcher.proxy_country = "us"
+        fetcher.exit_country = "unknown"
+        fetcher._using_proxy = True
+        with (
+            patch.object(fetcher, "activate_proxy"),
+            patch.object(
+                fetcher,
+                "fetch_json",
+                side_effect=[{"country_code": "ca"}, {"country_code": "US"}],
+            ),
+            patch.object(fetcher, "rotate_proxy_session") as rotate,
+        ):
+            self.assertEqual(fetcher.preflight_us(attempts=2), "US")
+        rotate.assert_called_once_with()
+        self.assertEqual(fetcher.exit_country, "US")
+
+    def test_preflight_fails_clearly_when_no_us_exit_is_found(self) -> None:
+        fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
+        fetcher.proxy_country = "us"
+        fetcher.exit_country = "unknown"
+        fetcher._using_proxy = True
+        with (
+            patch.object(fetcher, "activate_proxy"),
+            patch.object(fetcher, "fetch_json", return_value={"country_code": "gb"}),
+            patch.object(fetcher, "rotate_proxy_session"),
+        ):
+            with self.assertRaisesRegex(api.MorphMarketFetchError, "did not reach US"):
+                fetcher.preflight_us(attempts=2)
+
+
+class CatalogPageSanityTests(unittest.TestCase):
+    def test_truncation_is_detected_before_minimum_page_count(self) -> None:
+        short_page = {"results": [{"key": "1"}] * 5, "next": "more"}
+        self.assertTrue(
+            api.catalog_page_is_suspicious(8, short_page, min_pages=100)
+        )
+
+    def test_page_one_requires_items_and_an_explicit_next_link(self) -> None:
+        full_page_no_next = {"results": [{} for _ in range(100)]}
+        self.assertTrue(
+            api.catalog_page_is_suspicious(
+                1, full_page_no_next, min_pages=100
+            )
+        )
+
+    def test_suspicious_page_rotates_and_retries(self) -> None:
+        fetcher = mock.Mock()
+        fetcher.exit_country = "US"
+        short = {"results": [{} for _ in range(5)], "next": None}
+        good = {"results": [{} for _ in range(100)], "next": "?page=2"}
+        with patch.object(api, "fetch_list_page", side_effect=[short, good]):
+            self.assertEqual(
+                api.fetch_catalog_page(
+                    1, fetcher, min_pages=100, backoffs=(), retries=1
+                ),
+                good,
+            )
+        fetcher.rotate_proxy_session.assert_called_once_with()
+        fetcher.preflight_us.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -357,6 +430,8 @@ class SkipUnchangedWalkTests(unittest.TestCase):
             {"key": "2", "price": 275, "category_name": "Crested Gecko"},
             {"key": "3", "price": 150, "category_name": "Crested Gecko"},
         ]
+        items.extend({"key": f"other-{i}", "category_name": "Ball Python"}
+                     for i in range(47))
         fetched: list[str] = []
         touched: list[str] = []
 
@@ -383,7 +458,7 @@ class SkipUnchangedWalkTests(unittest.TestCase):
             patch.object(api, "load_known_live", return_value=known), \
             patch.object(api, "touch_seen", side_effect=touch), \
             patch.object(api, "MorphMarketFetcher", return_value=Fetcher()), \
-            patch.object(api, "fetch_list_page", return_value={"results": items, "next": None}), \
+            patch.object(api, "fetch_list_page", return_value={"results": items, "next": "more"}), \
             patch.object(api, "fetch_detail", side_effect=detail), \
             patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)), \
             patch.object(api, "write_image_and_gallery_rows"), \
@@ -783,8 +858,14 @@ class ShortCatalogTests(unittest.TestCase):
 
     def test_three_page_catalog_fails_and_preserves_written_rows(self):
         pages = [
-            {"results": [{"key": "1", "category_name": "Crested Gecko"}], "next": "more"},
-            {"results": [{"key": "2", "category_name": "Crested Gecko"}], "next": "more"},
+            {"results": [
+                {"key": str(i), "category_name": "Crested Gecko"}
+                for i in range(1, 51)
+            ], "next": "more"},
+            {"results": [
+                {"key": str(i), "category_name": "Crested Gecko"}
+                for i in range(51, 101)
+            ], "next": "more"},
             {"results": [{"key": "3", "category_name": "Ball Python"}], "next": None},
         ]
         env = {"INGEST_MODE": "catalog", "MAX_PAGES": "1200", "SKIP_UNCHANGED": "0"}
@@ -796,7 +877,9 @@ class ShortCatalogTests(unittest.TestCase):
             patch.object(api, "close_abandoned_runs"), \
             patch.object(api, "start_scrape_run", return_value=42), \
             patch.object(api, "MorphMarketFetcher"), \
-            patch.object(api, "fetch_list_page", side_effect=pages) as list_page, \
+            patch.object(
+                api, "fetch_list_page", side_effect=pages + [pages[-1], pages[-1]]
+            ) as list_page, \
             patch.object(api, "fetch_detail", side_effect=lambda lid, _f, backoffs: {
                 "id": lid, "owner": {"id": "seller"}}) as detail, \
             patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)) as upsert, \
@@ -808,14 +891,14 @@ class ShortCatalogTests(unittest.TestCase):
             patch.object(api, "log") as log, \
             patch.object(api.time, "sleep"):
             self.assertEqual(api.main(), 1)
-        self.assertEqual(list_page.call_count, 3)
+        self.assertEqual(list_page.call_count, 5)
         self.assertEqual(upsert.call_count, 2)
         self.assertEqual(list_page.call_args.kwargs["backoffs"], (15, 30, 60, 120))
         self.assertEqual(detail.call_args.kwargs["backoffs"], (5, 15))
         self.assertFalse(mark.call_args.kwargs["complete"])
         result = finalise.call_args.kwargs
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["succeeded"], 2)
+        self.assertEqual(result["succeeded"], 100)
         self.assertIn("3 pages", result["error_message"])
         self.assertIn("minimum 100", result["error_message"])
         self.assertIn("MORPHMARKET_PROXY_URL exits in the US", result["error_message"])

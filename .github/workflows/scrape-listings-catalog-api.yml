@@ -69,6 +69,13 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SUPABASE_DB_SCHEMA: ${{ vars.SUPABASE_DB_SCHEMA || 'public' }}
           MORPHMARKET_PROXY_URL: ${{ secrets.MORPHMARKET_PROXY_URL }}
+          MORPHMARKET_PROXY_COUNTRY: ${{ secrets.MORPHMARKET_PROXY_COUNTRY || 'us' }}
+          MORPHMARKET_PROXY_SESSION_ID: ${{ secrets.MORPHMARKET_PROXY_SESSION_ID }}
+          MORPHMARKET_PROXY_USERNAME_TEMPLATE: ${{ secrets.MORPHMARKET_PROXY_USERNAME_TEMPLATE }}
+          MORPHMARKET_PROXY_GEO_ATTEMPTS: ${{ vars.MORPHMARKET_PROXY_GEO_ATTEMPTS || '5' }}
+          MORPHMARKET_PAGE_RETRIES: ${{ vars.MORPHMARKET_PAGE_RETRIES || '2' }}
+          DISCORD_OPS_WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
           TRIGGERED_BY: github_action_catalog_api
           INGEST_MODE: catalog
           # MorphMarket lists about 82,000 animals (about 820 pages) as of Oct 2026.
