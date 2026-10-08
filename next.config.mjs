@@ -60,23 +60,33 @@ const nextConfig = {
   // Next sets (s-maxage / stale-while-revalidate from the caching work in
   // #129). These entries are merged onto the response and leave that
   // header alone. HSTS matches the value already sent in production.
+  //
+  // X-Frame-Options is omitted on /embed and /embed/:path* so the market
+  // temperature widget can be framed on other sites. Every other header
+  // still applies there. No Content-Security-Policy.
   async headers() {
+    const headers = [
+      {
+        key: "Strict-Transport-Security",
+        value: "max-age=63072000; includeSubDomains; preload",
+      },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=()",
+      },
+    ];
     return [
       {
         source: "/:path*",
-        headers: [
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains; preload",
-          },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
-          },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
-        ],
+        headers,
+      },
+      {
+        // Same set as /embed/:path*, which also matches /embed itself.
+        // /embedded and other prefixes stay framed only by this origin.
+        source: "/((?!embed(?:/|$)).*)",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
       },
     ];
   },
