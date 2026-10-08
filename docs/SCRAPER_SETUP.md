@@ -103,14 +103,37 @@ address.
 
 1. Sign up for a residential or mobile proxy provider. Several work; expect
    roughly $5 to $15 a month for this volume. Decodo's scraping API is not
-   supported; it has to be a plain proxy address. Choose United States only if
-   the provider lets you pick a country. On October 2, 2026, the catalog stopped
-   after just three sparse pages instead of about 820, likely because the proxy
-   exited outside the US and MorphMarket served a partial regional list.
+   supported; it has to be a plain proxy address. Configure the provider for
+   United States exits or use its username template features to request US
+   exits. MorphMarket can return a small regional catalog from non-US exits.
 2. Copy the proxy URL. It looks like `http://username:password@host:port`.
 3. In GitHub, open the geck-data repository, then Settings, then Secrets and
    variables, then Actions, then New repository secret. Name it
    `MORPHMARKET_PROXY_URL` and paste the URL.
+
+The catalog checks the proxy exit country before it starts. Add these optional
+repository secrets when your provider needs settings beyond the proxy URL:
+
+- `MORPHMARKET_PROXY_COUNTRY`: provider country code, default `us`.
+- `MORPHMARKET_PROXY_SESSION_ID`: starting sticky-session identifier. One
+  session is reused for the full catalog walk.
+- `MORPHMARKET_PROXY_USERNAME_TEMPLATE`: provider-specific username format.
+  It can use `{username}` for the username from the proxy URL, `{country}` for
+  `MORPHMARKET_PROXY_COUNTRY`, and `{session}` for the current session id. Write
+  the template in the syntax required by your provider. For example, place
+  `{country}` and `{session}` wherever that provider expects its country and
+  session values. The scraper does not assume a vendor's format. Include
+  `{session}` so a bad exit can be rotated; existing URL query parameters and
+  credentials are retained.
+
+If a geo check does not report the requested country, the scraper changes the
+session and retries up to five times by default. Catalog page 1 must contain at
+least 50 items and report a next page. Suspicious pages are retried with a new
+session, including early pages that appear truncated. `MORPHMARKET_PROXY_GEO_ATTEMPTS`
+and `MORPHMARKET_PAGE_RETRIES` are optional GitHub Actions variables for changing
+the default retry counts. The latter defaults to 2 retries per suspicious page.
+Failure alerts include the GitHub run id, last detected country, pages walked,
+and the reason. They are sent only when `DISCORD_OPS_WEBHOOK` is configured.
 
 The weekday GitHub job and the twice-a-day newest check turn themselves back on
 as soon as that secret exists. Until then they skip with a notice instead of

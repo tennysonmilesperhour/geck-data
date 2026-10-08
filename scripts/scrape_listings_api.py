@@ -37,6 +37,11 @@ listings (PK listing_id) and market_listings (id=mm_<numeric>).
 Env vars:
   SUPABASE_URL / SUPABASE_SERVICE_KEY
   MORPHMARKET_PROXY_URL optional residential/mobile proxy used after a 403
+  MORPHMARKET_PROXY_COUNTRY requested exit country (default us)
+  MORPHMARKET_PROXY_SESSION_ID optional starting sticky-session identifier
+  MORPHMARKET_PROXY_USERNAME_TEMPLATE optional provider username template
+  MORPHMARKET_PROXY_GEO_ATTEMPTS geo preflight attempts (default 5)
+  MORPHMARKET_PAGE_RETRIES suspicious catalog page retries (default 2)
   TRIGGERED_BY          optional label, defaults to 'manual'
   INGEST_MODE           windowed | catalog | newest (overridden by --mode)
   WINDOW_HOURS          lookback for first_listed in windowed mode
@@ -63,7 +68,8 @@ import os
 import re
 import sys
 import time
-import traceback
+import uuid
+import urllib.request
 from typing import Any, Callable, Optional, TypeVar
 from urllib.parse import unquote, urlencode, urlsplit
 
@@ -81,7 +87,10 @@ from scrape_listings import (
 
 LIST_URL = "https://www.morphmarket.com/api/v1/listings/"
 DETAIL_URL = "https://www.morphmarket.com/api/v1/listings/{id}/"
+GEO_URL = "https://ipapi.co/json/"
 PAGE_SIZE = 100
+CATALOG_PAGE_MIN_ITEMS = 50
+MAX_CATALOG_PAGE_RETRIES = 5
 EMPTY_PAGE_TOLERANCE = 3
 CONSECUTIVE_FETCH_FAILURE_LIMIT = 5
 REQUEST_TIMEOUT_S = 45
@@ -113,7 +122,7 @@ class MorphMarketAccessDeniedError(MorphMarketFetchError):
     """A 403 could not be cleared directly or with the configured proxy."""
 
 
-def _proxy_settings(raw_url: str) -> dict[str, str]:
+def _proxy_settings(raw_url: str, *, username: Optional[str] = None) -> dict[str, str]:
     """Translate a proxy URL into Playwright's split credential fields."""
     candidate = raw_url.strip()
     if not candidate:
@@ -135,8 +144,13 @@ def _proxy_settings(raw_url: str) -> dict[str, str]:
         port = f":{parsed.port}" if parsed.port else ""
     except ValueError as exc:
         raise ValueError("MORPHMARKET_PROXY_URL has an invalid port") from exc
-    settings = {"server": f"{scheme}://{host}{port}"}
-    if parsed.username is not None:
+    server = f"{scheme}://{host}{port}{parsed.path}"
+    if parsed.query:
+        server += f"?{parsed.query}"
+    settings = {"server": server}
+    if username is not None:
+        settings["username"] = username
+    elif parsed.username is not None:
         settings["username"] = unquote(parsed.username)
     if parsed.password is not None:
         settings["password"] = unquote(parsed.password)
@@ -148,6 +162,20 @@ class MorphMarketFetcher:
 
     def __init__(self) -> None:
         self.proxy_url = os.environ.get("MORPHMARKET_PROXY_URL", "").strip()
+        self.proxy_country = (
+            os.environ.get("MORPHMARKET_PROXY_COUNTRY", "us").strip().lower()
+            or "us"
+        )
+        self.proxy_username_template = os.environ.get(
+            "MORPHMARKET_PROXY_USERNAME_TEMPLATE", ""
+        )
+        self.proxy_session_base = (
+            os.environ.get("MORPHMARKET_PROXY_SESSION_ID", "").strip()
+            or uuid.uuid4().hex[:12]
+        )
+        self.proxy_session_id = self.proxy_session_base
+        self.proxy_session_rotation = 0
+        self.exit_country = "unknown"
         self.browser_channel = (
             os.environ.get("MORPHMARKET_BROWSER_CHANNEL", "chromium").strip()
             or "chromium"
@@ -171,7 +199,7 @@ class MorphMarketFetcher:
         self.close()
 
     def _launch(self, *, use_proxy: bool) -> None:
-        proxy = _proxy_settings(self.proxy_url) if use_proxy else None
+        proxy = self._current_proxy_settings() if use_proxy else None
         try:
             self._browser = self._playwright.chromium.launch(
                 channel=self.browser_channel,
@@ -196,6 +224,83 @@ class MorphMarketFetcher:
     def _restart_with_proxy(self) -> None:
         self._restart_browser(use_proxy=True)
 
+    def _current_proxy_settings(self) -> dict[str, str]:
+        username = None
+        if self.proxy_username_template:
+            parsed = urlsplit(
+                self.proxy_url
+                if "://" in self.proxy_url
+                else f"http://{self.proxy_url}"
+            )
+            base_username = unquote(parsed.username or "")
+            try:
+                username = self.proxy_username_template.format(
+                    username=base_username,
+                    country=self.proxy_country,
+                    session=self.proxy_session_id,
+                )
+            except (KeyError, ValueError) as exc:
+                raise ValueError(
+                    "MORPHMARKET_PROXY_USERNAME_TEMPLATE has an unknown or "
+                    "invalid placeholder; supported placeholders are "
+                    "{username}, {country}, and {session}"
+                ) from exc
+        return _proxy_settings(self.proxy_url, username=username)
+
+    def activate_proxy(self) -> None:
+        """Switch to the configured proxy before the first catalog request."""
+        if not self.proxy_url:
+            raise MorphMarketFetchError("MORPHMARKET_PROXY_URL is not configured")
+        if not self._using_proxy:
+            self._restart_with_proxy()
+
+    def rotate_proxy_session(self) -> None:
+        """Change the configured session token and restart the proxy browser."""
+        if not self.proxy_username_template or "{session}" not in self.proxy_username_template:
+            raise MorphMarketFetchError(
+                "cannot rotate the proxy exit automatically: set "
+                "MORPHMARKET_PROXY_USERNAME_TEMPLATE with a {session} "
+                "placeholder supported by your provider"
+            )
+        self.proxy_session_rotation += 1
+        self.proxy_session_id = (
+            f"{self.proxy_session_base}-{self.proxy_session_rotation}"
+        )
+        self._restart_with_proxy()
+
+    def preflight_us(self, attempts: Optional[int] = None) -> str:
+        """Verify this proxy session exits in the requested country."""
+        self.activate_proxy()
+        if attempts is None:
+            attempts = max(1, int(os.environ.get("MORPHMARKET_PROXY_GEO_ATTEMPTS", "5")))
+        last_error = "no country returned"
+        for attempt in range(1, attempts + 1):
+            try:
+                payload = self.fetch_json(GEO_URL, service="IP geolocation")
+                country = str(
+                    payload.get("country_code")
+                    or payload.get("countryCode")
+                    or payload.get("country")
+                    or ""
+                ).strip().lower()
+                self.exit_country = country.upper() if country else "unknown"
+                log(f"proxy exit country: {self.exit_country} (attempt {attempt}/{attempts})")
+                if country == self.proxy_country:
+                    return self.exit_country
+                last_error = f"exit country was {self.exit_country}"
+            except Exception as exc:  # noqa: BLE001
+                self.exit_country = "unknown"
+                last_error = f"geolocation request failed ({type(exc).__name__})"
+                log(f"WARN proxy geo preflight attempt {attempt}/{attempts}: {last_error}")
+            if attempt < attempts:
+                self.rotate_proxy_session()
+        raise MorphMarketFetchError(
+            f"proxy did not reach {self.proxy_country.upper()} after {attempts} "
+            f"preflight attempts; last result: {last_error}. Check the proxy "
+            "country setting and username template.",
+            retryable=False,
+        )
+
     def _restart_browser(self, *, use_proxy: bool) -> None:
         if self._browser is not None:
             self._browser.close()
@@ -212,13 +317,20 @@ class MorphMarketFetcher:
                 proxy = _proxy_settings(self.proxy_url)
             except ValueError:
                 proxy = {}
+            try:
+                current_proxy = self._current_proxy_settings()
+            except (ValueError, KeyError):
+                current_proxy = {}
+            server = current_proxy.get("server")
+            if server:
+                text = text.replace(server, "[proxy server]")
             for key in ("username", "password"):
-                secret = proxy.get(key)
-                if secret:
-                    text = text.replace(secret, "[redacted]")
+                for secret in {proxy.get(key), current_proxy.get(key)}:
+                    if secret:
+                        text = text.replace(secret, "[redacted]")
         return text
 
-    def _fetch_bytes(self, url: str) -> bytes:
+    def _fetch_bytes(self, url: str, *, service: str = "MorphMarket") -> bytes:
         self.last_status = None
         if self._page is None:
             raise MorphMarketFetchError("Chromium page is not available")
@@ -231,7 +343,7 @@ class MorphMarketFetcher:
         except PlaywrightError as exc:
             route = " through MORPHMARKET_PROXY_URL" if self._using_proxy else ""
             raise MorphMarketFetchError(
-                f"MorphMarket browser request failed{route}: "
+                f"{service} browser request failed{route}: "
                 f"{self._safe_error(exc)}"
             ) from exc
         if response is None:
@@ -259,7 +371,7 @@ class MorphMarketFetcher:
                     f"{self._safe_error(exc)}",
                     retryable=False,
                 ) from exc
-            return self._fetch_bytes(url)
+            return self._fetch_bytes(url, service=service)
         if response.status == 403:
             raise MorphMarketAccessDeniedError(
                 "MorphMarket returned HTTP 403 through MORPHMARKET_PROXY_URL; "
@@ -269,7 +381,7 @@ class MorphMarketFetcher:
         if response.status != 200:
             route = " through MORPHMARKET_PROXY_URL" if self._using_proxy else ""
             raise MorphMarketFetchError(
-                f"MorphMarket returned HTTP {response.status}{route}",
+                f"{service} returned HTTP {response.status}{route}",
                 retryable=response.status == 429 or 500 <= response.status < 600,
             )
         try:
@@ -279,17 +391,17 @@ class MorphMarketFetcher:
                 f"could not read MorphMarket response body: {self._safe_error(exc)}"
             ) from exc
 
-    def fetch_json(self, url: str) -> dict[str, Any]:
-        raw = self._fetch_bytes(url)
+    def fetch_json(self, url: str, *, service: str = "MorphMarket") -> dict[str, Any]:
+        raw = self._fetch_bytes(url, service=service)
         try:
             payload = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise MorphMarketFetchError(
-                "MorphMarket returned HTTP 200 with invalid JSON"
+                f"{service} returned HTTP 200 with invalid JSON"
             ) from exc
         if not isinstance(payload, dict):
             raise MorphMarketFetchError(
-                "MorphMarket returned HTTP 200 with a non-object JSON payload"
+                f"{service} returned HTTP 200 with a non-object JSON payload"
             )
         return payload
 
@@ -765,6 +877,69 @@ def fetch_list_page(
     )
 
 
+def catalog_page_is_suspicious(
+    page: int, payload: dict[str, Any], *, min_pages: int
+) -> bool:
+    """Detect a regional or truncated response before its rows are ingested."""
+    results = payload.get("results")
+    count = len(results) if isinstance(results, list) else 0
+    has_explicit_next = bool(payload.get("next"))
+    if page == 1:
+        return count < CATALOG_PAGE_MIN_ITEMS or not has_explicit_next
+    # A short terminal page is normal at the real end. Before the configured
+    # minimum, though, it is indistinguishable from the sparse regional result
+    # seen in the failed catalog run and must be retried as a bad proxy exit.
+    return page < min_pages and (
+        count < CATALOG_PAGE_MIN_ITEMS or not has_explicit_next
+    )
+
+
+def fetch_catalog_page(
+    page: int,
+    fetcher: MorphMarketFetcher,
+    *,
+    min_pages: int,
+    backoffs: tuple[float, ...],
+    retries: Optional[int] = None,
+) -> dict[str, Any]:
+    """Fetch a catalog page, rotating and rechecking the route if it is sparse."""
+    if retries is None:
+        retries = min(
+            MAX_CATALOG_PAGE_RETRIES,
+            max(0, int(os.environ.get("MORPHMARKET_PAGE_RETRIES", "2"))),
+        )
+    for attempt in range(retries + 1):
+        payload = fetch_list_page(page, fetcher, backoffs=backoffs)
+        if not catalog_page_is_suspicious(page, payload, min_pages=min_pages):
+            return payload
+        count = len(payload.get("results") or [])
+        problem = (
+            f"only {count} items" if count < CATALOG_PAGE_MIN_ITEMS
+            else "no next page reported"
+        )
+        if attempt >= retries:
+            if page > 1 and not payload.get("next"):
+                # Preserve the natural-end path so the existing minimum-page
+                # guard can report the early stop and keep mark_unseen off.
+                log(
+                    f"WARN catalog page {page} still appears truncated after "
+                    f"{retries} session retries; treating it as a natural end "
+                    "for the minimum-page guard"
+                )
+                return payload
+            raise MorphMarketFetchError(
+                f"catalog list page {page} remained truncated after "
+                f"{retries} session retries ({problem}); last proxy exit "
+                f"country: {fetcher.exit_country}",
+                retryable=False,
+            )
+        log(
+            f"WARN catalog page {page} looks truncated ({problem}); "
+            f"rotating proxy session ({attempt + 1}/{retries})"
+        )
+        fetcher.rotate_proxy_session()
+        fetcher.preflight_us()
+    raise AssertionError("unreachable")
 def fetch_detail(
     listing_id: str, fetcher: MorphMarketFetcher,
     backoffs: tuple[float, ...] = QUICK_RETRY_BACKOFF_S,
@@ -1203,6 +1378,32 @@ def catalog_ended_too_early(
     return mode == "catalog" and saw_natural_end and pages_read < min_pages
 
 
+def notify_discord_failure(
+    *, run_id: int, exit_country: str, pages_read: int, reason: str,
+) -> None:
+    """Post a concise failure summary when the ops webhook is configured."""
+    webhook = os.environ.get("DISCORD_OPS_WEBHOOK", "").strip()
+    if not webhook:
+        return
+    workflow_run_id = os.environ.get("GITHUB_RUN_ID", "unknown")
+    content = (
+        f"MorphMarket catalog failed. Run {workflow_run_id} "
+        f"(scrape {run_id}); exit country {exit_country}; "
+        f"pages walked {pages_read}; reason: {reason[:700]}"
+    )
+    try:
+        request = urllib.request.Request(
+            webhook,
+            data=json.dumps({"content": content}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10):
+            pass
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN Discord failure alert could not be sent ({type(exc).__name__})")
+
+
 def main() -> int:
     dry_run = apply_cli_args()
     if dry_run:
@@ -1251,6 +1452,7 @@ def main() -> int:
     saw_natural_end = False
     hit_page_cap = False
     pages_read = 0
+    failure_reason = ""
     fetcher: Optional[MorphMarketFetcher] = None
 
     skip_unchanged = _skip_unchanged_enabled()
@@ -1289,14 +1491,44 @@ def main() -> int:
 
     try:
         fetcher = MorphMarketFetcher()
+        configured_proxy = getattr(fetcher, "proxy_url", "")
+        if mode == "catalog" and isinstance(configured_proxy, str) and configured_proxy:
+            fetcher.activate_proxy()
+            fetcher.preflight_us()
+        elif mode == "catalog":
+            log("no proxy configured; catalog will use the direct route")
         for page in range(1, max_pages + 1):
             log(f"GET list page {page}")
             try:
-                payload = fetch_list_page(page, fetcher, backoffs=list_backoffs)
+                if mode == "catalog":
+                    payload = fetch_catalog_page(
+                        page,
+                        fetcher,
+                        min_pages=min_pages,
+                        backoffs=list_backoffs,
+                    )
+                else:
+                    payload = fetch_list_page(page, fetcher, backoffs=list_backoffs)
             except MorphMarketAccessDeniedError:
                 raise
+            except MorphMarketFetchError as exc:
+                if not exc.retryable:
+                    raise
+                safe_error = getattr(fetcher, "_safe_error", str)
+                log(f"ERROR fetching list page {page}: {safe_error(exc)}")
+                failed += 1
+                walk_incomplete = True
+                consecutive_fetch_failures += 1
+                if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
+                    raise RuntimeError(
+                        f"aborting: {consecutive_fetch_failures} list pages "
+                        f"failed in a row; last error: {exc}"
+                    ) from exc
+                time.sleep(page_sleep_s)
+                continue
             except Exception as exc:  # noqa: BLE001
-                log(f"ERROR fetching list page {page}: {exc}")
+                safe_error = getattr(fetcher, "_safe_error", str)
+                log(f"ERROR fetching list page {page}: {safe_error(exc)}")
                 failed += 1
                 walk_incomplete = True
                 consecutive_fetch_failures += 1
@@ -1385,7 +1617,8 @@ def main() -> int:
                 except MorphMarketAccessDeniedError:
                     raise
                 except Exception as exc:  # noqa: BLE001
-                    log(f"WARN detail {listing_id}: {exc}")
+                    safe_error = getattr(fetcher, "_safe_error", str)
+                    log(f"WARN detail {listing_id}: {safe_error(exc)}")
                     failed += 1
                     if mode == "catalog":
                         walk_incomplete = True
@@ -1567,11 +1800,22 @@ def main() -> int:
             f"succeeded={succeeded} failed={failed} skipped_unchanged={skipped} "
             f"complete={complete}"
         )
+        if status != "success":
+            notify_discord_failure(
+                run_id=run_id,
+                exit_country=getattr(fetcher, "exit_country", "unknown"),
+                pages_read=pages_read,
+                reason=(
+                    short_walk_error
+                    or f"catalog status {status}; {failed} fetch or write operations failed"
+                ),
+            )
         return 1 if short_walk_error else 0
     except Exception as exc:  # noqa: BLE001
         aborted = True
-        log(f"FATAL: {exc}")
-        traceback.print_exc()
+        safe_error = getattr(fetcher, "_safe_error", str) if fetcher else str
+        failure_reason = safe_error(exc)
+        log(f"FATAL: {failure_reason}")
         finalise_scrape_run(
             supabase,
             run_id,
@@ -1579,7 +1823,13 @@ def main() -> int:
             attempted=before["attempted"] + attempted,
             succeeded=before["succeeded"] + succeeded,
             failed=before["failed"] + failed + 1,
-            error_message=str(exc),
+            error_message=failure_reason,
+        )
+        notify_discord_failure(
+            run_id=run_id,
+            exit_country=getattr(fetcher, "exit_country", "unknown"),
+            pages_read=pages_read,
+            reason=failure_reason,
         )
         return 1
     finally:
