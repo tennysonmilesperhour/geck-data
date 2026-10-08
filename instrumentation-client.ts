@@ -8,6 +8,7 @@ if (token) {
     defaults: "2026-05-30",
     person_profiles: "identified_only",
     disable_session_recording: true,
+    capture_exceptions: true,
     before_send: (event) => {
       if (!event) return null;
       event.properties = { ...event.properties, app: "geck-data" };

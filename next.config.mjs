@@ -55,6 +55,41 @@ const nextConfig = {
       ...toMorphs.map((source) => ({ source, destination: "/morphs", permanent: false })),
     ];
   },
+  // Security headers for every path. Do not set Cache-Control here.
+  // A Cache-Control value in headers() replaces the ISR edge cache header
+  // Next sets (s-maxage / stale-while-revalidate from the caching work in
+  // #129). These entries are merged onto the response and leave that
+  // header alone. HSTS matches the value already sent in production.
+  //
+  // X-Frame-Options is omitted on /embed and /embed/:path* so the market
+  // temperature widget can be framed on other sites. Every other header
+  // still applies there. No Content-Security-Policy.
+  async headers() {
+    const headers = [
+      {
+        key: "Strict-Transport-Security",
+        value: "max-age=63072000; includeSubDomains; preload",
+      },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=()",
+      },
+    ];
+    return [
+      {
+        source: "/:path*",
+        headers,
+      },
+      {
+        // Same set as /embed/:path*, which also matches /embed itself.
+        // /embedded and other prefixes stay framed only by this origin.
+        source: "/((?!embed(?:/|$)).*)",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      },
+    ];
+  },
   // sql.js ships a .wasm file; we load it from its CDN at runtime (see
   // src/lib/ingest/parseSqlite.ts) so we don't need Webpack asset plumbing.
   webpack: (config) => {
