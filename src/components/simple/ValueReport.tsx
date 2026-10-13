@@ -30,7 +30,6 @@ import type { GridEntries, ValueReportData } from "@/lib/simple/report-types";
 import {
   Card,
   Empty,
-  ListingGrid,
   PriceRangeBar,
   PriceScale,
   Section,
@@ -209,29 +208,22 @@ export function ValueReportView({
 
       <Section
         title={state.sex || state.age ? "Geckos like this, listed now" : "Listed now"}
-        note={`${fmtInt(report.comps.total)} matching listings, best value first: priced lowest against similar geckos.`}
-        action={
-          <TextLink href={`${listingsHref(state, false)}${listingsHref(state, false).includes("?") ? "&" : "?"}sort=value`}>
-            See all listings
-          </TextLink>
-        }
+        note="Single listings, recent sales and breeders are for signed-in members."
       >
-        {report.comps.rows.length ? (
-          <ListingGrid listings={report.comps.rows} />
-        ) : (
-          <Empty>Nothing matching is listed right now. Try removing the age or sex.</Empty>
-        )}
+        <Card>
+          <p className="text-ink-300">
+            {fmtInt(report.comps.total)} matching listings now
+            {report.recentSold.total ? ` and ${fmtInt(report.recentSold.total)} recent sales` : ""}. Sign in to
+            browse them, best value first.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <TextLink href={`${listingsHref(state, false)}${listingsHref(state, false).includes("?") ? "&" : "?"}sort=value`}>
+              See matching listings
+            </TextLink>
+            {report.recentSold.total ? <TextLink href={listingsHref(state, true)}>See recent sales</TextLink> : null}
+          </div>
+        </Card>
       </Section>
-
-      {report.recentSold.rows.length ? (
-        <Section
-          title="Recently sold"
-          note="The last asking price before the listing came down."
-          action={<TextLink href={listingsHref(state, true)}>See all sold</TextLink>}
-        >
-          <ListingGrid listings={report.recentSold.rows} />
-        </Section>
-      ) : null}
 
       <p className="text-sm text-ink-500">
         Prices are asking prices from MorphMarket listings seen since May 2026. Pattern

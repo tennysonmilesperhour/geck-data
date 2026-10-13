@@ -46,9 +46,9 @@ export async function loadValueReport(input: ReportState, morphs: Morph[]): Prom
       sex: sex === "male" || sex === "female" ? sex : null,
       age,
       sort: "value",
-      limit: 8,
+      limit: 1,
     }),
-    getListings({ traits, status: "sold", sort: "newest", limit: 4 }),
+    getListings({ traits, status: "sold", sort: "newest", limit: 1 }),
   ]);
 
   const marketGrid = market ?? grid;
@@ -67,7 +67,10 @@ export async function loadValueReport(input: ReportState, morphs: Morph[]): Prom
     upgrades,
     sold,
     asking,
-    comps,
-    recentSold,
+    // The report is public and edge-cached, so it carries counts only.
+    // Single listings, photos and sellers are for members on /listings
+    // (13 Oct 2026, decision 44 in geck-inspect).
+    comps: { rows: [], total: comps.total },
+    recentSold: { rows: [], total: recentSold.total },
   };
 }
