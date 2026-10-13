@@ -1,4 +1,8 @@
-// Public market analytics snapshot, served as JSON at /data/market.json.
+// Members-only market snapshot, served as JSON at /data/market.json.
+//
+// Every row is a single third-party marketplace listing with its seller, so
+// since 13 Oct 2026 it needs a signed-in member (src/lib/auth/member.ts) and
+// is never cached at the edge. Aggregates stay public elsewhere.
 //
 // geck-inspect's src/lib/marketAnalytics/queries.js fetches this URL on first
 // load and falls back to mock fixtures if it 404s or returns the wrong shape.
@@ -20,6 +24,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMemberRequest, MEMBERS_ONLY_BODY, MEMBER_CORS } from "@/lib/auth/member";
 import { matchCombo } from "@/lib/market/combos";
 import { classifyAge, type AgeClass } from "@/lib/market/age";
 import { classifyLineage, type LineageTier } from "@/lib/market/lineage";
@@ -180,7 +185,17 @@ async function fetchAllPaged<T>(
   return out;
 }
 
-export async function GET(_req: NextRequest) {
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: MEMBER_CORS });
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await isMemberRequest(req))) {
+    return NextResponse.json(MEMBERS_ONLY_BODY, {
+      status: 401,
+      headers: { ...MEMBER_CORS, "Cache-Control": "no-store" },
+    });
+  }
   let admin: Queryable;
   try {
     admin = createAdminClient();
@@ -452,8 +467,9 @@ export async function GET(_req: NextRequest) {
 
     return NextResponse.json(body, {
       headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
-        "Access-Control-Allow-Origin": "*",
+        // Private: a shared cache must never hand a member's copy to anyone else.
+        "Cache-Control": "private, max-age=300",
+        ...MEMBER_CORS,
       },
     });
   } catch (e) {

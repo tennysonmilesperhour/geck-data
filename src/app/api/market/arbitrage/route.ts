@@ -1,4 +1,5 @@
-// Public cross-platform arbitrage feed.
+// Members-only cross-platform arbitrage feed (pairs of single listings, so
+// signed-in members only since 13 Oct 2026; see src/lib/auth/member.ts).
 //
 // Reads v_cross_platform_arbitrage_pairs (migration 0029) — pairs of
 // MorphMarket + cross-platform listings that share an image pHash. The
@@ -12,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMemberRequest, MEMBERS_ONLY_BODY, MEMBER_CORS } from "@/lib/auth/member";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,11 +32,21 @@ type PairRow = {
 };
 
 const headers = {
-  "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800",
-  "Access-Control-Allow-Origin": "*",
+  "Cache-Control": "private, max-age=600",
+  ...MEMBER_CORS,
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: MEMBER_CORS });
+}
+
 export async function GET(req: NextRequest) {
+  if (!(await isMemberRequest(req))) {
+    return NextResponse.json(MEMBERS_ONLY_BODY, {
+      status: 401,
+      headers: { ...MEMBER_CORS, "Cache-Control": "no-store" },
+    });
+  }
   let admin;
   try {
     admin = createAdminClient();

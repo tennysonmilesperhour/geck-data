@@ -67,6 +67,16 @@ type RecentSale = {
   source_url: string | null;
 };
 
+// This endpoint is public and edge-cached, so comparable sales go out
+// without the listing id, seller or marketplace link (13 Oct 2026). Members
+// see the listings themselves on /listings.
+type PublicSale = Pick<RecentSale, "sold_usd" | "sold_at" | "days_to_sell">;
+const publicSale = (r: RecentSale): PublicSale => ({
+  sold_usd: r.sold_usd,
+  sold_at: r.sold_at,
+  days_to_sell: r.days_to_sell,
+});
+
 // "Current" was doing a lot of work in the old wording. The newest sale of any
 // kind on record is 2026-06-07, so a caller quoting this is quoting a spring
 // market. Say that instead of implying a live read.
@@ -264,7 +274,7 @@ async function buildResponse(opts: {
         price_basis:
           "last asking price observed before the listing went away, not a negotiated sale price",
       },
-      recent_sales: opts.recentSalesN > 0 ? recentSales : undefined,
+      recent_sales: opts.recentSalesN > 0 ? recentSales.map(publicSale) : undefined,
     },
   };
 }
@@ -329,7 +339,7 @@ async function buildTraitResponse(opts: {
       multiplier_total: total,
       confidence: confidence(row.n),
       note: DISCLAIMER,
-      recent_sales: opts.recentSalesN > 0 ? recentSales : undefined,
+      recent_sales: opts.recentSalesN > 0 ? recentSales.map(publicSale) : undefined,
     },
   };
 }

@@ -8,8 +8,6 @@ const SITE_URL = (
 const PUBLIC_ROUTES = [
   "",
   "/morphs",
-  "/listings",
-  "/sellers",
   "/trends",
   "/markets",
   "/methodology",

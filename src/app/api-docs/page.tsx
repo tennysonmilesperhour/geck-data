@@ -1,7 +1,8 @@
-// Public API documentation. The read-only endpoints under
-// /api/market/* and /data/market.json are the supported public
-// surface; everything else (alerts, training, upload, ingest) is
-// either auth-gated or internal.
+// API documentation. The aggregate endpoints under /api/market/* are the
+// public surface. Endpoints that return single listings or sellers
+// (/data/market.json, /api/market/snapshot.csv, /api/market/arbitrage) are
+// members only since 13 Oct 2026; everything else (alerts, training,
+// upload, ingest) is auth-gated or internal.
 //
 // Kept as a single static page rather than auto-generated from
 // OpenAPI to keep the explanation prose readable. Each endpoint has
@@ -46,13 +47,20 @@ export default function ApiDocsPage() {
             CORS open to any origin for the GET endpoints. POST endpoints
             require Bearer auth and are not in scope here.
           </li>
+          <li>
+            Members only (since 13 Oct 2026): endpoints that return single
+            listings or sellers. Send{" "}
+            <code className="rounded bg-ink-850 px-1 py-0.5 text-xs">Authorization: Bearer &lt;Supabase access token&gt;</code>{" "}
+            for a signed-in account, or call them from a signed-in browser.
+            Without it they answer 401. Aggregate prices stay public.
+          </li>
         </ul>
       </Panel>
 
       <Endpoint
         method="GET"
         path="/data/market.json"
-        purpose="The market snapshot that powers the Geck Inspect classifier app."
+        purpose="Members only. Every recent priced crested listing with its seller, plus the breeder list."
         params={[]}
         example="/data/market.json"
         notes="Heavy payload (megabytes). Cache at the consumer; the snapshot updates roughly hourly."
@@ -69,7 +77,7 @@ export default function ApiDocsPage() {
           { name: "sex", type: "enum", note: "male, female, unknown" },
           { name: "weight", type: "number", note: "Grams" },
           { name: "proven", type: "bool", note: "true / false" },
-          { name: "recent_sales", type: "int", note: "If > 0, include up to N recent comparable sales." },
+          { name: "recent_sales", type: "int", note: "If > 0, include up to N recent comparable sales (price, date and days to sell; no listing, seller or link)." },
         ]}
         example="/api/market/fair-price?combo=lw-cap&age=adult&sex=female&recent_sales=3"
         notes="Documented at /docs/geck-inspect-integration.md; the contract is shared with the classifier app."
@@ -96,7 +104,7 @@ export default function ApiDocsPage() {
       <Endpoint
         method="GET"
         path="/api/market/arbitrage"
-        purpose="Legacy pHash pair candidates (MorphMarket image vs cross-platform image). Separate from the dashboard source axis."
+        purpose="Members only. Legacy pHash pair candidates (MorphMarket image vs cross-platform image). Separate from the dashboard source axis."
         params={[]}
         example="/api/market/arbitrage"
         notes="Empty until a pHash worker has populated phash columns. Best-effort: pHash collisions exist; treat each row as a heads-up rather than a confirmation. Combo-level KR vs US asks live at /api/market/source-arbitrage instead."
@@ -123,7 +131,7 @@ export default function ApiDocsPage() {
       <Endpoint
         method="GET"
         path="/api/market/snapshot.csv"
-        purpose="CSV export of the current market state - one row per canonical combo with the same fields the dashboard renders."
+        purpose="Members only. CSV mirror of /data/market.json, one row per listing."
         params={[
           { name: "window_days", type: "int", note: "Defaults to 90." },
         ]}

@@ -1,14 +1,13 @@
 // One morph: what it is genetically, what it is worth at each age and sex,
-// how its value grows, which pairings are worth the most, and real
-// listings, sales and breeders.
+// how its value grows and which pairings are worth the most. Public pages
+// show aggregates only; single listings, sales and breeders are for
+// signed-in members on /listings and /sellers (13 Oct 2026).
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getAskingPrices,
   getBaseline,
-  getBreeders,
   getGrowthCurve,
-  getListings,
   getMarketTrend,
   getMorphs,
   getTraitUpgrades,
@@ -18,8 +17,6 @@ import { traitInfo } from "@/lib/simple/genetics";
 import {
   ButtonLink,
   Card,
-  Empty,
-  ListingGrid,
   Section,
   Stat,
   TextLink,
@@ -28,7 +25,6 @@ import {
 import { UpgradeList, ValueGridTable } from "@/components/simple/value";
 import GrowthChart from "@/components/simple/GrowthChart";
 import { PriceTrendChart } from "@/components/simple/TrendCharts";
-import { BreederCard } from "@/components/simple/breeder";
 import SaveAlert from "@/components/simple/SaveAlert";
 import { fmtInt, fmtUsd } from "@/lib/format";
 
@@ -73,15 +69,12 @@ export default async function MorphPage({ params }: { params: Promise<{ slug: st
   if (!morph) notFound();
 
   const traits = [morph.trait];
-  const [baseline, grid, growth, upgrades, prices, forSale, sold, breeders, trend] = await Promise.all([
+  const [baseline, grid, growth, upgrades, prices, trend] = await Promise.all([
     getBaseline(),
     getValueGrid(traits),
     getGrowthCurve(traits),
     getTraitUpgrades(traits),
     getAskingPrices(morph.trait),
-    getListings({ traits, status: "for-sale", sort: "value", limit: 8 }),
-    getListings({ traits, status: "sold", sort: "newest", limit: 4 }),
-    getBreeders(),
     getMarketTrend(morph.trait),
   ]);
 
@@ -90,10 +83,6 @@ export default async function MorphPage({ params }: { params: Promise<{ slug: st
   const bins = histogram(prices);
   const maxBin = Math.max(...bins.map((b) => b.count), 1);
   const slugOf = new Map(morphs.map((m) => [m.trait, m.slug]));
-  // Breeders whose top three morphs include this one, most listed first.
-  const topBreeders = breeders
-    .filter((b) => b.forSale > 0 && b.topTraits.slice(0, 3).includes(morph.trait))
-    .slice(0, 6);
   const growthEnough = growth.filter((p) => p.sex !== "all" && p.n >= 6).length >= 3;
 
   return (
@@ -228,35 +217,20 @@ export default async function MorphPage({ params }: { params: Promise<{ slug: st
       ) : null}
 
       <Section
-        title="Listed now"
-        note="Best value first: priced lowest against similar geckos."
-        action={<TextLink href={`/listings?t=${morph.slug}&sort=value`}>See all {fmtInt(morph.forSale)}</TextLink>}
+        title={`${morph.trait} listings, sales and breeders`}
+        note="For signed-in members."
       >
-        {forSale.rows.length ? <ListingGrid listings={forSale.rows} /> : <Empty>Nothing listed right now.</Empty>}
-      </Section>
-
-      {sold.rows.length ? (
-        <Section
-          title="Recently sold"
-          note="The last asking price before the listing came down."
-          action={<TextLink href={`/listings?status=sold&t=${morph.slug}`}>See all sold</TextLink>}
-        >
-          <ListingGrid listings={sold.rows} />
-        </Section>
-      ) : null}
-
-      {topBreeders.length ? (
-        <Section
-          title={`Breeders who focus on ${morph.trait}`}
-          action={<TextLink href={`/sellers?focus=${morph.slug}`}>See all</TextLink>}
-        >
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {topBreeders.map((b) => (
-              <BreederCard key={b.slug} b={b} />
-            ))}
+        <Card>
+          <p className="text-ink-300">
+            {fmtInt(morph.forSale)} {morph.trait} crested geckos are listed now. Members can browse each
+            listing, recent sales and the breeders who focus on {morph.trait}. Sign in to see them.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <ButtonLink href={`/listings?t=${morph.slug}&sort=value`}>See {morph.trait} listings</ButtonLink>
+            <TextLink href={`/sellers?focus=${morph.slug}`}>Breeders who focus on {morph.trait}</TextLink>
           </div>
-        </Section>
-      ) : null}
+        </Card>
+      </Section>
     </div>
   );
 }

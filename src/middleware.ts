@@ -18,6 +18,17 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isProtected = isProtectedPath(pathname);
 
+  // Signed-out request for a members-only page: no Supabase auth cookie means
+  // no session, so redirect straight away without a database round trip.
+  // Crawlers hit these URLs far more than people do.
+  if (isProtected && !request.cookies.getAll().some((c) => /^sb-.*-auth-token/.test(c.name))) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("next", pathname + request.nextUrl.search);
+    return NextResponse.redirect(url);
+  }
+
   if (!config) {
     // No Supabase config visible to the edge runtime. We can't refresh the
     // session cookie or enforce the gate; fall back to letting the request
@@ -83,6 +94,9 @@ export const config = {
   // middleware invocation and a page/function invocation.
   matcher: [
     "/upload/:path*",
+    "/listings/:path*",
+    "/sellers/:path*",
+    "/design-lab/:path*",
     "/admin/:path*",
     "/data-admin/:path*",
     "/alerts/:path*",

@@ -3,10 +3,12 @@
 // Same data, flattened to one row per transaction. Easier for breeders to
 // drop into a spreadsheet without writing a JSON parser.
 //
-// Public, edge-cached for 10 minutes. CORS open.
+// Members only since 13 Oct 2026 (one row per third-party listing, with its
+// seller): see src/lib/auth/member.ts. Cached privately, never at the edge.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMemberRequest, MEMBERS_ONLY_BODY, MEMBER_CORS } from "@/lib/auth/member";
 import { matchCombo } from "@/lib/market/combos";
 import { classifyAge } from "@/lib/market/age";
 import { classifyLineage } from "@/lib/market/lineage";
@@ -46,7 +48,17 @@ function csvEscape(v: Cell): string {
   return s;
 }
 
-export async function GET(_req: NextRequest) {
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: MEMBER_CORS });
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await isMemberRequest(req))) {
+    return NextResponse.json(MEMBERS_ONLY_BODY, {
+      status: 401,
+      headers: { ...MEMBER_CORS, "Cache-Control": "no-store" },
+    });
+  }
   let admin;
   try {
     admin = createAdminClient();
@@ -154,8 +166,8 @@ export async function GET(_req: NextRequest) {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": "inline; filename=geck-market-snapshot.csv",
-      "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800",
-      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "private, max-age=600",
+      ...MEMBER_CORS,
     },
   });
 }

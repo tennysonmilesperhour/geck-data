@@ -12,6 +12,11 @@ export default function robots(): MetadataRoute.Robots {
       disallow: [
         "/admin",
         "/alerts",
+        // Members only since 13 Oct 2026 (single listings, photos, sellers).
+        "/listings",
+        "/sellers",
+        "/design-lab",
+        "/data/market.json",
         "/api/",
         "/data-admin",
         "/upload",
@@ -39,10 +44,8 @@ export default function robots(): MetadataRoute.Robots {
         // The plain pages stay crawlable and in the sitemap; only their
         // filtered variants are blocked.
         "/?",
-        "/listings?",
         "/trends?",
         "/markets?",
-        "/sellers?",
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
