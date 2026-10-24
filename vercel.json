@@ -2,7 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "next build",
-  "installCommand": "npm install",
+  "installCommand": "npx --yes npm@12.2.1 ci --ignore-scripts",
   "outputDirectory": ".next",
-  "regions": ["pdx1"]
+  "regions": [
+    "pdx1"
+  ]
 }

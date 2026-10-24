@@ -22,9 +22,9 @@ jobs:
       - run: python -m unittest discover -s tests -p "test_*.py"
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version: '22.23.4'
           cache: npm
-      - run: npm ci
+      - run: npx --yes npm@12.2.1 ci --ignore-scripts
       - run: npm run lint
       - run: npx tsc --noEmit --pretty false
       - run: npm test
