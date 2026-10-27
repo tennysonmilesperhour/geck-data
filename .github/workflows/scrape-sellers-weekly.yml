@@ -23,7 +23,8 @@ concurrency:
 
 jobs:
   scrape:
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04. Playwright 1.55 cannot install Chromium there.
+    runs-on: ubuntu-24.04
     # Full-backlog duration needs validation before restoring the schedule.
     timeout-minutes: 180
     steps:

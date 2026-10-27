@@ -22,7 +22,8 @@ concurrency:
 
 jobs:
   scrape:
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04. Playwright 1.55 cannot install Chromium there.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       # MorphMarket blocks GitHub-hosted runners (HTTP 403 on every run
