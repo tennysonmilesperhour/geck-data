@@ -115,8 +115,9 @@ Other pipeline facts worth knowing:
 
 ### Then: dependencies
 
-7. **Dependabot majors.** Next.js 16, TypeScript 7, Tailwind 4 and
-   react-dropzone 20 are open PRs. Each says on the PR what it needs.
+7. **Dependabot majors.** Next.js 16, TypeScript 7 and Tailwind 4 are open
+   PRs (react-dropzone 20 and the pip group merged on 31 Oct). Each open PR
+   has a comment saying what it needs.
    Tailwind 4 is a config migration; Next 16 and TypeScript 7 need build
    checks before merging. The grouped minor update needs a one-line type
    fix and a sign-in check because it moves `@supabase/ssr` from 0.5 to
