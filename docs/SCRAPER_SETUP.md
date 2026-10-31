@@ -126,8 +126,13 @@ repository secrets when your provider needs settings beyond the proxy URL:
   `{session}` so a bad exit can be rotated; existing URL query parameters and
   credentials are retained.
 
-If a geo check does not report the requested country, the scraper changes the
-session and retries up to five times by default. Catalog page 1 must contain at
+The geo check asks ipapi.co, then ipinfo.io, then country.is, so one
+rate-limited lookup service does not stop the run. If a geo check reports a
+different country, the scraper changes the session and retries up to five
+times by default; without a `{session}` template it stops with a clear error.
+If no lookup service answers at all, the run continues with the exit marked
+unknown, and the page-1 and minimum-page guards below still keep a regional
+catalog from marking listings inactive. Catalog page 1 must contain at
 least 50 items and report a next page. Suspicious pages are retried with a new
 session, including early pages that appear truncated. `MORPHMARKET_PROXY_GEO_ATTEMPTS`
 and `MORPHMARKET_PAGE_RETRIES` are optional GitHub Actions variables for changing

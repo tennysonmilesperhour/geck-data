@@ -181,6 +181,7 @@ class ProxyGeoPreflightTests(unittest.TestCase):
     def test_non_us_exit_rotates_and_retries_until_us(self) -> None:
         fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
         fetcher.proxy_country = "us"
+        fetcher.proxy_username_template = "{username}-session-{session}"
         fetcher.exit_country = "unknown"
         fetcher._using_proxy = True
         with (
@@ -208,6 +209,56 @@ class ProxyGeoPreflightTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(api.MorphMarketFetchError, "did not reach US"):
                 fetcher.preflight_us(attempts=2)
+
+    def test_second_geo_service_answers_when_first_fails(self) -> None:
+        fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
+        fetcher.proxy_country = "us"
+        fetcher.exit_country = "unknown"
+        fetcher._using_proxy = True
+        with (
+            patch.object(fetcher, "activate_proxy"),
+            patch.object(
+                fetcher,
+                "fetch_json",
+                side_effect=[
+                    api.MorphMarketFetchError("IP geolocation returned HTTP 429"),
+                    {"country": "US"},
+                ],
+            ),
+        ):
+            self.assertEqual(fetcher.preflight_us(attempts=1), "US")
+
+    def test_unanswered_geo_lookup_without_rotation_continues(self) -> None:
+        fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
+        fetcher.proxy_country = "us"
+        fetcher.exit_country = "unknown"
+        fetcher._using_proxy = True
+        fetcher.proxy_username_template = ""
+        with (
+            patch.object(fetcher, "activate_proxy"),
+            patch.object(
+                fetcher,
+                "fetch_json",
+                side_effect=api.MorphMarketFetchError("HTTP 429"),
+            ),
+            patch.object(fetcher, "rotate_proxy_session") as rotate,
+            patch.object(api.time, "sleep"),
+        ):
+            self.assertEqual(fetcher.preflight_us(attempts=2), "unknown")
+        rotate.assert_not_called()
+
+    def test_wrong_country_without_rotation_fails_without_crashing(self) -> None:
+        fetcher = api.MorphMarketFetcher.__new__(api.MorphMarketFetcher)
+        fetcher.proxy_country = "us"
+        fetcher.exit_country = "unknown"
+        fetcher._using_proxy = True
+        fetcher.proxy_username_template = ""
+        with (
+            patch.object(fetcher, "activate_proxy"),
+            patch.object(fetcher, "fetch_json", return_value={"country": "DE"}),
+        ):
+            with self.assertRaisesRegex(api.MorphMarketFetchError, "did not reach US"):
+                fetcher.preflight_us(attempts=3)
 
 
 class CatalogPageSanityTests(unittest.TestCase):

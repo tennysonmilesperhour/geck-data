@@ -88,6 +88,13 @@ from scrape_listings import (
 LIST_URL = "https://www.morphmarket.com/api/v1/listings/"
 DETAIL_URL = "https://www.morphmarket.com/api/v1/listings/{id}/"
 GEO_URL = "https://ipapi.co/json/"
+# Free lookups rate-limit shared residential exits, so one failing service
+# must not block the run. Each is tried in order on every attempt.
+GEO_URLS = (
+    GEO_URL,
+    "https://ipinfo.io/json",
+    "https://api.country.is/",
+)
 PAGE_SIZE = 100
 CATALOG_PAGE_MIN_ITEMS = 50
 MAX_CATALOG_PAGE_RETRIES = 5
@@ -268,32 +275,72 @@ class MorphMarketFetcher:
         )
         self._restart_with_proxy()
 
+    def can_rotate_proxy_session(self) -> bool:
+        template = getattr(self, "proxy_username_template", "") or ""
+        return "{session}" in template
+
+    def lookup_exit_country(self) -> str:
+        """Ask each geolocation service in turn for this exit's country."""
+        errors: list[str] = []
+        for url in GEO_URLS:
+            try:
+                payload = self.fetch_json(url, service="IP geolocation")
+            except Exception as exc:  # noqa: BLE001
+                host = urlsplit(url).hostname or url
+                errors.append(f"{host}: {type(exc).__name__}: {str(exc)[:160]}")
+                continue
+            country = str(
+                payload.get("country_code")
+                or payload.get("countryCode")
+                or payload.get("country")
+                or ""
+            ).strip().lower()
+            if len(country) == 2:
+                return country
+            host = urlsplit(url).hostname or url
+            errors.append(f"{host}: no country code in the response")
+        raise MorphMarketFetchError("; ".join(errors) or "no geolocation service answered")
+
     def preflight_us(self, attempts: Optional[int] = None) -> str:
-        """Verify this proxy session exits in the requested country."""
+        """Verify this proxy session exits in the requested country.
+
+        A confirmed wrong country is fatal once the attempts run out. When no
+        geolocation service answers at all, the run continues with the exit
+        marked unknown: the page-1 and minimum-page guards still stop a
+        regional catalog from marking listings inactive.
+        """
         self.activate_proxy()
         if attempts is None:
             attempts = max(1, int(os.environ.get("MORPHMARKET_PROXY_GEO_ATTEMPTS", "5")))
         last_error = "no country returned"
+        saw_wrong_country = False
         for attempt in range(1, attempts + 1):
             try:
-                payload = self.fetch_json(GEO_URL, service="IP geolocation")
-                country = str(
-                    payload.get("country_code")
-                    or payload.get("countryCode")
-                    or payload.get("country")
-                    or ""
-                ).strip().lower()
-                self.exit_country = country.upper() if country else "unknown"
+                country = self.lookup_exit_country()
+                self.exit_country = country.upper()
                 log(f"proxy exit country: {self.exit_country} (attempt {attempt}/{attempts})")
                 if country == self.proxy_country:
                     return self.exit_country
+                saw_wrong_country = True
                 last_error = f"exit country was {self.exit_country}"
             except Exception as exc:  # noqa: BLE001
                 self.exit_country = "unknown"
-                last_error = f"geolocation request failed ({type(exc).__name__})"
+                last_error = f"geolocation request failed ({exc})"
                 log(f"WARN proxy geo preflight attempt {attempt}/{attempts}: {last_error}")
-            if attempt < attempts:
+            if attempt >= attempts:
+                break
+            if self.can_rotate_proxy_session():
                 self.rotate_proxy_session()
+            elif saw_wrong_country:
+                break
+            else:
+                time.sleep(5 * attempt)
+        if not saw_wrong_country:
+            log(
+                "WARN could not confirm the proxy exit country; continuing "
+                "with the page-1 and minimum-page guards"
+            )
+            return self.exit_country
         raise MorphMarketFetchError(
             f"proxy did not reach {self.proxy_country.upper()} after {attempts} "
             f"preflight attempts; last result: {last_error}. Check the proxy "
