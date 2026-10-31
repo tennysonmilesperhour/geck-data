@@ -214,7 +214,7 @@ class MorphMarketFetcher:
                 proxy=proxy,
             )
             self._context = self._browser.new_context(locale="en-US")
-            self._page = context.new_page()
+            self._page = self._context.new_page()
             self._page.set_default_timeout(REQUEST_TIMEOUT_S * 1000)
             self._using_proxy = use_proxy
         except PlaywrightError as exc:
@@ -366,7 +366,7 @@ class MorphMarketFetcher:
         except PlaywrightError:
             pass
         try:
-            self._page = self._context.new_page()
+            self._page = context.new_page()
             self._page.set_default_timeout(REQUEST_TIMEOUT_S * 1000)
         except PlaywrightError:
             self._page = None
