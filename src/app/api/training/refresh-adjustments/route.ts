@@ -85,9 +85,11 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-api-key") ??
     "";
   // Interactive tools keep using INGEST_API_KEY. The scheduled GitHub job
-  // already has the production service key for its Supabase workflows, so it
-  // can authenticate here without duplicating the ingest secret in GitHub.
+  // sends CRON_API_TOKEN when it is set in both GitHub and Vercel, and
+  // otherwise its Supabase service key. The service key only works while the
+  // GitHub and Vercel copies hold the same key, which broke on 19 Oct 2026.
   const authorized = matchesApiToken(presented, [
+    process.env.CRON_API_TOKEN,
     process.env.INGEST_API_KEY,
     process.env.SUPABASE_SERVICE_KEY,
     process.env.SUPABASE_SERVICE_ROLE_KEY,

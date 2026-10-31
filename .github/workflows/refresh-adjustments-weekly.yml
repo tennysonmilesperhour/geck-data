@@ -21,19 +21,25 @@ jobs:
 
       - name: POST /api/training/refresh-adjustments
         env:
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # CRON_API_TOKEN must hold the same value in GitHub secrets and the
+          # Vercel production env. Without it the job falls back to the
+          # Supabase service key, which works only while both copies match.
+          API_TOKEN: ${{ secrets.CRON_API_TOKEN || secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          if [ -z "${SUPABASE_SERVICE_KEY:-}" ]; then
-            echo "SUPABASE_SERVICE_KEY secret is not set; cannot call the endpoint." >&2
+          if [ -z "${API_TOKEN:-}" ]; then
+            echo "Neither CRON_API_TOKEN nor SUPABASE_SERVICE_KEY is set; cannot call the endpoint." >&2
             exit 1
           fi
           http_code=$(curl -sS -m 90 -o /tmp/resp.json -w '%{http_code}' \
             -X POST \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $API_TOKEN" \
             "https://geck-data.vercel.app/api/training/refresh-adjustments?window_days=180")
           cat /tmp/resp.json
           if [ "$http_code" != "200" ]; then
             echo "refresh-adjustments returned HTTP $http_code" >&2
+            if [ "$http_code" = "401" ]; then
+              echo "The token was refused. Set the CRON_API_TOKEN secret in GitHub and the same value in Vercel production env, then redeploy." >&2
+            fi
             exit 1
           fi
 
