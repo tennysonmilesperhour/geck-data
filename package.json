@@ -20,7 +20,7 @@
     "posthog-js": "^1.438.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-dropzone": "^14.2.3",
+    "react-dropzone": "^20.1.2",
     "sql.js": "^1.11.0",
     "topojson-client": "^3.1.0",
     "us-atlas": "^3.0.1"
