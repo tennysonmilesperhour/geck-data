@@ -133,7 +133,8 @@ times by default; without a `{session}` template it stops with a clear error.
 If no lookup service answers at all, the run continues with the exit marked
 unknown, and the page-1 and minimum-page guards below still keep a regional
 catalog from marking listings inactive. Catalog page 1 must contain at
-least 50 items and report a next page. Suspicious pages are retried with a new
+least 50 items and have more pages after it (a full page with no `next` key
+counts, because the API often leaves that key out; `next: null` does not). Suspicious pages are retried with a new
 session, including early pages that appear truncated. `MORPHMARKET_PROXY_GEO_ATTEMPTS`
 and `MORPHMARKET_PAGE_RETRIES` are optional GitHub Actions variables for changing
 the default retry counts. The latter defaults to 2 retries per suspicious page.

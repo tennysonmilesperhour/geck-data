@@ -214,7 +214,7 @@ class MorphMarketFetcher:
                 proxy=proxy,
             )
             self._context = self._browser.new_context(locale="en-US")
-            self._page = self._context.new_page()
+            self._page = context.new_page()
             self._page.set_default_timeout(REQUEST_TIMEOUT_S * 1000)
             self._using_proxy = use_proxy
         except PlaywrightError as exc:
@@ -356,6 +356,21 @@ class MorphMarketFetcher:
         self._page = None
         self._launch(use_proxy=use_proxy)
 
+    def _reset_page(self) -> None:
+        context = getattr(self, "_context", None)
+        if context is None:
+            return
+        try:
+            if self._page is not None:
+                self._page.close()
+        except PlaywrightError:
+            pass
+        try:
+            self._page = self._context.new_page()
+            self._page.set_default_timeout(REQUEST_TIMEOUT_S * 1000)
+        except PlaywrightError:
+            self._page = None
+
     def _safe_error(self, exc: Exception) -> str:
         text = str(exc)
         if self.proxy_url:
@@ -388,6 +403,10 @@ class MorphMarketFetcher:
                 timeout=REQUEST_TIMEOUT_S * 1000,
             )
         except PlaywrightError as exc:
+            # A failed navigation can leave the tab mid-load, so the next
+            # request reports "interrupted by another navigation" instead of
+            # its own result. Start the next request on a fresh tab.
+            self._reset_page()
             route = " through MORPHMARKET_PROXY_URL" if self._using_proxy else ""
             raise MorphMarketFetchError(
                 f"{service} browser request failed{route}: "
@@ -930,14 +949,18 @@ def catalog_page_is_suspicious(
     """Detect a regional or truncated response before its rows are ingested."""
     results = payload.get("results")
     count = len(results) if isinstance(results, list) else 0
-    has_explicit_next = bool(payload.get("next"))
+    # The list API often omits the "next" key; a full page without it still
+    # has more pages (list_page_has_next). Requiring an explicit link
+    # rejected every real page 1 from 30 Oct on. The sparse regional result
+    # seen on 7 Oct had 5 items, which the item count still catches.
+    has_next = list_page_has_next(payload)
     if page == 1:
-        return count < CATALOG_PAGE_MIN_ITEMS or not has_explicit_next
+        return count < CATALOG_PAGE_MIN_ITEMS or not has_next
     # A short terminal page is normal at the real end. Before the configured
     # minimum, though, it is indistinguishable from the sparse regional result
     # seen in the failed catalog run and must be retried as a bad proxy exit.
     return page < min_pages and (
-        count < CATALOG_PAGE_MIN_ITEMS or not has_explicit_next
+        count < CATALOG_PAGE_MIN_ITEMS or not has_next
     )
 
 
@@ -965,7 +988,7 @@ def fetch_catalog_page(
             else "no next page reported"
         )
         if attempt >= retries:
-            if page > 1 and not payload.get("next"):
+            if page > 1 and not list_page_has_next(payload):
                 # Preserve the natural-end path so the existing minimum-page
                 # guard can report the early stop and keep mark_unseen off.
                 log(

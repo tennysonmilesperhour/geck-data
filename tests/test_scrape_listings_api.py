@@ -268,13 +268,21 @@ class CatalogPageSanityTests(unittest.TestCase):
             api.catalog_page_is_suspicious(8, short_page, min_pages=100)
         )
 
-    def test_page_one_requires_items_and_an_explicit_next_link(self) -> None:
+    def test_full_page_one_without_next_key_is_accepted(self) -> None:
         full_page_no_next = {"results": [{} for _ in range(100)]}
-        self.assertTrue(
+        self.assertFalse(
             api.catalog_page_is_suspicious(
                 1, full_page_no_next, min_pages=100
             )
         )
+
+    def test_page_one_with_null_next_is_suspicious(self) -> None:
+        page = {"results": [{} for _ in range(100)], "next": None}
+        self.assertTrue(api.catalog_page_is_suspicious(1, page, min_pages=100))
+
+    def test_sparse_page_one_is_suspicious(self) -> None:
+        page = {"results": [{} for _ in range(5)]}
+        self.assertTrue(api.catalog_page_is_suspicious(1, page, min_pages=100))
 
     def test_suspicious_page_rotates_and_retries(self) -> None:
         fetcher = mock.Mock()
@@ -867,6 +875,16 @@ class FetchStatusTests(unittest.TestCase):
         with self.assertRaises(api.MorphMarketFetchError):
             fetcher._fetch_bytes(api.LIST_URL)
         self.assertIsNone(fetcher.last_status)
+
+    def test_failed_navigation_opens_a_fresh_tab(self):
+        fetcher = self.fetcher()
+        old_page = fetcher._page
+        fetcher._context = mock.Mock()
+        old_page.goto.side_effect = api.PlaywrightError("tunnel failed")
+        with self.assertRaises(api.MorphMarketFetchError):
+            fetcher._fetch_bytes(api.LIST_URL)
+        old_page.close.assert_called_once_with()
+        self.assertIs(fetcher._page, fetcher._context.new_page.return_value)
 
     def test_last_status_cleared_with_no_page_or_response(self):
         for missing_page in (True, False):
