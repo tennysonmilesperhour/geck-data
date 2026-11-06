@@ -24,7 +24,10 @@ jobs:
   scrape:
     # ubuntu-latest is Ubuntu 26.04. Playwright 1.55 cannot install Chromium there.
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # Raised from 120 after Tue–Thu Nov 3–5 2026 runs cancelled at ~2h
+    # while still on MorphMarket list pages (~693→747→816). Slow proxy
+    # walks need the full GitHub-hosted job window to finish.
+    timeout-minutes: 360
     steps:
       # MorphMarket blocks GitHub-hosted runners (HTTP 403 on every run
       # since 2026-08-31). Without a residential proxy this job cannot
