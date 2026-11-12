@@ -184,10 +184,14 @@ is incomplete too. Rows already saved stay, but the run does not mark unseen
 listings inactive. A failed catalog run stores
 `catalog_checkpoint page=N ...` on its `scrape_runs` row. The next catalog
 run within `CATALOG_RESUME_HOURS` (default 30) reopens that same row and
-continues a few pages before N, so listings already touched still count
-toward `mark_unseen`. A checkpoint with `gaps=1`, a natural end below the
+reads the list again from page 1. Detail reads are skipped for listings
+whose `last_seen_at` is already at or after that row's `started_at`, unless
+the list price changed. The list is ordered by newest first, so ads that
+disappear shift later ads onto earlier pages. Resuming at page N would miss
+those still-live ads and could mark them inactive. Re-reading every list
+page closes that gap. A hole in the resumed walk, a natural end below the
 floor, or a job that never reaches the end does not mark listings inactive.
-Set `CATALOG_RESUME=0` to force a walk from page 1.
+Set `CATALOG_RESUME=0` to open a new run instead of reopening the failed one.
 
 If you do both A and B, the two schedules both refresh the same data. That is
 harmless, but you only need one.

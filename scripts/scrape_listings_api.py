@@ -51,7 +51,6 @@ Env vars:
   CATALOG_COMPLETENESS_RATIO fraction of the expected page count required
   CATALOG_RESUME        1 reopens a recent failed catalog run (default 1)
   CATALOG_RESUME_HOURS  how long a failed catalog checkpoint can be resumed
-  CATALOG_RESUME_OVERLAP pages re-read before a checkpoint (default 3)
   TRIGGERED_BY          optional label, defaults to 'manual'
   INGEST_MODE           windowed | catalog | newest (overridden by --mode)
   WINDOW_HOURS          lookback for first_listed in windowed mode
@@ -730,6 +729,37 @@ def list_item_currency(item: dict[str, Any]) -> Optional[str]:
     return None
 
 
+def load_ids_seen_since(supabase, started_at: str) -> set[str]:
+    """Listing ids whose last_seen_at is at or after this run's start.
+
+    A resumed catalog walk uses this so detail fetches are not repeated,
+    while every current list page is still read. Offset pagination can
+    move not-yet-seen ads onto earlier pages when other ads disappear, so
+    the resume cannot skip list pages and still mark listings inactive.
+    """
+    seen: set[str] = set()
+    page_size = 1000
+    offset = 0
+    while True:
+        chunk = (
+            supabase.table("listings")
+            .select("listing_id")
+            .gte("last_seen_at", started_at)
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+            or []
+        )
+        for row in chunk:
+            lid = str(row.get("listing_id") or "").strip()
+            if lid:
+                seen.add(lid)
+        if len(chunk) < page_size:
+            break
+        offset += page_size
+    return seen
+
+
 def load_known_live(supabase) -> dict[str, dict[str, Any]]:
     """Live listings keyed by listing_id, with what the skip check needs."""
     known: dict[str, dict[str, Any]] = {}
@@ -1134,39 +1164,6 @@ def parse_catalog_checkpoint(text: str) -> Optional[CatalogCheckpoint]:
     )
 
 
-def resume_start_page(completed_page: int, *, overlap: int, max_pages: int) -> int:
-    """Page to fetch next, re-reading a few pages before the checkpoint.
-
-    Newest-first inserts can shift not-yet-seen rows later, and a checkpoint
-    can lag the last page that actually finished. Starting slightly earlier
-    re-reads that boundary. The loop still walks forward to the end, so pages
-    after the checkpoint are not skipped.
-    """
-    if completed_page <= 0:
-        return 1
-    start = completed_page + 1 - max(0, overlap)
-    return min(max_pages, max(1, start))
-
-
-def checkpoint_gaps(
-    *,
-    permanent_gap: bool,
-    hole_pages: list[int],
-    completed_page: int,
-    overlap: int,
-    max_pages: int,
-) -> int:
-    """1 when a hole would not be re-read by a resume from this checkpoint."""
-    if permanent_gap:
-        return 1
-    future_start = resume_start_page(
-        completed_page, overlap=overlap, max_pages=max_pages
-    )
-    if any(page < future_start for page in hole_pages):
-        return 1
-    return 0
-
-
 def refresh_proxy_session(fetcher: MorphMarketFetcher, *, reason: str) -> bool:
     """Open a fresh US-pinned proxy session.
 
@@ -1206,6 +1203,10 @@ def refresh_proxy_session(fetcher: MorphMarketFetcher, *, reason: str) -> bool:
             f"WARN {reason}: exit check after rotation did not confirm "
             f"{str(country).upper()} ({exc})"
         )
+        # A confirmed wrong country is fatal. An unanswered geo lookup
+        # returns from preflight_us instead of raising, so this is not
+        # that case. Do not keep walking a known non-US exit.
+        raise
     return True
 
 
@@ -2024,27 +2025,43 @@ def main() -> int:
     consecutive_empty = 0
     consecutive_fetch_failures = 0
     aborted = False
-    walk_incomplete = bool(resume_state and resume_state.gaps)
+    # A previous run's gaps do not block this walk. Resume re-reads every
+    # current list page, so coverage is decided by holes in this process.
+    walk_incomplete = False
     saw_natural_end = False
     hit_page_cap = False
+    # Keep the previous page number until this process completes a page, so
+    # a crash during the first resumed request still leaves a checkpoint.
     pages_read = resume_state.page if resume_state is not None else 0
     implied_pages = 0
     failure_reason = ""
     fetcher: Optional[MorphMarketFetcher] = None
-    resume_overlap = _env_int("CATALOG_RESUME_OVERLAP", 3, minimum=0)
     start_page = 1
+    seen_since_start: Optional[set[str]] = None
     if resume_state is not None:
-        start_page = resume_start_page(
-            resume_state.page, overlap=resume_overlap, max_pages=max_pages
-        )
         log(
             f"resuming catalog scrape_runs id={run_id} after page "
-            f"{resume_state.page}; next fetch is page {start_page} "
-            f"(overlap {resume_overlap}, gaps={resume_state.gaps})"
+            f"{resume_state.page}; re-reading list pages from page 1 "
+            "so removed ads cannot hide live listings from the sweep"
         )
-    # Pages whose listings were not recorded and that a later resume might miss.
+        if resume_state.started_at:
+            try:
+                seen_since_start = load_ids_seen_since(
+                    supabase, resume_state.started_at
+                )
+                log(
+                    "resume will skip unchanged details for "
+                    f"{len(seen_since_start)} listings already seen "
+                    f"since {resume_state.started_at}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                log(
+                    "WARN could not load listings already seen in this run; "
+                    f"reading every detail ({type(exc).__name__})"
+                )
+                seen_since_start = None
+    # Pages this process failed to record. Any hole blocks the inactive sweep.
     hole_pages: list[int] = []
-    permanent_gap = bool(resume_state and resume_state.gaps)
     finalised = False
     previous_signals: Optional[tuple[Any, Any]] = None
 
@@ -2102,13 +2119,7 @@ def main() -> int:
                 attempted=attempted,
                 succeeded=succeeded,
                 failed=failed,
-                gaps=checkpoint_gaps(
-                    permanent_gap=permanent_gap,
-                    hole_pages=hole_pages,
-                    completed_page=pages_read,
-                    overlap=resume_overlap,
-                    max_pages=max_pages,
-                ),
+                gaps=1 if hole_pages else 0,
                 run_id=run_id,
             )
 
@@ -2255,6 +2266,7 @@ def main() -> int:
                 )
             page_rows: list[dict[str, Any]] = []
             page_unchanged: list[str] = []
+            page_already_seen: list[str] = []
             walk_now = dt.datetime.now(dt.timezone.utc)
             page_details: list[
                 tuple[str, dict[str, Any], dt.datetime, Optional[str]]
@@ -2278,6 +2290,21 @@ def main() -> int:
                 attempted += 1
                 if list_item_price(item) is not None:
                     list_prices_seen += 1
+                if (
+                    seen_since_start is not None
+                    and listing_id in seen_since_start
+                    and skip_unchanged
+                    and is_unchanged(
+                        item,
+                        known_live.get(listing_id),
+                        now=walk_now,
+                        refetch_after=refetch_after,
+                    )
+                ):
+                    # Already counted in the resumed run. last_seen_at is
+                    # already at or after started_at, so the sweep keeps it.
+                    page_already_seen.append(listing_id)
+                    continue
                 if skip_unchanged and is_unchanged(
                     item,
                     known_live.get(listing_id),
@@ -2339,6 +2366,14 @@ def main() -> int:
                 page_rows.append(row)
                 page_details.append(
                     (row["listing_id"], detail, listed_at, row.get("seller_slug"))
+                )
+
+            if page_already_seen:
+                skipped += len(page_already_seen)
+                consecutive_empty = 0
+                log(
+                    f"page {page}: {len(page_already_seen)} already seen "
+                    "in this run, skipped detail read"
                 )
 
             if page_unchanged and mode == "newest":

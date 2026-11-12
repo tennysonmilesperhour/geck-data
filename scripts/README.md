@@ -107,8 +107,10 @@ MorphMarket JSON API ingest. No Decodo. Three modes:
   live. A truncated page cap, an abort, a proxy tunnel failure, or a
   natural end far below the expected page count skips that sweep.
   The walk rotates the proxy session every 40 pages and again when the
-  tunnel drops, and a failed run can resume from its last completed page.
-  See `docs/SCRAPER_SETUP.md` for the `{session}` username template.
+  tunnel drops. A failed run can be reopened, but the list is read again
+  from page 1 before any inactive sweep, because offset pages move when
+  ads disappear. See `docs/SCRAPER_SETUP.md` for the `{session}` username
+  template.
 - **`--mode=newest`** (every 30 minutes: `scrape-listings-newest.yml`, or
   the Mac's second launchd job): the first pages of the newest-first list
   (`MAX_PAGES`, default 3). Stops at the first page with no new crested

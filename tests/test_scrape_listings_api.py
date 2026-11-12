@@ -1083,6 +1083,20 @@ class ProxyConnectionTests(unittest.TestCase):
         fetcher.rotate_proxy_session.assert_not_called()
         sleep.assert_not_called()
 
+    def test_confirmed_wrong_country_is_not_accepted(self) -> None:
+        fetcher = mock.Mock()
+        fetcher.can_rotate_proxy_session.return_value = True
+        fetcher.proxy_country = "us"
+        fetcher.proxy_session_rotation = 1
+        fetcher.preflight_us.side_effect = api.MorphMarketFetchError(
+            "proxy did not reach US after 2 preflight attempts",
+            retryable=False,
+        )
+        with self.assertRaises(api.MorphMarketFetchError) as caught:
+            api.refresh_proxy_session(fetcher, reason="scheduled rotation")
+        self.assertFalse(caught.exception.retryable)
+        fetcher.rotate_proxy_session.assert_called_once_with()
+
     def test_missing_session_template_is_reported_once(self) -> None:
         fetcher = mock.Mock()
         fetcher.can_rotate_proxy_session.return_value = False
@@ -1113,33 +1127,6 @@ class CatalogCheckpointTests(unittest.TestCase):
         self.assertEqual(parsed.page, 759)
         self.assertEqual(parsed.attempted, 12)
         self.assertEqual(parsed.gaps, 0)
-
-    def test_resume_starts_just_before_the_checkpoint(self) -> None:
-        self.assertEqual(api.resume_start_page(759, overlap=3, max_pages=1200), 757)
-        self.assertEqual(api.resume_start_page(1, overlap=3, max_pages=1200), 1)
-        self.assertEqual(api.resume_start_page(0, overlap=3, max_pages=1200), 1)
-
-    def test_tail_failures_are_not_permanent_holes(self) -> None:
-        self.assertEqual(
-            api.checkpoint_gaps(
-                permanent_gap=False,
-                hole_pages=[759, 760, 761, 762, 763],
-                completed_page=758,
-                overlap=3,
-                max_pages=1200,
-            ),
-            0,
-        )
-        self.assertEqual(
-            api.checkpoint_gaps(
-                permanent_gap=False,
-                hole_pages=[400],
-                completed_page=758,
-                overlap=3,
-                max_pages=1200,
-            ),
-            1,
-        )
 
     def test_page_102_is_below_the_default_trust_floor(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -1452,7 +1439,7 @@ class CatalogTunnelWalkTests(unittest.TestCase):
         result = finalise.call_args.kwargs
         self.assertEqual(result["status"], "failed")
         self.assertIn("catalog_checkpoint page=1", result["error_message"])
-        self.assertIn("gaps=0", result["error_message"])
+        self.assertIn("gaps=1", result["error_message"])
         self.assertIn("failed in a row", result["error_message"])
 
     def test_resume_walks_forward_from_the_checkpoint(self) -> None:
@@ -1478,7 +1465,6 @@ class CatalogTunnelWalkTests(unittest.TestCase):
             "CATALOG_RESUME": "1",
             "CATALOG_SESSION_ROTATE_PAGES": "0",
             "MORPHMARKET_PAGE_RETRIES": "0",
-            "CATALOG_RESUME_OVERLAP": "3",
         }
         with (
             patch.dict(os.environ, env, clear=True),
@@ -1514,24 +1500,56 @@ class CatalogTunnelWalkTests(unittest.TestCase):
         self.assertGreaterEqual(mark.call_args.kwargs["succeeded"], 4)
         self.assertEqual(finalise.call_args.args[1], 50)
 
-    def test_resume_with_gaps_does_not_mark_unseen(self) -> None:
+    def test_resume_rereads_from_page_one_and_skips_seen_details(self) -> None:
         fetcher = self._fetcher()
-        checkpoint = api.CatalogCheckpoint(
-            page=1, attempted=1, succeeded=1, failed=1, gaps=1, run_id=51
-        )
+        seen_pages: list[int] = []
+        fetched: list[str] = []
+        recent = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        known = {
+            "1": {
+                "listing_id": "1",
+                "price": 120,
+                "currency": "USD",
+                "last_updated_at": recent,
+                "is_active": True,
+                "sold_at": None,
+            }
+        }
 
         def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen_pages.append(page)
             if page == 1:
-                return self._page("1", nxt=True, fillers=49)
-            return self._page(str(page), nxt=False, fillers=0)
+                # "1" was already seen. "9" shifted onto this page after
+                # earlier ads disappeared and must still be read.
+                return {
+                    "results": [
+                        {"key": "1", "price": 120, "category_name": "Crested Gecko"},
+                        {"key": "9", "price": 80, "category_name": "Crested Gecko"},
+                    ]
+                    + [
+                        {"key": f"other-{i}", "category_name": "Leopard Gecko"}
+                        for i in range(48)
+                    ],
+                    "next": "more",
+                }
+            return self._page("2", nxt=False, fillers=0)
 
+        checkpoint = api.CatalogCheckpoint(
+            page=759,
+            attempted=4,
+            succeeded=4,
+            failed=0,
+            gaps=1,
+            run_id=50,
+            started_at="2026-11-11T15:00:00+00:00",
+        )
         env = {
             "INGEST_MODE": "catalog",
-            "MAX_PAGES": "3",
-            "SKIP_UNCHANGED": "0",
+            "MAX_PAGES": "4",
+            "SKIP_UNCHANGED": "1",
             "MIN_CATALOG_PAGES": "1",
             "MIN_CATALOG_WRITES": "1",
-            "EXPECTED_CATALOG_PAGES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
             "CATALOG_RESUME": "1",
             "CATALOG_SESSION_ROTATE_PAGES": "0",
             "MORPHMARKET_PAGE_RETRIES": "0",
@@ -1542,7 +1560,68 @@ class CatalogTunnelWalkTests(unittest.TestCase):
             patch.object(api, "get_supabase", return_value=object()),
             patch.object(api, "close_abandoned_runs"),
             patch.object(api, "claim_catalog_resume", return_value=checkpoint),
-            patch.object(api, "start_scrape_run"),
+            patch.object(api, "start_scrape_run") as started,
+            patch.object(api, "load_known_live", return_value=known),
+            patch.object(api, "load_ids_seen_since", return_value={"1"}),
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: fetched.append(lid)
+                or {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 80,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe", return_value=True) as mark,
+            patch.object(api, "finalise_scrape_run"),
+            patch.object(api, "request_after_scrape"),
+            patch.object(api.time, "sleep"),
+        ):
+            self.assertEqual(api.main(), 0)
+        started.assert_not_called()
+        self.assertEqual(seen_pages, [1, 2])
+        self.assertEqual(fetched, ["9", "2"])
+        self.assertTrue(mark.call_args.kwargs["complete"])
+
+    def test_wrong_country_rotation_aborts_without_marking_unseen(self) -> None:
+        fetcher = self._fetcher()
+        fetcher.preflight_us.side_effect = [
+            "US",
+            api.MorphMarketFetchError(
+                "proxy did not reach US after 2 preflight attempts",
+                retryable=False,
+            ),
+        ]
+        seen: list[int] = []
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen.append(page)
+            return self._page(str(page), nxt=True, fillers=49)
+
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "4",
+            "SKIP_UNCHANGED": "0",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "0",
+            "CATALOG_SESSION_ROTATE_PAGES": "1",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "start_scrape_run", return_value=7),
             patch.object(api, "MorphMarketFetcher", return_value=fetcher),
             patch.object(api, "fetch_list_page", side_effect=list_page),
             patch.object(
@@ -1558,10 +1637,14 @@ class CatalogTunnelWalkTests(unittest.TestCase):
             patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
             patch.object(api, "write_image_and_gallery_rows"),
             patch.object(api, "patch_canonical_extras"),
-            patch.object(api, "mark_unseen_if_safe", return_value=False) as mark,
-            patch.object(api, "finalise_scrape_run"),
-            patch.object(api, "request_after_scrape"),
+            patch.object(api, "mark_unseen_if_safe") as mark,
+            patch.object(api, "finalise_scrape_run") as finalise,
+            patch.object(api, "notify_discord_failure"),
             patch.object(api.time, "sleep"),
+            patch.object(api, "retry_delay", side_effect=lambda base: base),
         ):
-            self.assertEqual(api.main(), 0)
-        self.assertFalse(mark.call_args.kwargs["complete"])
+            self.assertEqual(api.main(), 1)
+        self.assertEqual(seen, [1])
+        mark.assert_not_called()
+        self.assertEqual(finalise.call_args.kwargs["status"], "failed")
+        self.assertIn("did not reach US", finalise.call_args.kwargs["error_message"])

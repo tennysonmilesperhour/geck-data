@@ -83,7 +83,7 @@ jobs:
           # Rotate the sticky proxy session on a timer and immediately after
           # a tunnel drop. A natural end below 98% of EXPECTED_CATALOG_PAGES
           # does not mark listings inactive. CATALOG_RESUME reopens a failed
-          # catalog run from its last completed page.
+          # catalog run and reads the list again from page 1.
           CATALOG_SESSION_RETRIES: ${{ vars.CATALOG_SESSION_RETRIES || '4' }}
           CATALOG_SESSION_ROTATE_PAGES: ${{ vars.CATALOG_SESSION_ROTATE_PAGES || '40' }}
           CATALOG_DETAIL_SESSION_RETRIES: ${{ vars.CATALOG_DETAIL_SESSION_RETRIES || '3' }}
@@ -91,7 +91,6 @@ jobs:
           CATALOG_COMPLETENESS_RATIO: ${{ vars.CATALOG_COMPLETENESS_RATIO || '0.98' }}
           CATALOG_RESUME: '1'
           CATALOG_RESUME_HOURS: ${{ vars.CATALOG_RESUME_HOURS || '30' }}
-          CATALOG_RESUME_OVERLAP: ${{ vars.CATALOG_RESUME_OVERLAP || '3' }}
           DISCORD_OPS_WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           TRIGGERED_BY: github_action_catalog_api
