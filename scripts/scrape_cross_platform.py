@@ -21,7 +21,9 @@ Sources (public storefront HTML/JSON only):
               air.feedle.me, so there is no separate domestic HTML feed.
               KRW is never written into a USD column.
   tikis       https://tikisgeckos.com/products.json (Shopify, paginated)
-  altitude    https://www.altitudeexotics.com/shop (Squarespace HTML)
+  altitude    https://www.altitudeexotics.com/geckos (Next.js HTML;
+              /shop redirects here). Squarespace product-list markup is
+              still accepted if a saved page has it.
 
 Usage:
   python scrape_cross_platform.py --source=all --dry-run
@@ -48,7 +50,6 @@ import sys
 import time
 import traceback
 from typing import Any, Optional
-from urllib.parse import urljoin
 
 import requests
 
@@ -70,7 +71,9 @@ from lib.cross_platform import (
     CRESTED_SPECIES,
     FEEDLE_CRESTED_CODE,
     OTHER_SPECIES_RE,
-    altitude_item_is_crested,
+    altitude_catalog_item_is_crested,
+    altitude_catalog_items,
+    altitude_listing_from_item,
     exclude_from_combo_arb,
     feedle_air_usd,
     is_crested_text,
@@ -78,13 +81,8 @@ from lib.cross_platform import (
     is_group_lot_text,
     is_merch_text,
     krw_to_usd,
-    parse_excerpt_fields,
     shopify_available,
     shopify_price_usd,
-    squarespace_category_labels,
-    squarespace_product_payload,
-    squarespace_price_usd,
-    squarespace_qty,
     traits_csv,
 )
 
@@ -98,7 +96,7 @@ IMAGE_BATCH = 50
 FEEDLE_ORIGIN = "https://air.feedle.me"
 FEEDLE_ACTION_FALLBACK = "4040e5c610e74ef64f03558baad393e91853278b2c"
 TIKIS_PRODUCTS = "https://tikisgeckos.com/products.json"
-ALTITUDE_SHOP = "https://www.altitudeexotics.com/shop"
+ALTITUDE_SHOP = "https://www.altitudeexotics.com/geckos"
 FRANKFURTER = "https://api.frankfurter.app/latest"
 
 GETPETLIST_HASH_RE = re.compile(
@@ -530,6 +528,18 @@ FEEDLE_CURSOR_PARAMS: list[str] = []
 # Set when a Feedle walk ends well short of the catalog count, so the run
 # is recorded as partial instead of success.
 FEEDLE_SHORTFALL: list[str] = []
+
+# One broken catalog must not discard the other sources. collect() records
+# the failures here and keeps going. main() still upserts whatever arrived.
+SOURCE_ERRORS: list[str] = []
+SOURCE_GROUP = {
+    "feedle": "cross_platform_feedle",
+    "tikis": "cross_platform_shops",
+    "altitude": "cross_platform_shops",
+    "kr_shops": "cross_platform_kr_shops",
+    "terraristik": "cross_platform_terraristik",
+    "repsuki": "cross_platform_repsuki",
+}
 
 
 def _cursor_text(value: Any) -> Optional[str]:
@@ -1071,100 +1081,28 @@ def scrape_tikis(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]
 
 
 # ---------------------------------------------------------------------------
-# Altitude Exotics (Squarespace)
+# Altitude Exotics
 # ---------------------------------------------------------------------------
 
 
 def scrape_altitude(limit_pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
-    del limit_pages  # Squarespace embeds the full product list in one shop page.
+    del limit_pages  # The catalog is embedded in one /geckos document.
     log(f"GET {ALTITUDE_SHOP}")
-    data = squarespace_product_payload(polite_get(ALTITUDE_SHOP).text)
-    items = data.get("items") or []
+    items = altitude_catalog_items(polite_get(ALTITUDE_SHOP).text)
     log(f"  n={len(items)}")
-    category_labels = squarespace_category_labels(data)
     collected: list[tuple[dict[str, Any], Optional[str]]] = []
     skipped_non_crested = 0
+    seen_at = now_iso()
     for item in items:
-        if not isinstance(item, dict):
-            continue
-        if not altitude_item_is_crested(item, category_labels):
+        if not altitude_catalog_item_is_crested(item):
             skipped_non_crested += 1
             continue
-        title = str(item.get("title") or "")
-        excerpt = str(item.get("excerpt") or "")
-        body = str(item.get("body") or "")
-        fields = parse_excerpt_fields(excerpt)
-        morph = fields.get("morph") or ""
-        blob_parts = [title, excerpt, body, morph]
-        is_hatchling_sku = bool(
-            re.search(r"hand-?picked hatchling", title, re.IGNORECASE)
-        )
-        external_id = str(item.get("id") or "")
-        if not external_id:
+        built = altitude_listing_from_item(item)
+        if built is None:
             continue
-        path = str(item.get("fullUrl") or "")
-        listing_url = urljoin("https://www.altitudeexotics.com", path)
-        price = squarespace_price_usd(item)
-        qty = squarespace_qty(item)
-        sold_out = qty == 0
-        group_lot = is_group_lot_text(*blob_parts)
-        skip_combo = (
-            is_hatchling_sku
-            or exclude_from_combo_arb(*blob_parts)
-        )
-        image = item.get("assetUrl")
-        if not (isinstance(image, str) and image.startswith("http")):
-            image = None
-        traits_raw = traits_csv([morph, title] if morph else [title])
-        category_ids = item.get("categoryIds")
-        if not isinstance(category_ids, list):
-            category_ids = []
-        payload = {
-            "sex": fields.get("sex"),
-            "size": fields.get("weight"),
-            "lineage": fields.get("lineage"),
-            "sold": sold_out,
-            "qty": qty,
-            "images": [image] if image else [],
-            "source_url": listing_url,
-            "shop": "altitude_exotics",
-            "is_group_lot": group_lot,
-            "exclude_from_combo_arb": skip_combo,
-            "morph": morph,
-            "excerpt_fields": fields,
-            "sku_title": title,
-            "product_type": item.get("productType"),
-            "category_ids": category_ids,
-            "category_labels": [
-                category_labels.get(str(category_id), "")
-                for category_id in category_ids
-                if category_labels.get(str(category_id))
-            ],
-            "catalog_access": "robots_allowed_html",
-            "training_rights": "permission_required",
-            "training_eligible": False,
-        }
-        collected.append(
-            (
-                {
-                    "platform": "altitude_exotics",
-                    "external_id": external_id,
-                    "title": f"{title} {morph}".strip() if morph else title,
-                    "description": re.sub(r"<[^>]+>", " ", excerpt)[:2000] or None,
-                    "price": price,
-                    "price_usd_equivalent": price,
-                    "currency": "USD",
-                    "seller_name": "Altitude Exotics",
-                    "seller_location": "Colorado US",
-                    "url": listing_url,
-                    "traits_raw": traits_raw,
-                    "species": CRESTED_SPECIES,
-                    "last_seen_at": now_iso(),
-                    "payload": payload,
-                },
-                image,
-            )
-        )
+        row, image = built
+        row["last_seen_at"] = seen_at
+        collected.append((row, image))
     log(
         f"altitude done: crested rows={len(collected)} "
         f"skipped non-crested={skipped_non_crested}"
@@ -1346,37 +1284,55 @@ def apply_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return args
 
 
+def source_shortfall(scrape_type: str) -> Optional[str]:
+    """Errors and Feedle gaps that belong on this scrape_runs row."""
+    parts: list[str] = []
+    if scrape_type == "cross_platform_feedle" and FEEDLE_SHORTFALL:
+        parts.extend(FEEDLE_SHORTFALL)
+    for err in SOURCE_ERRORS:
+        name = err.split(":", 1)[0]
+        if SOURCE_GROUP.get(name) == scrape_type:
+            parts.append(err)
+    if not parts:
+        return None
+    return "; ".join(parts)[:500]
+
+
 def collect(source: str, pages: int) -> list[tuple[dict[str, Any], Optional[str]]]:
-    want_feedle = source in ("all", "feedle_air", "feedle_kr")
-    want_tikis = source in ("all", "tikis")
-    want_altitude = source in ("all", "altitude")
-    want_kr_shops = source in ("all", "kr_shops")
-    want_terra = source in ("all", "terraristik")
-    want_repsuki = source in ("all", "repsuki")
+    """Walk each requested catalog. A failure in one does not skip the rest."""
+    SOURCE_ERRORS.clear()
+    wanted = {
+        "feedle": source in ("all", "feedle_air", "feedle_kr"),
+        "tikis": source in ("all", "tikis"),
+        "altitude": source in ("all", "altitude"),
+        "kr_shops": source in ("all", "kr_shops"),
+        "terraristik": source in ("all", "terraristik"),
+        "repsuki": source in ("all", "repsuki"),
+    }
+    scrapers = {
+        "feedle": scrape_feedle,
+        "tikis": scrape_tikis,
+        "altitude": scrape_altitude,
+        "kr_shops": scrape_kr_shops,
+        "terraristik": scrape_terraristik,
+        "repsuki": scrape_repsuki,
+    }
     pairs: list[tuple[dict[str, Any], Optional[str]]] = []
-    if want_feedle:
-        feedle_pairs = scrape_feedle(pages)
-        if source == "feedle_air":
-            feedle_pairs = [p for p in feedle_pairs if p[0]["platform"] == "feedle_air"]
-        elif source == "feedle_kr":
-            feedle_pairs = [p for p in feedle_pairs if p[0]["platform"] == "feedle_kr"]
-        pairs.extend(feedle_pairs)
-    if want_tikis:
-        pairs.extend(scrape_tikis(pages))
-    if want_altitude:
-        pairs.extend(scrape_altitude(pages))
-    # Each source is independent: one site being down must not stop the rest.
-    for wanted, fn, name in (
-        (want_kr_shops, scrape_kr_shops, "kr_shops"),
-        (want_terra, scrape_terraristik, "terraristik"),
-        (want_repsuki, scrape_repsuki, "repsuki"),
-    ):
-        if not wanted:
+    for name in ("feedle", "tikis", "altitude", "kr_shops", "terraristik", "repsuki"):
+        if not wanted[name]:
             continue
         try:
-            pairs.extend(fn(pages))
+            rows = scrapers[name](pages)
         except Exception as exc:  # noqa: BLE001
             log(f"ERROR {name}: {exc}")
+            traceback.print_exc()
+            SOURCE_ERRORS.append(f"{name}: {exc}")
+            continue
+        if name == "feedle" and source == "feedle_air":
+            rows = [p for p in rows if p[0]["platform"] == "feedle_air"]
+        elif name == "feedle" and source == "feedle_kr":
+            rows = [p for p in rows if p[0]["platform"] == "feedle_kr"]
+        pairs.extend(rows)
     return pairs
 
 
@@ -1439,6 +1395,9 @@ def main() -> int:
 
     if args.dry_run:
         log("dry-run: no writes")
+        if SOURCE_ERRORS:
+            log("source errors: " + "; ".join(SOURCE_ERRORS))
+            return 1
         return 0 if pairs else 2
 
     from lib.after_scrape import request_after_scrape
@@ -1462,11 +1421,11 @@ def main() -> int:
         if not group:
             # A source that returns nothing is broken, not quiet. Record it
             # so the Data status page shows it instead of going silent.
-            record_empty_run(supabase, scrape_type)
+            record_empty_run(supabase, scrape_type, source_shortfall(scrape_type))
             exit_code = 1
             continue
         try:
-            shortfall = "; ".join(FEEDLE_SHORTFALL) if scrape_type == "cross_platform_feedle" and FEEDLE_SHORTFALL else None
+            shortfall = source_shortfall(scrape_type)
             _attempted, succeeded, _failed = run_group(
                 supabase, scrape_type, group, False, shortfall
             )
@@ -1475,6 +1434,9 @@ def main() -> int:
         except Exception:
             traceback.print_exc()
             exit_code = 1
+    if SOURCE_ERRORS:
+        log("source errors: " + "; ".join(SOURCE_ERRORS))
+        exit_code = 1
     if wrote:
         # Korea, Japan and Europe feed the Market page's Live tape and the
         # morning brief, so ask for the market refresh right away instead
@@ -1483,7 +1445,11 @@ def main() -> int:
     return exit_code
 
 
-def record_empty_run(supabase, scrape_type: str) -> None:
+def record_empty_run(
+    supabase,
+    scrape_type: str,
+    error_message: Optional[str] = None,
+) -> None:
     run_id = start_scrape_run(supabase, scrape_type)
     finalise_scrape_run(
         supabase,
@@ -1492,7 +1458,7 @@ def record_empty_run(supabase, scrape_type: str) -> None:
         attempted=0,
         succeeded=0,
         failed=0,
-        error_message="source returned no listings; see the job log",
+        error_message=error_message or "source returned no listings; see the job log",
     )
 
 
