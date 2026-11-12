@@ -39,9 +39,19 @@ Env vars:
   MORPHMARKET_PROXY_URL optional residential/mobile proxy used after a 403
   MORPHMARKET_PROXY_COUNTRY requested exit country (default us)
   MORPHMARKET_PROXY_SESSION_ID optional starting sticky-session identifier
-  MORPHMARKET_PROXY_USERNAME_TEMPLATE optional provider username template
+  MORPHMARKET_PROXY_USERNAME_TEMPLATE optional provider username template.
+                      Catalog rotation requires a {session} placeholder, and
+                      {country} keeps each new session pinned to the country.
   MORPHMARKET_PROXY_GEO_ATTEMPTS geo preflight attempts (default 5)
   MORPHMARKET_PAGE_RETRIES suspicious catalog page retries (default 2)
+  CATALOG_SESSION_RETRIES fresh sessions per failed catalog list page (4)
+  CATALOG_SESSION_ROTATE_PAGES rotate the proxy session every N pages (40)
+  CATALOG_DETAIL_SESSION_RETRIES fresh sessions per failed catalog detail (3)
+  EXPECTED_CATALOG_PAGES natural end below 98% of this is incomplete (800)
+  CATALOG_COMPLETENESS_RATIO fraction of the expected page count required
+  CATALOG_RESUME        1 reopens a recent failed catalog run (default 1)
+  CATALOG_RESUME_HOURS  how long a failed catalog checkpoint can be resumed
+  CATALOG_RESUME_OVERLAP pages re-read before a checkpoint (default 3)
   TRIGGERED_BY          optional label, defaults to 'manual'
   INGEST_MODE           windowed | catalog | newest (overridden by --mode)
   WINDOW_HOURS          lookback for first_listed in windowed mode
@@ -65,11 +75,14 @@ import datetime as dt
 import html as html_lib
 import json
 import os
+import random
 import re
+import signal
 import sys
 import time
 import uuid
 import urllib.request
+from dataclasses import dataclass
 from typing import Any, Callable, Optional, TypeVar
 from urllib.parse import unquote, urlencode, urlsplit
 
@@ -106,6 +119,41 @@ MIN_PAGE_SLEEP_S = 0.5
 QUICK_RETRY_BACKOFF_S = (10,)
 CATALOG_LIST_RETRY_BACKOFF_S = (15, 30, 60, 120)
 CATALOG_DETAIL_RETRY_BACKOFF_S = (5, 15)
+# Tunnel and proxy drops rotate immediately. These waits are the pause
+# before each fresh session, with +/- 25% jitter applied by retry_delay.
+CATALOG_TUNNEL_BACKOFF_S = (5, 10, 20, 40)
+CATALOG_PAGE_JITTER_S = 0.75
+# A full MorphMarket animal catalog is about 850 pages (Nov 2026). A
+# natural end far below that is a regional or broken exit, not a real
+# finish, and must not mark listings inactive.
+DEFAULT_EXPECTED_CATALOG_PAGES = 800
+DEFAULT_CATALOG_COMPLETENESS_RATIO = 0.98
+CATALOG_CHECKPOINT_RE = re.compile(
+    r"catalog_checkpoint page=(?P<page>\d+) attempted=(?P<attempted>\d+) "
+    r"succeeded=(?P<succeeded>\d+) failed=(?P<failed>\d+) gaps=(?P<gaps>\d+)"
+)
+_PROXY_CONNECTION_MARKERS = (
+    "err_tunnel_connection_failed",
+    "err_proxy_connection_failed",
+    "err_connection_reset",
+    "err_connection_closed",
+    "err_connection_refused",
+    "err_connection_timed_out",
+    "err_timed_out",
+    "err_empty_response",
+    "err_socket_not_connected",
+    "err_network_changed",
+    "err_internet_disconnected",
+    "err_name_not_resolved",
+    "ns_error_net_interrupt",
+    "econnreset",
+    "econnrefused",
+    "etimedout",
+    "socket hang up",
+    "target closed",
+    "proxy connection",
+    "tunnel",
+)
 
 _FetchResult = TypeVar("_FetchResult")
 
@@ -301,13 +349,23 @@ class MorphMarketFetcher:
             errors.append(f"{host}: no country code in the response")
         raise MorphMarketFetchError("; ".join(errors) or "no geolocation service answered")
 
-    def preflight_us(self, attempts: Optional[int] = None) -> str:
+    def preflight_us(
+        self,
+        attempts: Optional[int] = None,
+        *,
+        rotate_on_geo_failure: bool = True,
+    ) -> str:
         """Verify this proxy session exits in the requested country.
 
         A confirmed wrong country is fatal once the attempts run out. When no
         geolocation service answers at all, the run continues with the exit
         marked unknown: the page-1 and minimum-page guards still stop a
         regional catalog from marking listings inactive.
+
+        rotate_on_geo_failure rotates when the lookup itself errors. Scheduled
+        session refreshes pass False so a rate-limited lookup does not throw
+        away a session that was just opened. A confirmed wrong country still
+        rotates.
         """
         self.activate_proxy()
         if attempts is None:
@@ -329,10 +387,12 @@ class MorphMarketFetcher:
                 log(f"WARN proxy geo preflight attempt {attempt}/{attempts}: {last_error}")
             if attempt >= attempts:
                 break
-            if self.can_rotate_proxy_session():
+            if saw_wrong_country and self.can_rotate_proxy_session():
                 self.rotate_proxy_session()
             elif saw_wrong_country:
                 break
+            elif self.can_rotate_proxy_session() and rotate_on_geo_failure:
+                self.rotate_proxy_session()
             else:
                 time.sleep(5 * attempt)
         if not saw_wrong_country:
@@ -508,8 +568,14 @@ def fetch_with_retries(
     what: str,
     fetcher: MorphMarketFetcher,
     backoffs: tuple[float, ...],
+    fail_fast: Optional[Callable[[MorphMarketFetchError], bool]] = None,
 ) -> _FetchResult:
-    """Retry transient failures, restarting the browser before each retry."""
+    """Retry transient failures, restarting the browser before each retry.
+
+    fail_fast lets the caller rotate the proxy session itself. A dropped
+    tunnel is not retried on the same sticky session when that callback
+    matches the error.
+    """
     waits = iter(backoffs)
     while True:
         try:
@@ -518,6 +584,8 @@ def fetch_with_retries(
             raise
         except MorphMarketFetchError as exc:
             if not exc.retryable:
+                raise
+            if fail_fast is not None and fail_fast(exc):
                 raise
             wait = next(waits, None)
             if wait is None:
@@ -539,34 +607,58 @@ ABANDONED_AFTER_HOURS = 6
 
 
 def close_abandoned_runs(supabase, scrape_type: str = "listings") -> int:
-    """Mark stale 'running' scrape_runs rows of this type as failed."""
+    """Mark stale 'running' scrape_runs rows of this type as failed.
+
+    A catalog checkpoint already stored on the row is kept, so the next
+    catalog run can continue from the last completed page.
+    """
     cutoff = (
         dt.datetime.now(dt.timezone.utc)
         - dt.timedelta(hours=ABANDONED_AFTER_HOURS)
     ).isoformat()
     try:
-        res = (
+        rows = (
             supabase.table("scrape_runs")
-            .update(
-                {
-                    "status": "failed",
-                    "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                    "error_message": (
-                        "abandoned: still marked running after "
-                        f"{ABANDONED_AFTER_HOURS}h (the process was stopped "
-                        "before it could record a result)"
-                    ),
-                }
-            )
+            .select("id,error_message")
             .eq("scrape_type", scrape_type)
             .eq("status", "running")
             .lt("started_at", cutoff)
             .execute()
+            .data
+            or []
         )
     except Exception as exc:  # noqa: BLE001
         log(f"WARN could not close abandoned runs: {exc}")
         return 0
-    closed = len(res.data or [])
+    closed = 0
+    finished_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    for row in rows:
+        note = (
+            "abandoned: still marked running after "
+            f"{ABANDONED_AFTER_HOURS}h (the process was stopped "
+            "before it could record a result)"
+        )
+        existing = str(row.get("error_message") or "")
+        checkpoint = parse_catalog_checkpoint(existing)
+        if checkpoint is not None and checkpoint.page >= 1:
+            note = format_catalog_checkpoint(checkpoint) + "\n" + note
+        try:
+            (
+                supabase.table("scrape_runs")
+                .update(
+                    {
+                        "status": "failed",
+                        "finished_at": finished_at,
+                        "error_message": note,
+                    }
+                )
+                .eq("id", row["id"])
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARN could not close abandoned run {row.get('id')}: {type(exc).__name__}")
+            continue
+        closed += 1
     if closed:
         log(f"closed {closed} abandoned '{scrape_type}' run(s)")
     return closed
@@ -926,9 +1018,293 @@ def list_page_has_next(payload: dict[str, Any]) -> bool:
     return isinstance(results, list) and len(results) >= PAGE_SIZE
 
 
+def _can_rotate_proxy(fetcher: MorphMarketFetcher) -> bool:
+    method = getattr(fetcher, "can_rotate_proxy_session", None)
+    if not callable(method):
+        return False
+    return bool(method())
+
+
+def is_proxy_connection_error(exc: BaseException) -> bool:
+    """True for a dropped proxy tunnel or a dead connection, not an HTTP status."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _PROXY_CONNECTION_MARKERS)
+
+
+def retry_delay(base: float) -> float:
+    """base seconds plus or minus 25 percent, so retries are not lockstep."""
+    if base <= 0:
+        return 0.0
+    factor = 0.75 + (random.random() * 0.5)
+    return max(0.25, base * factor)
+
+
+def tunnel_backoff(attempt: int) -> float:
+    """Jittered pause before the attempt-th fresh proxy session (1-based)."""
+    index = min(len(CATALOG_TUNNEL_BACKOFF_S), max(1, attempt)) - 1
+    return retry_delay(CATALOG_TUNNEL_BACKOFF_S[index])
+
+
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return max(minimum, int(raw))
+    except ValueError:
+        return default
+
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() not in ("0", "false", "no", "off")
+
+
+def trustworthy_catalog_pages(max_pages: int, min_pages: int) -> int:
+    """Minimum pages that count as a real catalog end.
+
+    MIN_CATALOG_PAGES remains a floor. The expected catalog size raises it,
+    because a 'no next page' near page 100 is not the end of an ~850 page list.
+    """
+    expected = _env_int(
+        "EXPECTED_CATALOG_PAGES", DEFAULT_EXPECTED_CATALOG_PAGES, minimum=1
+    )
+    raw_ratio = os.environ.get("CATALOG_COMPLETENESS_RATIO")
+    try:
+        ratio = (
+            float(raw_ratio)
+            if raw_ratio is not None and str(raw_ratio).strip()
+            else DEFAULT_CATALOG_COMPLETENESS_RATIO
+        )
+    except ValueError:
+        ratio = DEFAULT_CATALOG_COMPLETENESS_RATIO
+    ratio = min(1.0, max(0.5, ratio))
+    floor = max(min_pages, int(expected * ratio))
+    return max(1, min(max_pages, floor))
+
+
+def catalog_pages_implied(payload: dict[str, Any]) -> int:
+    """Page count implied by a list payload's total, or 0 when it is absent.
+
+    MorphMarket's list sometimes includes a total `count`. A small or missing
+    count is ignored by callers that only treat a larger reported total as
+    evidence the walk stopped early. Unobserved totals stay unused.
+    """
+    raw = payload.get("count")
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return 0
+    return (raw + PAGE_SIZE - 1) // PAGE_SIZE
+
+
+@dataclass
+class CatalogCheckpoint:
+    """Last completed catalog page, stored on scrape_runs.error_message."""
+
+    page: int
+    attempted: int
+    succeeded: int
+    failed: int
+    gaps: int
+    run_id: int = 0
+    started_at: str = ""
+
+
+def format_catalog_checkpoint(checkpoint: CatalogCheckpoint) -> str:
+    return (
+        f"catalog_checkpoint page={checkpoint.page} "
+        f"attempted={checkpoint.attempted} succeeded={checkpoint.succeeded} "
+        f"failed={checkpoint.failed} gaps={checkpoint.gaps}"
+    )
+
+
+def parse_catalog_checkpoint(text: str) -> Optional[CatalogCheckpoint]:
+    if not text:
+        return None
+    match = CATALOG_CHECKPOINT_RE.search(text)
+    if match is None:
+        return None
+    return CatalogCheckpoint(
+        page=int(match.group("page")),
+        attempted=int(match.group("attempted")),
+        succeeded=int(match.group("succeeded")),
+        failed=int(match.group("failed")),
+        gaps=int(match.group("gaps")),
+    )
+
+
+def resume_start_page(completed_page: int, *, overlap: int, max_pages: int) -> int:
+    """Page to fetch next, re-reading a few pages before the checkpoint.
+
+    Newest-first inserts can shift not-yet-seen rows later, and a checkpoint
+    can lag the last page that actually finished. Starting slightly earlier
+    re-reads that boundary. The loop still walks forward to the end, so pages
+    after the checkpoint are not skipped.
+    """
+    if completed_page <= 0:
+        return 1
+    start = completed_page + 1 - max(0, overlap)
+    return min(max_pages, max(1, start))
+
+
+def checkpoint_gaps(
+    *,
+    permanent_gap: bool,
+    hole_pages: list[int],
+    completed_page: int,
+    overlap: int,
+    max_pages: int,
+) -> int:
+    """1 when a hole would not be re-read by a resume from this checkpoint."""
+    if permanent_gap:
+        return 1
+    future_start = resume_start_page(
+        completed_page, overlap=overlap, max_pages=max_pages
+    )
+    if any(page < future_start for page in hole_pages):
+        return 1
+    return 0
+
+
+def refresh_proxy_session(fetcher: MorphMarketFetcher, *, reason: str) -> bool:
+    """Open a fresh US-pinned proxy session.
+
+    Returns True when the session id changed. Without a {session} template
+    the browser is only restarted, and that limitation is logged once.
+    """
+    if not _can_rotate_proxy(fetcher):
+        # `is not True` so a test double that invents attributes still warns once.
+        if getattr(fetcher, "_session_rotation_unavailable", False) is not True:
+            fetcher._session_rotation_unavailable = True
+            log(
+                "WARN "
+                + reason
+                + ": MORPHMARKET_PROXY_USERNAME_TEMPLATE has no {session} "
+                "placeholder, so the sticky exit cannot change. Set the "
+                "template to your provider's username syntax with "
+                "{username}, {country}, and {session}. "
+                "See docs/SCRAPER_SETUP.md."
+            )
+        try:
+            fetcher.restart()
+        except Exception:  # noqa: BLE001
+            log("WARN " + reason + ": browser restart failed")
+        return False
+    try:
+        fetcher.rotate_proxy_session()
+    except Exception:  # noqa: BLE001
+        log("WARN " + reason + ": proxy session rotation failed")
+        return False
+    rotation = getattr(fetcher, "proxy_session_rotation", "?")
+    log(f"proxy session rotated ({reason}); rotation {rotation}")
+    try:
+        fetcher.preflight_us(attempts=2, rotate_on_geo_failure=False)
+    except MorphMarketFetchError as exc:
+        country = getattr(fetcher, "proxy_country", "us")
+        log(
+            f"WARN {reason}: exit check after rotation did not confirm "
+            f"{str(country).upper()} ({exc})"
+        )
+    return True
+
+
+def save_catalog_checkpoint(
+    supabase, run_id: int, checkpoint: CatalogCheckpoint
+) -> None:
+    """Remember the last completed page without changing run status."""
+    if checkpoint.page < 1:
+        return
+    try:
+        (
+            supabase.table("scrape_runs")
+            .update({"error_message": format_catalog_checkpoint(checkpoint)})
+            .eq("id", run_id)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN could not save catalog checkpoint: {type(exc).__name__}")
+
+
+def claim_catalog_resume(
+    supabase, *, now: Optional[dt.datetime] = None
+) -> Optional[CatalogCheckpoint]:
+    """Reopen the newest recent failed catalog run that recorded a page.
+
+    The row keeps its original started_at. mark_unseen compares last_seen_at
+    to that timestamp, so listings touched before the crash still count once
+    the resumed walk reaches a real end. A run that is still `running` is
+    left alone so a live job is not stolen.
+    """
+    if not _env_flag("CATALOG_RESUME", True):
+        return None
+    hours = _env_int("CATALOG_RESUME_HOURS", 30, minimum=1)
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = (now - dt.timedelta(hours=hours)).isoformat()
+    try:
+        rows = (
+            supabase.table("scrape_runs")
+            .select("id,status,started_at,error_message")
+            .eq("scrape_type", "listings")
+            .eq("status", "failed")
+            .gte("started_at", cutoff)
+            .order("started_at", desc=True)
+            .limit(5)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN could not look for a resumable catalog run: {type(exc).__name__}")
+        return None
+    # A newer windowed failure has no checkpoint. Skip it and keep the
+    # newest catalog checkpoint instead of starting that walk over.
+    parsed = None
+    row = None
+    for candidate in rows:
+        found = parse_catalog_checkpoint(str(candidate.get("error_message") or ""))
+        if found is not None and found.page >= 1:
+            parsed = found
+            row = candidate
+            break
+    if parsed is None or row is None:
+        return None
+    try:
+        (
+            supabase.table("scrape_runs")
+            .update(
+                {
+                    "status": "running",
+                    "finished_at": None,
+                    "error_message": format_catalog_checkpoint(parsed),
+                }
+            )
+            .eq("id", row["id"])
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARN could not reopen catalog run {row.get('id')}: {type(exc).__name__}")
+        return None
+    log(
+        f"resuming catalog scrape_runs id={row['id']} from completed page "
+        f"{parsed.page}"
+    )
+    return CatalogCheckpoint(
+        page=parsed.page,
+        attempted=parsed.attempted,
+        succeeded=parsed.succeeded,
+        failed=parsed.failed,
+        gaps=parsed.gaps,
+        run_id=int(row["id"]),
+        started_at=str(row.get("started_at") or ""),
+    )
+
+
 def fetch_list_page(
     page: int, fetcher: MorphMarketFetcher,
     backoffs: tuple[float, ...] = QUICK_RETRY_BACKOFF_S,
+    *,
+    fail_fast_connection: bool = False,
 ) -> dict[str, Any]:
     query = urlencode(
         {
@@ -939,7 +1315,10 @@ def fetch_list_page(
     )
     return fetch_with_retries(
         lambda: fetcher.fetch_json(f"{LIST_URL}?{query}"),
-        what=f"list page {page}", fetcher=fetcher, backoffs=backoffs,
+        what=f"list page {page}",
+        fetcher=fetcher,
+        backoffs=backoffs,
+        fail_fast=is_proxy_connection_error if fail_fast_connection else None,
     )
 
 
@@ -971,15 +1350,54 @@ def fetch_catalog_page(
     min_pages: int,
     backoffs: tuple[float, ...],
     retries: Optional[int] = None,
+    session_retries: Optional[int] = None,
 ) -> dict[str, Any]:
-    """Fetch a catalog page, rotating and rechecking the route if it is sparse."""
+    """Fetch a catalog page.
+
+    A tunnel or connection drop rotates to a new US-pinned session and
+    retries this same page before the error counts as a page failure.
+    A short page or a missing next link below the trustworthy page floor
+    still rotates, as a bad exit can look like the end of the catalog.
+    """
     if retries is None:
         retries = min(
             MAX_CATALOG_PAGE_RETRIES,
             max(0, int(os.environ.get("MORPHMARKET_PAGE_RETRIES", "2"))),
         )
+    if session_retries is None:
+        session_retries = _env_int("CATALOG_SESSION_RETRIES", 4, minimum=0)
     for attempt in range(retries + 1):
-        payload = fetch_list_page(page, fetcher, backoffs=backoffs)
+        connection_attempt = 0
+        while True:
+            try:
+                payload = fetch_list_page(
+                    page,
+                    fetcher,
+                    backoffs=backoffs,
+                    fail_fast_connection=_can_rotate_proxy(fetcher),
+                )
+                break
+            except MorphMarketFetchError as exc:
+                if (
+                    exc.retryable
+                    and is_proxy_connection_error(exc)
+                    and _can_rotate_proxy(fetcher)
+                    and connection_attempt < session_retries
+                ):
+                    connection_attempt += 1
+                    delay = tunnel_backoff(connection_attempt)
+                    log(
+                        f"WARN catalog page {page} proxy connection failed "
+                        f"({exc}); rotating to a new US session "
+                        f"({connection_attempt}/{session_retries}) and "
+                        f"retrying in {delay:.1f}s"
+                    )
+                    time.sleep(delay)
+                    refresh_proxy_session(
+                        fetcher, reason=f"catalog page {page} tunnel error"
+                    )
+                    continue
+                raise
         if not catalog_page_is_suspicious(page, payload, min_pages=min_pages):
             return payload
         count = len(payload.get("results") or [])
@@ -989,8 +1407,8 @@ def fetch_catalog_page(
         )
         if attempt >= retries:
             if page > 1 and not list_page_has_next(payload):
-                # Preserve the natural-end path so the existing minimum-page
-                # guard can report the early stop and keep mark_unseen off.
+                # Preserve the natural-end path so the minimum-page guard
+                # can report the early stop and keep mark_unseen off.
                 log(
                     f"WARN catalog page {page} still appears truncated after "
                     f"{retries} session retries; treating it as a natural end "
@@ -1010,14 +1428,61 @@ def fetch_catalog_page(
         fetcher.rotate_proxy_session()
         fetcher.preflight_us()
     raise AssertionError("unreachable")
+
+
 def fetch_detail(
     listing_id: str, fetcher: MorphMarketFetcher,
     backoffs: tuple[float, ...] = QUICK_RETRY_BACKOFF_S,
+    *,
+    fail_fast_connection: bool = False,
 ) -> dict[str, Any]:
     return fetch_with_retries(
         lambda: fetcher.fetch_json(DETAIL_URL.format(id=listing_id)),
-        what=f"detail {listing_id}", fetcher=fetcher, backoffs=backoffs,
+        what=f"detail {listing_id}",
+        fetcher=fetcher,
+        backoffs=backoffs,
+        fail_fast=is_proxy_connection_error if fail_fast_connection else None,
     )
+
+
+def fetch_catalog_detail(
+    listing_id: str,
+    fetcher: MorphMarketFetcher,
+    backoffs: tuple[float, ...] = CATALOG_DETAIL_RETRY_BACKOFF_S,
+    *,
+    session_retries: Optional[int] = None,
+) -> dict[str, Any]:
+    """Fetch one detail, rotating the proxy session on a dropped tunnel."""
+    if session_retries is None:
+        session_retries = _env_int("CATALOG_DETAIL_SESSION_RETRIES", 3, minimum=0)
+    remaining = session_retries if _can_rotate_proxy(fetcher) else 0
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return fetch_detail(
+                listing_id,
+                fetcher,
+                backoffs=backoffs,
+                fail_fast_connection=_can_rotate_proxy(fetcher),
+            )
+        except MorphMarketFetchError as exc:
+            if (
+                remaining <= 0
+                or not exc.retryable
+                or not is_proxy_connection_error(exc)
+            ):
+                raise
+            remaining -= 1
+            delay = tunnel_backoff(attempt)
+            log(
+                f"WARN detail {listing_id} proxy connection failed ({exc}); "
+                f"rotating to a new US session and retrying in {delay:.1f}s"
+            )
+            time.sleep(delay)
+            refresh_proxy_session(
+                fetcher, reason=f"detail {listing_id} tunnel error"
+            )
 
 
 def extract_seller_from_html(html: str) -> tuple[Optional[str], Optional[str]]:
@@ -1443,9 +1908,38 @@ def mark_unseen_if_safe(
 
 
 def catalog_ended_too_early(
-    mode: str, saw_natural_end: bool, pages_read: int, min_pages: int
+    mode: str,
+    saw_natural_end: bool,
+    pages_read: int,
+    min_pages: int,
+    implied_pages: int = 0,
 ) -> bool:
-    return mode == "catalog" and saw_natural_end and pages_read < min_pages
+    """True when a natural end is too small to mark listings inactive.
+
+    implied_pages comes from a list payload total. It only rejects an end
+    that stopped before that reported total. A missing or smaller total
+    does not, by itself, make a long walk incomplete.
+    """
+    if mode != "catalog" or not saw_natural_end:
+        return False
+    if pages_read < min_pages:
+        return True
+    return implied_pages > pages_read
+
+
+def catalog_short_walk_message(
+    pages_read: int, min_pages: int, implied_pages: int
+) -> str:
+    if implied_pages > pages_read and pages_read >= min_pages:
+        return (
+            f"catalog ended at page {pages_read} but the list API reported "
+            f"about {implied_pages} pages; check that MORPHMARKET_PROXY_URL "
+            "exits in the US"
+        )
+    return (
+        f"catalog ended too early after {pages_read} pages "
+        f"(minimum {min_pages}); check that MORPHMARKET_PROXY_URL exits in the US"
+    )
 
 
 def notify_discord_failure(
@@ -1492,7 +1986,12 @@ def main() -> int:
     if os.environ.get("MAX_PAGES") is None:
         os.environ["MAX_PAGES"] = default_pages
     max_pages = _max_pages()
-    min_pages = min(int(os.environ.get("MIN_CATALOG_PAGES", "100")), max_pages)
+    min_pages = min(_env_int("MIN_CATALOG_PAGES", 100, minimum=1), max_pages)
+    trust_pages = (
+        trustworthy_catalog_pages(max_pages, min_pages)
+        if mode == "catalog"
+        else min_pages
+    )
     list_backoffs = (
         CATALOG_LIST_RETRY_BACKOFF_S if mode == "catalog" else QUICK_RETRY_BACKOFF_S
     )
@@ -1506,24 +2005,48 @@ def main() -> int:
     cutoff_date = cutoff.date()
 
     supabase = get_supabase()
+    resume_state: Optional[CatalogCheckpoint] = None
+    if mode != "newest":
+        close_abandoned_runs(supabase)
+    if mode == "catalog":
+        resume_state = claim_catalog_resume(supabase)
     if mode == "newest":
         run_id, before = start_newest_run(supabase)
+    elif resume_state is not None:
+        run_id = resume_state.run_id
+        before = {"attempted": 0, "succeeded": 0, "failed": 0}
     else:
-        close_abandoned_runs(supabase)
         run_id = start_scrape_run(supabase)
         before = {"attempted": 0, "succeeded": 0, "failed": 0}
-    attempted = 0
-    succeeded = 0
-    failed = 0
+    attempted = resume_state.attempted if resume_state is not None else 0
+    succeeded = resume_state.succeeded if resume_state is not None else 0
+    failed = resume_state.failed if resume_state is not None else 0
     consecutive_empty = 0
     consecutive_fetch_failures = 0
     aborted = False
-    walk_incomplete = False
+    walk_incomplete = bool(resume_state and resume_state.gaps)
     saw_natural_end = False
     hit_page_cap = False
-    pages_read = 0
+    pages_read = resume_state.page if resume_state is not None else 0
+    implied_pages = 0
     failure_reason = ""
     fetcher: Optional[MorphMarketFetcher] = None
+    resume_overlap = _env_int("CATALOG_RESUME_OVERLAP", 3, minimum=0)
+    start_page = 1
+    if resume_state is not None:
+        start_page = resume_start_page(
+            resume_state.page, overlap=resume_overlap, max_pages=max_pages
+        )
+        log(
+            f"resuming catalog scrape_runs id={run_id} after page "
+            f"{resume_state.page}; next fetch is page {start_page} "
+            f"(overlap {resume_overlap}, gaps={resume_state.gaps})"
+        )
+    # Pages whose listings were not recorded and that a later resume might miss.
+    hole_pages: list[int] = []
+    permanent_gap = bool(resume_state and resume_state.gaps)
+    finalised = False
+    previous_signals: Optional[tuple[Any, Any]] = None
 
     skip_unchanged = _skip_unchanged_enabled()
     refetch_after = dt.timedelta(days=_refetch_after_days())
@@ -1543,10 +2066,15 @@ def main() -> int:
     list_prices_seen = 0
     logged_item_keys = False
 
+    rotate_every = 0
     if mode == "catalog":
+        rotate_every = _env_int("CATALOG_SESSION_ROTATE_PAGES", 40, minimum=0)
+        session_retries = _env_int("CATALOG_SESSION_RETRIES", 4, minimum=0)
         log(
             f"API catalog recrawl: MAX_PAGES={max_pages} "
-            f"MIN_CATALOG_WRITES={min_writes}"
+            f"trust_pages={trust_pages} MIN_CATALOG_WRITES={min_writes} "
+            f"session_rotate_every={rotate_every} "
+            f"session_retries={session_retries} start_page={start_page}"
         )
     elif mode == "newest":
         log(
@@ -1567,14 +2095,87 @@ def main() -> int:
             fetcher.preflight_us()
         elif mode == "catalog":
             log("no proxy configured; catalog will use the direct route")
-        for page in range(1, max_pages + 1):
+
+        def current_checkpoint() -> CatalogCheckpoint:
+            return CatalogCheckpoint(
+                page=pages_read,
+                attempted=attempted,
+                succeeded=succeeded,
+                failed=failed,
+                gaps=checkpoint_gaps(
+                    permanent_gap=permanent_gap,
+                    hole_pages=hole_pages,
+                    completed_page=pages_read,
+                    overlap=resume_overlap,
+                    max_pages=max_pages,
+                ),
+                run_id=run_id,
+            )
+
+        def finish_run(
+            status: str,
+            error_message: Optional[str],
+            *,
+            extra_failed: int = 0,
+        ) -> None:
+            nonlocal finalised
+            if finalised:
+                return
+            finalise_scrape_run(
+                supabase,
+                run_id,
+                status=status,
+                attempted=before["attempted"] + attempted,
+                succeeded=before["succeeded"] + succeeded,
+                failed=before["failed"] + failed + extra_failed,
+                error_message=error_message,
+            )
+            finalised = True
+
+        def on_stop(signum: int, _frame: Any) -> None:
+            reason = (
+                f"stopped by signal {signum} before the catalog walk finished"
+            )
+            message = reason
+            if mode == "catalog":
+                checkpoint = current_checkpoint()
+                if checkpoint.page >= 1:
+                    message = format_catalog_checkpoint(checkpoint) + "\n" + reason
+            try:
+                finish_run("failed", message)
+            except Exception:  # noqa: BLE001
+                log("WARN could not record the catalog checkpoint on shutdown")
+            raise SystemExit(128 + signum)
+
+        if mode == "catalog":
+            previous_signals = (
+                signal.getsignal(signal.SIGTERM),
+                signal.getsignal(signal.SIGINT),
+            )
+            signal.signal(signal.SIGTERM, on_stop)
+            signal.signal(signal.SIGINT, on_stop)
+
+        checkpoint_every = _env_int("CATALOG_CHECKPOINT_EVERY", 5, minimum=1)
+        for page in range(start_page, max_pages + 1):
+            if (
+                rotate_every > 0
+                and page > start_page
+                and (page - 1) % rotate_every == 0
+                and isinstance(configured_proxy, str)
+                and configured_proxy
+            ):
+                log(f"rotating proxy session after {page - 1} catalog pages")
+                refresh_proxy_session(
+                    fetcher, reason="scheduled catalog session rotation"
+                )
+                time.sleep(retry_delay(2))
             log(f"GET list page {page}")
             try:
                 if mode == "catalog":
                     payload = fetch_catalog_page(
                         page,
                         fetcher,
-                        min_pages=min_pages,
+                        min_pages=trust_pages,
                         backoffs=list_backoffs,
                     )
                 else:
@@ -1588,11 +2189,12 @@ def main() -> int:
                 log(f"ERROR fetching list page {page}: {safe_error(exc)}")
                 failed += 1
                 walk_incomplete = True
+                hole_pages.append(page)
                 consecutive_fetch_failures += 1
                 if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
                     raise RuntimeError(
                         f"aborting: {consecutive_fetch_failures} list pages "
-                        f"failed in a row; last error: {exc}"
+                        f"failed in a row after session rotation; last error: {exc}"
                     ) from exc
                 time.sleep(page_sleep_s)
                 continue
@@ -1601,16 +2203,20 @@ def main() -> int:
                 log(f"ERROR fetching list page {page}: {safe_error(exc)}")
                 failed += 1
                 walk_incomplete = True
+                hole_pages.append(page)
                 consecutive_fetch_failures += 1
                 if consecutive_fetch_failures >= CONSECUTIVE_FETCH_FAILURE_LIMIT:
                     raise RuntimeError(
                         f"aborting: {consecutive_fetch_failures} list pages "
-                        f"failed in a row; last error: {exc}"
+                        f"failed in a row after session rotation; last error: {exc}"
                     ) from exc
                 time.sleep(page_sleep_s)
                 continue
             consecutive_fetch_failures = 0
             pages_read = page
+            hint = catalog_pages_implied(payload)
+            if hint:
+                implied_pages = max(implied_pages, hint)
 
             results = payload.get("results") or []
             has_next = list_page_has_next(payload)
@@ -1681,7 +2287,14 @@ def main() -> int:
                     page_unchanged.append(listing_id)
                     continue
                 try:
-                    detail = fetch_detail(listing_id, fetcher, backoffs=detail_backoffs)
+                    if mode == "catalog":
+                        detail = fetch_catalog_detail(
+                            listing_id, fetcher, backoffs=detail_backoffs
+                        )
+                    else:
+                        detail = fetch_detail(
+                            listing_id, fetcher, backoffs=detail_backoffs
+                        )
                     if sleep_s:
                         time.sleep(sleep_s)
                 except MorphMarketAccessDeniedError:
@@ -1692,6 +2305,7 @@ def main() -> int:
                     failed += 1
                     if mode == "catalog":
                         walk_incomplete = True
+                        hole_pages.append(page)
                     continue
 
                 listed_at = _parse_iso(detail.get("first_listed")) or listed_date
@@ -1741,6 +2355,7 @@ def main() -> int:
                 failed += len(page_unchanged) - touched
                 if mode == "catalog" and touched < len(page_unchanged):
                     walk_incomplete = True
+                    hole_pages.append(page)
                 consecutive_empty = 0
                 log(f"page {page}: {touched} unchanged, skipped detail read")
 
@@ -1811,13 +2426,19 @@ def main() -> int:
                 else:
                     consecutive_empty = 0
 
-            time.sleep(page_sleep_s)
+            pause = page_sleep_s
+            if mode == "catalog":
+                pause += random.random() * CATALOG_PAGE_JITTER_S
+                if page % checkpoint_every == 0:
+                    save_catalog_checkpoint(supabase, run_id, current_checkpoint())
+            time.sleep(pause)
 
         short_walk_error = None
-        if catalog_ended_too_early(mode, saw_natural_end, pages_read, min_pages):
-            short_walk_error = (
-                f"catalog ended too early after {pages_read} pages "
-                f"(minimum {min_pages}); check that MORPHMARKET_PROXY_URL exits in the US"
+        if catalog_ended_too_early(
+            mode, saw_natural_end, pages_read, trust_pages, implied_pages
+        ):
+            short_walk_error = catalog_short_walk_message(
+                pages_read, trust_pages, implied_pages
             )
             log(f"ERROR: {short_walk_error}")
             walk_incomplete = True
@@ -1845,15 +2466,7 @@ def main() -> int:
             )
 
         status = "failed" if short_walk_error else ("success" if failed == 0 else "partial")
-        finalise_scrape_run(
-            supabase,
-            run_id,
-            status=status,
-            attempted=before["attempted"] + attempted,
-            succeeded=before["succeeded"] + succeeded,
-            failed=before["failed"] + failed,
-            error_message=short_walk_error,
-        )
+        finish_run(status, short_walk_error)
         # The newest check counts only rows it wrote; a catalog or windowed
         # run also counts confirmed sightings, which matter to the
         # came-down sweep and the day's market numbers.
@@ -1885,16 +2498,28 @@ def main() -> int:
         aborted = True
         safe_error = getattr(fetcher, "_safe_error", str) if fetcher else str
         failure_reason = safe_error(exc)
+        if mode == "catalog":
+            try:
+                checkpoint = current_checkpoint()
+            except NameError:
+                checkpoint = None
+            if checkpoint is not None and checkpoint.page >= 1:
+                failure_reason = (
+                    format_catalog_checkpoint(checkpoint) + "\n" + failure_reason
+                )
         log(f"FATAL: {failure_reason}")
-        finalise_scrape_run(
-            supabase,
-            run_id,
-            status="failed",
-            attempted=before["attempted"] + attempted,
-            succeeded=before["succeeded"] + succeeded,
-            failed=before["failed"] + failed + 1,
-            error_message=failure_reason,
-        )
+        try:
+            finish_run("failed", failure_reason, extra_failed=1)
+        except NameError:
+            finalise_scrape_run(
+                supabase,
+                run_id,
+                status="failed",
+                attempted=before["attempted"] + attempted,
+                succeeded=before["succeeded"] + succeeded,
+                failed=before["failed"] + failed + 1,
+                error_message=failure_reason,
+            )
         notify_discord_failure(
             run_id=run_id,
             exit_country=getattr(fetcher, "exit_country", "unknown"),
@@ -1903,6 +2528,9 @@ def main() -> int:
         )
         return 1
     finally:
+        if previous_signals is not None:
+            signal.signal(signal.SIGTERM, previous_signals[0])
+            signal.signal(signal.SIGINT, previous_signals[1])
         if fetcher is not None:
             fetcher.close()
 

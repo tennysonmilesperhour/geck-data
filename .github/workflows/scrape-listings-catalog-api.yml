@@ -24,9 +24,11 @@ jobs:
   scrape:
     # ubuntu-latest is Ubuntu 26.04. Playwright 1.55 cannot install Chromium there.
     runs-on: ubuntu-24.04
-    # Raised from 120 after Tue–Thu Nov 3–5 2026 runs cancelled at ~2h
-    # while still on MorphMarket list pages (~693→747→816). Slow proxy
+    # Raised from 120 after Tue-Thu Nov 3-5 2026 runs cancelled at ~2h
+    # while still on MorphMarket list pages (~693 to 747 to 816). Slow proxy
     # walks need the full GitHub-hosted job window to finish.
+    # 360 is the GitHub-hosted maximum (PR #149). Session rotation uses
+    # short jittered waits, so retries fit in this window.
     timeout-minutes: 360
     steps:
       # MorphMarket blocks GitHub-hosted runners (HTTP 403 on every run
@@ -78,12 +80,24 @@ jobs:
           MORPHMARKET_PROXY_USERNAME_TEMPLATE: ${{ secrets.MORPHMARKET_PROXY_USERNAME_TEMPLATE }}
           MORPHMARKET_PROXY_GEO_ATTEMPTS: ${{ vars.MORPHMARKET_PROXY_GEO_ATTEMPTS || '5' }}
           MORPHMARKET_PAGE_RETRIES: ${{ vars.MORPHMARKET_PAGE_RETRIES || '2' }}
+          # Rotate the sticky proxy session on a timer and immediately after
+          # a tunnel drop. A natural end below 98% of EXPECTED_CATALOG_PAGES
+          # does not mark listings inactive. CATALOG_RESUME reopens a failed
+          # catalog run from its last completed page.
+          CATALOG_SESSION_RETRIES: ${{ vars.CATALOG_SESSION_RETRIES || '4' }}
+          CATALOG_SESSION_ROTATE_PAGES: ${{ vars.CATALOG_SESSION_ROTATE_PAGES || '40' }}
+          CATALOG_DETAIL_SESSION_RETRIES: ${{ vars.CATALOG_DETAIL_SESSION_RETRIES || '3' }}
+          EXPECTED_CATALOG_PAGES: ${{ vars.EXPECTED_CATALOG_PAGES || '840' }}
+          CATALOG_COMPLETENESS_RATIO: ${{ vars.CATALOG_COMPLETENESS_RATIO || '0.98' }}
+          CATALOG_RESUME: '1'
+          CATALOG_RESUME_HOURS: ${{ vars.CATALOG_RESUME_HOURS || '30' }}
+          CATALOG_RESUME_OVERLAP: ${{ vars.CATALOG_RESUME_OVERLAP || '3' }}
           DISCORD_OPS_WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           TRIGGERED_BY: github_action_catalog_api
           INGEST_MODE: catalog
-          # MorphMarket lists about 82,000 animals (about 820 pages) as of Oct 2026.
-          # 1200 leaves room so the walk reaches the end and can mark sold ads inactive.
+          # MorphMarket lists about 85,000 animals (about 850 pages) as of Nov 2026.
+          # EXPECTED_CATALOG_PAGES is 840. 1200 leaves room to reach the real end.
           MAX_PAGES: '1200'
         working-directory: scripts
         run: python scrape_listings_api.py --mode=catalog
