@@ -11,6 +11,7 @@ import json
 import re
 from html.parser import HTMLParser
 from typing import Any, Optional
+from urllib.parse import urljoin
 
 # Mirror of scripts/lib/canonical.py looks_like_group_lot. Copied so this
 # module can be imported without pulling postgrest (canonical.py imports it
@@ -221,17 +222,20 @@ class _SquarespaceProductContextParser(HTMLParser):
         raw = values.get("data-context")
         if "product-list" not in classes or not raw:
             return
-        parsed = json.loads(raw)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return
         if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
             self.context = parsed
 
 
 def squarespace_product_payload(html_text: str) -> dict[str, Any]:
-    """Convert a normal Squarespace shop page into the legacy payload shape.
+    """Convert a Squarespace product-list page into the legacy payload shape.
 
-    Altitude's robots.txt blocks ``?format=json``. The same public product
-    records are embedded in the crawlable ``/shop`` HTML for the storefront,
-    so the collector reads that instead.
+    Altitude served this embed through November 4, 2026. The live shop no
+    longer does. altitude_catalog_items reads the current page and falls
+    back to this helper when the old markup is still present.
     """
     parser = _SquarespaceProductContextParser()
     parser.feed(html_text)
@@ -258,6 +262,422 @@ def squarespace_product_payload(html_text: str) -> dict[str, Any]:
         "items": normalized,
         "nestedCategories": context.get("nestedCategoryContext") or {},
     }
+
+
+# Public catalog origin. /shop 308s here as of November 2026.
+ALTITUDE_ORIGIN = "https://www.altitudeexotics.com"
+
+# Next.js flight pushes, same shape Feedle uses. The second element is a
+# JSON string, so json.loads restores the embedded catalog text.
+_NEXT_F_PUSH_RE = re.compile(
+    r'self\.__next_f\.push\(\[(\d+),("(?:\\.|[^"\\])*")\]\)'
+)
+
+
+def _flight_text(value: Any) -> Optional[str]:
+    """Decode one React flight string.
+
+    Undefined is the sentinel ``$undefined``. A real string that starts
+    with ``$`` is stored with that dollar doubled, so ``$$1359`` is the
+    price text ``$1359`` and ``$$79 Hand-Picked Hatchling`` keeps its
+    leading dollar. Other values are not scraped text.
+    """
+    if not isinstance(value, str):
+        return None
+    if value == "$undefined":
+        return None
+    if value.startswith("$$"):
+        value = value[1:]
+    value = re.sub(r"\s+", " ", value).strip()
+    return value or None
+
+
+def _altitude_price_usd(value: Any) -> Optional[float]:
+    """Parse an Altitude display price. Missing or non-positive stays None."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if number > 0 else None
+    text = _flight_text(value)
+    if not text:
+        return None
+    cleaned = text.replace("$", "").replace(",", "").strip()
+    if not cleaned:
+        return None
+    try:
+        number = float(cleaned)
+    except ValueError:
+        return None
+    return number if number > 0 else None
+
+
+def _altitude_image_url(value: Any) -> Optional[str]:
+    text = _flight_text(value)
+    if not text or text.startswith("//"):
+        return None
+    if text.startswith("https://") or text.startswith("http://"):
+        return text
+    if text.startswith("/"):
+        return urljoin(ALTITUDE_ORIGIN + "/", text)
+    return None
+
+
+def _next_flight_text(html_text: str) -> str:
+    parts: list[str] = []
+    for raw in _NEXT_F_PUSH_RE.findall(html_text):
+        try:
+            decoded = json.loads(raw[1])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(decoded, str):
+            parts.append(decoded)
+    return "".join(parts)
+
+
+def _json_array_at(blob: str, bracket: int) -> Optional[list[Any]]:
+    depth = 0
+    in_str = False
+    escaped = False
+    for index in range(bracket, len(blob)):
+        char = blob[index]
+        if in_str:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_str = False
+            continue
+        if char == '"':
+            in_str = True
+        elif char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    parsed = json.loads(blob[bracket : index + 1])
+                except json.JSONDecodeError:
+                    return None
+                return parsed if isinstance(parsed, list) else None
+    return None
+
+
+def _geckos_array(blob: str) -> Optional[list[Any]]:
+    """Return the first JSON array under a "geckos" key, or None."""
+    if not blob:
+        return None
+    marker = '"geckos":'
+    start = 0
+    while True:
+        found = blob.find(marker, start)
+        if found < 0:
+            return None
+        bracket = blob.find("[", found + len(marker))
+        if bracket < 0:
+            return None
+        between = blob[found + len(marker) : bracket]
+        if between.strip():
+            start = found + len(marker)
+            continue
+        parsed = _json_array_at(blob, bracket)
+        if parsed is not None:
+            return parsed
+        start = found + len(marker)
+
+
+def _next_flight_geckos(html_text: str) -> Optional[list[Any]]:
+    flight = _next_flight_text(html_text)
+    found = _geckos_array(flight)
+    if found is not None:
+        return found
+    if flight:
+        return None
+    return _geckos_array(html_text)
+
+
+def _optional_observed_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, str):
+        text = _flight_text(value)
+        if text is None:
+            return None
+        value = text
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _items_from_squarespace(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    labels = squarespace_category_labels(payload)
+    items: list[dict[str, Any]] = []
+    for raw in payload.get("items") or []:
+        if not isinstance(raw, dict):
+            continue
+        fields = parse_excerpt_fields(str(raw.get("excerpt") or ""))
+        category_ids = raw.get("categoryIds")
+        if not isinstance(category_ids, list):
+            category_ids = []
+        category_text = " ".join(
+            labels.get(str(category_id), "") for category_id in category_ids
+        )
+        image = raw.get("assetUrl")
+        if not (isinstance(image, str) and image.startswith(("http://", "https://"))):
+            image = None
+        qty = squarespace_qty(raw)
+        if qty == 0:
+            sold: Optional[bool] = True
+        elif qty is not None:
+            sold = False
+        else:
+            sold = None
+        items.append(
+            {
+                "external_id": str(raw.get("id") or "").strip(),
+                "title": str(raw.get("title") or "").strip(),
+                "morph": fields.get("morph"),
+                "sex": fields.get("sex"),
+                "weight": fields.get("weight"),
+                "lineage": fields.get("lineage"),
+                "sire": None,
+                "dam": None,
+                "excerpt": str(raw.get("excerpt") or ""),
+                "body": str(raw.get("body") or ""),
+                "price": squarespace_price_usd(raw),
+                "qty": qty,
+                "sold": sold,
+                "image": image,
+                "path": str(raw.get("fullUrl") or "").strip(),
+                "species_text": "",
+                "category_text": category_text,
+                "product_type": raw.get("productType"),
+                "category_ids": category_ids,
+                "category_labels": [
+                    labels.get(str(category_id), "")
+                    for category_id in category_ids
+                    if labels.get(str(category_id))
+                ],
+                "status": None,
+                "certified": None,
+                "shopify_handle": None,
+                "variant_id": None,
+                "traits": [fields["morph"]] if fields.get("morph") else [],
+                "squarespace_item": raw,
+                "category_label_map": labels,
+            }
+        )
+    return items
+
+
+def _normalized_next_gecko(raw: dict[str, Any]) -> dict[str, Any]:
+    traits: list[str] = []
+    raw_traits = raw.get("traits")
+    if isinstance(raw_traits, list):
+        for trait in raw_traits:
+            text = _flight_text(trait)
+            if text and text not in traits:
+                traits.append(text)
+    slug = _flight_text(raw.get("slug"))
+    status = _flight_text(raw.get("status"))
+    sold: Optional[bool]
+    if status and status.lower() == "sold":
+        sold = True
+    elif status and status.lower() == "available":
+        sold = False
+    else:
+        sold = None
+    certified = raw.get("certified") if isinstance(raw.get("certified"), bool) else None
+    return {
+        "external_id": _flight_text(raw.get("id")) or slug or "",
+        "title": _flight_text(raw.get("name")) or _flight_text(raw.get("id")) or "",
+        "morph": _flight_text(raw.get("morph")),
+        "sex": _flight_text(raw.get("sex")),
+        "weight": _flight_text(raw.get("weight")),
+        "lineage": _flight_text(raw.get("lineage")),
+        "sire": _flight_text(raw.get("sire")),
+        "dam": _flight_text(raw.get("dam")),
+        "excerpt": "",
+        "body": "",
+        "price": _altitude_price_usd(raw.get("price")),
+        "qty": _optional_observed_int(raw.get("qty")) if "qty" in raw else None,
+        "sold": sold,
+        "image": _altitude_image_url(raw.get("photo")),
+        "path": f"/geckos/{slug}" if slug else "",
+        "species_text": _flight_text(raw.get("species")) or "",
+        "category_text": "",
+        "product_type": None,
+        "category_ids": [],
+        "category_labels": [],
+        "status": status,
+        "certified": certified,
+        "shopify_handle": _flight_text(raw.get("shopifyHandle")),
+        "variant_id": _flight_text(raw.get("variantId")),
+        "traits": traits,
+        "squarespace_item": None,
+        "category_label_map": None,
+    }
+
+
+def altitude_catalog_items(html_text: str) -> list[dict[str, Any]]:
+    """Read Altitude's public gecko catalog from a shop HTML document.
+
+    The current site is a Next.js page at /geckos (``/shop`` redirects
+    there). Product records are in the prerendered flight payload under
+    ``geckos``, not in a Squarespace ``data-context`` attribute. Older
+    saved pages that still have the product-list embed are accepted too.
+    Raises ValueError when neither payload is present.
+    """
+    if "data-context" in html_text and "product-list" in html_text:
+        try:
+            payload = squarespace_product_payload(html_text)
+        except ValueError:
+            payload = None
+        except Exception:
+            # A broken legacy embed must not hide the current flight payload.
+            payload = None
+        if payload is not None:
+            return _items_from_squarespace(payload)
+
+    geckos = _next_flight_geckos(html_text)
+    if geckos is None:
+        raise ValueError("Altitude catalog payload was not found in shop HTML")
+    return [
+        _normalized_next_gecko(item)
+        for item in geckos
+        if isinstance(item, dict)
+    ]
+
+
+def altitude_catalog_item_is_crested(item: dict[str, Any]) -> bool:
+    """Crested physical animal, for either the old or current catalog shape."""
+    raw = item.get("squarespace_item")
+    if isinstance(raw, dict):
+        labels = item.get("category_label_map")
+        return altitude_item_is_crested(
+            raw,
+            labels if isinstance(labels, dict) else None,
+        )
+
+    title = str(item.get("title") or "")
+    morph = str(item.get("morph") or "")
+    species = str(item.get("species_text") or "")
+    category = str(item.get("category_text") or "")
+    if is_merch_text(title, morph, category):
+        return False
+    if category and ALTITUDE_BLOCKED_CATEGORY_RE.search(category):
+        return False
+    classification = " ".join(
+        part for part in (title, morph, species, category) if part
+    )
+    if is_crested_text(classification):
+        return True
+    if classification and OTHER_SPECIES_RE.search(classification):
+        return False
+    return bool(item.get("morph") and item.get("weight") and item.get("sex"))
+
+
+def _altitude_title(title: str, morph: Optional[str]) -> str:
+    if morph and morph.casefold() not in title.casefold():
+        return f"{title} {morph}".strip()
+    return title.strip()
+
+
+def altitude_listing_from_item(
+    item: dict[str, Any],
+) -> Optional[tuple[dict[str, Any], Optional[str]]]:
+    """Map one catalog item to a cross_platform row and its first image.
+
+    Unobserved fields stay None. Quantity is stored only when the page
+    actually reports it. The caller sets last_seen_at.
+    """
+    external_id = str(item.get("external_id") or "").strip()
+    if not external_id:
+        return None
+    title = str(item.get("title") or "")
+    morph = item.get("morph") if isinstance(item.get("morph"), str) else None
+    excerpt = str(item.get("excerpt") or "")
+    body = str(item.get("body") or "")
+    path = str(item.get("path") or "").strip()
+    listing_url = urljoin(ALTITUDE_ORIGIN + "/", path) if path else None
+    image = item.get("image")
+    if not (isinstance(image, str) and image.startswith(("http://", "https://"))):
+        image = None
+    description = re.sub(r"<[^>]+>", " ", excerpt)
+    description = re.sub(r"\s+", " ", description).strip()[:2000] or None
+    blob_parts = [title, morph, excerpt, body, item.get("species_text")]
+    group_lot = is_group_lot_text(*blob_parts)
+    skip_combo = bool(
+        re.search(r"hand-?picked hatchling", f"{title} {morph or ''}", re.IGNORECASE)
+    ) or exclude_from_combo_arb(*blob_parts)
+    fields: dict[str, str] = {}
+    for key, source in (
+        ("morph", morph),
+        ("weight", item.get("weight")),
+        ("sex", item.get("sex")),
+        ("lineage", item.get("lineage")),
+    ):
+        if isinstance(source, str) and source.strip():
+            fields[key] = source.strip()
+    payload: dict[str, Any] = {
+        "sex": item.get("sex"),
+        "size": item.get("weight"),
+        "lineage": item.get("lineage"),
+        "sold": item.get("sold"),
+        "qty": item.get("qty"),
+        "images": [image] if image else [],
+        "source_url": listing_url,
+        "shop": "altitude_exotics",
+        "is_group_lot": group_lot,
+        "exclude_from_combo_arb": skip_combo,
+        "morph": morph,
+        "excerpt_fields": fields,
+        "sku_title": title,
+        "catalog_access": "robots_allowed_html",
+        "training_rights": "permission_required",
+        "training_eligible": False,
+    }
+    for key in (
+        "sire",
+        "dam",
+        "status",
+        "certified",
+        "shopify_handle",
+        "variant_id",
+        "product_type",
+    ):
+        value = item.get(key)
+        if value is not None:
+            payload[key] = value
+    category_ids = item.get("category_ids")
+    if isinstance(category_ids, list) and category_ids:
+        payload["category_ids"] = category_ids
+        labels = item.get("category_labels")
+        if isinstance(labels, list) and labels:
+            payload["category_labels"] = labels
+    trait_parts: list[Any] = [morph]
+    raw_traits = item.get("traits")
+    if isinstance(raw_traits, list):
+        trait_parts.extend(raw_traits)
+    trait_parts.append(title)
+    row = {
+        "platform": "altitude_exotics",
+        "external_id": external_id,
+        "title": _altitude_title(title, morph),
+        "description": description,
+        "price": item.get("price"),
+        "price_usd_equivalent": item.get("price"),
+        "currency": "USD",
+        "seller_name": "Altitude Exotics",
+        "seller_location": "Colorado US",
+        "url": listing_url,
+        "traits_raw": traits_csv(trait_parts),
+        "species": CRESTED_SPECIES,
+        "payload": payload,
+    }
+    return row, image
 
 
 def squarespace_category_labels(payload: dict[str, Any]) -> dict[str, str]:
