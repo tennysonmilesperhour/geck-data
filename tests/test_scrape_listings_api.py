@@ -311,6 +311,10 @@ class _FakeQuery:
         self.rows = rows
         self.calls = []
 
+    def select(self, cols):
+        self.calls.append(("select", cols))
+        return self
+
     def update(self, payload):
         self.calls.append(("update", payload))
         return self
@@ -357,6 +361,19 @@ class AbandonedRunTests(unittest.TestCase):
         update = [c for c in calls if c[0] == "update"][0][1]
         self.assertEqual(update["status"], "failed")
         self.assertIn("abandoned", update["error_message"])
+        self.assertIn(("select", "id,error_message"), calls)
+
+    def test_abandoned_close_keeps_a_catalog_checkpoint(self) -> None:
+        checkpoint = (
+            "catalog_checkpoint page=759 attempted=10 succeeded=9 failed=1 gaps=0"
+        )
+        fake = _FakeSupabase([{"id": 992, "error_message": checkpoint + "\npartial"}])
+        closed = api.close_abandoned_runs(fake, "listings")
+        self.assertEqual(closed, 1)
+        update = [c for c in fake.query.calls if c[0] == "update"][0][1]
+        self.assertIn("page=759", update["error_message"])
+        self.assertIn("abandoned", update["error_message"])
+        self.assertIn(("eq", "id", 992), fake.query.calls)
 
     def test_database_error_does_not_stop_the_run(self) -> None:
         class Broken:
@@ -494,7 +511,7 @@ class SkipUnchangedWalkTests(unittest.TestCase):
         fetched: list[str] = []
         touched: list[str] = []
 
-        def detail(listing_id, _fetcher, backoffs):
+        def detail(listing_id, _fetcher, backoffs, **_kwargs):
             fetched.append(listing_id)
             return {"id": listing_id, "price": 1, "owner": {"slug": "s", "name": "S"},
                     "category": {"name": "Crested Geckos"}}
@@ -507,7 +524,12 @@ class SkipUnchangedWalkTests(unittest.TestCase):
             def close(self):
                 pass
 
-        env = {"INGEST_MODE": "catalog", "SKIP_UNCHANGED": "1", "MAX_PAGES": "1"}
+        env = {
+            "INGEST_MODE": "catalog",
+            "SKIP_UNCHANGED": "1",
+            "MAX_PAGES": "1",
+            "CATALOG_RESUME": "0",
+        }
         with patch.dict(os.environ, env), \
             patch.object(api, "apply_cli_args", return_value=False), \
             patch.object(api, "get_supabase", return_value=object()), \
@@ -938,8 +960,14 @@ class ShortCatalogTests(unittest.TestCase):
             {"results": [{"key": "3", "category_name": "Ball Python"}], "next": None},
         ]
         env = {"INGEST_MODE": "catalog", "MAX_PAGES": "1200", "SKIP_UNCHANGED": "0"}
-        # Leave MIN_CATALOG_PAGES absent to exercise its default of 100.
-        env = {k: v for k, v in os.environ.items() if k != "MIN_CATALOG_PAGES"} | env
+        # Leave MIN_CATALOG_PAGES and EXPECTED_CATALOG_PAGES absent. The
+        # trustworthy floor is 98% of the default expected catalog (800),
+        # which is well above a 3 page natural end.
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("MIN_CATALOG_PAGES", "EXPECTED_CATALOG_PAGES", "CATALOG_COMPLETENESS_RATIO")
+        } | env
         with patch.dict(os.environ, env, clear=True), \
             patch.object(api, "apply_cli_args", return_value=False), \
             patch.object(api, "get_supabase", return_value=object()), \
@@ -949,7 +977,7 @@ class ShortCatalogTests(unittest.TestCase):
             patch.object(
                 api, "fetch_list_page", side_effect=pages + [pages[-1], pages[-1]]
             ) as list_page, \
-            patch.object(api, "fetch_detail", side_effect=lambda lid, _f, backoffs: {
+            patch.object(api, "fetch_detail", side_effect=lambda lid, _f, backoffs, **_kwargs: {
                 "id": lid, "owner": {"id": "seller"}}) as detail, \
             patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)) as upsert, \
             patch.object(api, "write_image_and_gallery_rows"), \
@@ -959,6 +987,7 @@ class ShortCatalogTests(unittest.TestCase):
             patch.object(api, "request_after_scrape"), \
             patch.object(api, "log") as log, \
             patch.object(api.time, "sleep"):
+            trust = api.trustworthy_catalog_pages(1200, 100)
             self.assertEqual(api.main(), 1)
         self.assertEqual(list_page.call_count, 5)
         self.assertEqual(upsert.call_count, 2)
@@ -968,7 +997,654 @@ class ShortCatalogTests(unittest.TestCase):
         result = finalise.call_args.kwargs
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["succeeded"], 100)
+        self.assertGreaterEqual(trust, 700)
         self.assertIn("3 pages", result["error_message"])
-        self.assertIn("minimum 100", result["error_message"])
+        self.assertIn(f"minimum {trust}", result["error_message"])
         self.assertIn("MORPHMARKET_PROXY_URL exits in the US", result["error_message"])
         log.assert_any_call(f'ERROR: {result["error_message"]}')
+
+
+class ProxyConnectionTests(unittest.TestCase):
+    def test_tunnel_error_is_a_connection_drop(self) -> None:
+        self.assertTrue(
+            api.is_proxy_connection_error(
+                api.MorphMarketFetchError("net::ERR_TUNNEL_CONNECTION_FAILED")
+            )
+        )
+        self.assertFalse(
+            api.is_proxy_connection_error(
+                api.MorphMarketFetchError("MorphMarket returned HTTP 503")
+            )
+        )
+
+    def test_tunnel_error_rotates_and_retries_the_same_page(self) -> None:
+        fetcher = mock.Mock()
+        fetcher.exit_country = "US"
+        fetcher.proxy_country = "us"
+        fetcher.proxy_session_rotation = 0
+        fetcher.can_rotate_proxy_session.return_value = True
+
+        def rotate() -> None:
+            fetcher.proxy_session_rotation += 1
+
+        fetcher.rotate_proxy_session.side_effect = rotate
+        good = {"results": [{} for _ in range(100)], "next": "?page=3"}
+        calls = {"n": 0}
+
+        def fetch_list(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            self.assertEqual(page, 759)
+            self.assertTrue(fail_fast_connection)
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise api.MorphMarketFetchError("net::ERR_TUNNEL_CONNECTION_FAILED")
+            return good
+
+        with (
+            patch.object(api, "fetch_list_page", side_effect=fetch_list),
+            patch.object(api.time, "sleep") as sleep,
+            patch.object(api, "retry_delay", side_effect=lambda base: base),
+        ):
+            result = api.fetch_catalog_page(
+                759,
+                fetcher,
+                min_pages=100,
+                backoffs=(15, 30, 60, 120),
+                retries=0,
+                session_retries=4,
+            )
+        self.assertEqual(result, good)
+        self.assertEqual(calls["n"], 2)
+        fetcher.rotate_proxy_session.assert_called_once_with()
+        fetcher.preflight_us.assert_called_once_with(
+            attempts=2, rotate_on_geo_failure=False
+        )
+        sleep.assert_called_once_with(5)
+
+    def test_http_503_does_not_rotate_the_session(self) -> None:
+        fetcher = mock.Mock()
+        fetcher.can_rotate_proxy_session.return_value = True
+        with (
+            patch.object(
+                api,
+                "fetch_list_page",
+                side_effect=api.MorphMarketFetchError("MorphMarket returned HTTP 503"),
+            ),
+            patch.object(api.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(api.MorphMarketFetchError):
+                api.fetch_catalog_page(
+                    4,
+                    fetcher,
+                    min_pages=100,
+                    backoffs=(),
+                    retries=0,
+                    session_retries=4,
+                )
+        fetcher.rotate_proxy_session.assert_not_called()
+        sleep.assert_not_called()
+
+    def test_confirmed_wrong_country_is_not_accepted(self) -> None:
+        fetcher = mock.Mock()
+        fetcher.can_rotate_proxy_session.return_value = True
+        fetcher.proxy_country = "us"
+        fetcher.proxy_session_rotation = 1
+        fetcher.preflight_us.side_effect = api.MorphMarketFetchError(
+            "proxy did not reach US after 2 preflight attempts",
+            retryable=False,
+        )
+        with self.assertRaises(api.MorphMarketFetchError) as caught:
+            api.refresh_proxy_session(fetcher, reason="scheduled rotation")
+        self.assertFalse(caught.exception.retryable)
+        fetcher.rotate_proxy_session.assert_called_once_with()
+
+    def test_missing_session_template_is_reported_once(self) -> None:
+        fetcher = mock.Mock()
+        fetcher.can_rotate_proxy_session.return_value = False
+        with patch.object(api, "log") as log:
+            self.assertFalse(
+                api.refresh_proxy_session(fetcher, reason="scheduled rotation")
+            )
+            self.assertFalse(
+                api.refresh_proxy_session(fetcher, reason="scheduled rotation")
+            )
+        fetcher.restart.assert_called()
+        fetcher.rotate_proxy_session.assert_not_called()
+        warnings = [str(call) for call in log.call_args_list if "session" in str(call).lower()]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("{session}", warnings[0])
+        self.assertIn("docs/SCRAPER_SETUP.md", warnings[0])
+
+
+class CatalogCheckpointTests(unittest.TestCase):
+    def test_checkpoint_round_trip(self) -> None:
+        checkpoint = api.CatalogCheckpoint(
+            page=759, attempted=12, succeeded=10, failed=2, gaps=0
+        )
+        text = api.format_catalog_checkpoint(checkpoint) + "\naborting: tunnel"
+        parsed = api.parse_catalog_checkpoint(text)
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed.page, 759)
+        self.assertEqual(parsed.attempted, 12)
+        self.assertEqual(parsed.gaps, 0)
+
+    def test_page_102_is_below_the_default_trust_floor(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            trust = api.trustworthy_catalog_pages(1200, 100)
+        self.assertGreater(trust, 102)
+        self.assertTrue(api.catalog_ended_too_early("catalog", True, 102, trust))
+        self.assertFalse(api.catalog_ended_too_early("catalog", True, 850, trust))
+        self.assertTrue(
+            api.catalog_ended_too_early("catalog", True, 820, 700, implied_pages=848)
+        )
+        self.assertFalse(
+            api.catalog_ended_too_early("catalog", True, 850, trust, implied_pages=848)
+        )
+
+    def test_claims_newest_failed_checkpoint(self) -> None:
+        row = {
+            "id": 992,
+            "status": "failed",
+            "started_at": "2026-11-11T15:00:00+00:00",
+            "error_message": (
+                "catalog_checkpoint page=759 attempted=10 succeeded=9 failed=1 gaps=0\n"
+                "aborting: net::ERR_TUNNEL_CONNECTION_FAILED"
+            ),
+        }
+        query = mock.Mock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.gte.return_value = query
+        query.order.return_value = query
+        query.limit.return_value = query
+        query.update.return_value = query
+        query.execute.return_value = mock.Mock(data=[row])
+        supabase = mock.Mock()
+        supabase.table.return_value = query
+        with patch.dict(os.environ, {"CATALOG_RESUME": "1"}, clear=False):
+            found = api.claim_catalog_resume(
+                supabase,
+                now=dt.datetime(2026, 11, 11, 20, tzinfo=dt.timezone.utc),
+            )
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertEqual(found.run_id, 992)
+        self.assertEqual(found.page, 759)
+        self.assertEqual(found.gaps, 0)
+        update = query.update.call_args.args[0]
+        self.assertEqual(update["status"], "running")
+        self.assertIsNone(update["finished_at"])
+        self.assertIn("page=759", update["error_message"])
+        self.assertNotIn("aborting", update["error_message"])
+
+    def test_newer_failure_without_a_checkpoint_does_not_hide_one(self) -> None:
+        rows = [
+            {
+                "id": 1000,
+                "status": "failed",
+                "started_at": "2026-11-12T12:00:00+00:00",
+                "error_message": "windowed ingest failed",
+            },
+            {
+                "id": 992,
+                "status": "failed",
+                "started_at": "2026-11-11T15:00:00+00:00",
+                "error_message": (
+                    "catalog_checkpoint page=759 attempted=10 succeeded=9 failed=1 gaps=0"
+                ),
+            },
+        ]
+        query = mock.Mock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.gte.return_value = query
+        query.order.return_value = query
+        query.limit.return_value = query
+        query.update.return_value = query
+        query.execute.return_value = mock.Mock(data=rows)
+        supabase = mock.Mock()
+        supabase.table.return_value = query
+        found = api.claim_catalog_resume(
+            supabase,
+            now=dt.datetime(2026, 11, 12, 16, tzinfo=dt.timezone.utc),
+        )
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertEqual(found.run_id, 992)
+        self.assertEqual(found.page, 759)
+
+    def test_running_or_checkpoint_free_failure_is_not_resumed(self) -> None:
+        query = mock.Mock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.gte.return_value = query
+        query.order.return_value = query
+        query.limit.return_value = query
+        query.update.return_value = query
+        query.execute.return_value = mock.Mock(
+            data=[{"id": 1, "status": "failed", "error_message": "catalog ended too early", "started_at": "2026-11-11T15:00:00+00:00"}]
+        )
+        supabase = mock.Mock()
+        supabase.table.return_value = query
+        self.assertIsNone(
+            api.claim_catalog_resume(
+                supabase,
+                now=dt.datetime(2026, 11, 11, 20, tzinfo=dt.timezone.utc),
+            )
+        )
+        query.update.assert_not_called()
+
+    def test_resume_can_be_turned_off(self) -> None:
+        supabase = mock.Mock()
+        with patch.dict(os.environ, {"CATALOG_RESUME": "0"}):
+            self.assertIsNone(api.claim_catalog_resume(supabase))
+        supabase.table.assert_not_called()
+
+
+class CatalogTunnelWalkTests(unittest.TestCase):
+    def _fetcher(self):
+        fetcher = mock.Mock()
+        fetcher.proxy_url = "http://user:pass@proxy.example:7000"
+        fetcher.exit_country = "US"
+        fetcher.proxy_country = "us"
+        fetcher.proxy_session_rotation = 0
+        fetcher.can_rotate_proxy_session.return_value = True
+        fetcher._safe_error.side_effect = lambda exc: str(exc)
+
+        def rotate() -> None:
+            fetcher.proxy_session_rotation += 1
+
+        fetcher.rotate_proxy_session.side_effect = rotate
+        return fetcher
+
+    def _page(self, key: str, *, nxt: bool, fillers: int) -> dict:
+        items = [{"key": key, "category_name": "Crested Gecko", "price": 120}]
+        items.extend(
+            {
+                "key": f"other-{key}-{i}",
+                "category_name": "Leopard Gecko",
+                "price": 90,
+            }
+            for i in range(fillers)
+        )
+        return {"results": items, "next": "more" if nxt else None}
+
+    def test_forced_tunnel_error_rotates_and_the_walk_continues(self) -> None:
+        fetcher = self._fetcher()
+        seen: list[int] = []
+        state = {"page2": 0}
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen.append(page)
+            if page == 2:
+                state["page2"] += 1
+                if state["page2"] == 1:
+                    raise api.MorphMarketFetchError(
+                        "net::ERR_TUNNEL_CONNECTION_FAILED"
+                    )
+                return self._page("2", nxt=True, fillers=0)
+            if page == 3:
+                return self._page("3", nxt=False, fillers=0)
+            return self._page(str(page), nxt=True, fillers=49)
+
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "5",
+            "SKIP_UNCHANGED": "0",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "0",
+            "CATALOG_SESSION_ROTATE_PAGES": "0",
+            "CATALOG_SESSION_RETRIES": "4",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "start_scrape_run", return_value=992),
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 120,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe", return_value=True) as mark,
+            patch.object(api, "finalise_scrape_run") as finalise,
+            patch.object(api, "request_after_scrape"),
+            patch.object(api.time, "sleep"),
+            patch.object(api, "retry_delay", side_effect=lambda base: base),
+        ):
+            self.assertEqual(api.main(), 0)
+        self.assertEqual(seen, [1, 2, 2, 3])
+        fetcher.rotate_proxy_session.assert_called_once_with()
+        self.assertTrue(mark.call_args.kwargs["complete"])
+        self.assertEqual(finalise.call_args.kwargs["status"], "success")
+        self.assertEqual(finalise.call_args.args[1], 992)
+
+    def test_scheduled_rotation_opens_a_fresh_session(self) -> None:
+        fetcher = self._fetcher()
+        seen: list[int] = []
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen.append(page)
+            if page >= 3:
+                return self._page(str(page), nxt=False, fillers=0)
+            return self._page(str(page), nxt=True, fillers=49 if page == 1 else 0)
+
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "5",
+            "SKIP_UNCHANGED": "0",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "0",
+            "CATALOG_SESSION_ROTATE_PAGES": "2",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "start_scrape_run", return_value=7),
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 120,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe", return_value=True),
+            patch.object(api, "finalise_scrape_run"),
+            patch.object(api, "request_after_scrape"),
+            patch.object(api.time, "sleep"),
+            patch.object(api, "retry_delay", side_effect=lambda base: base),
+        ):
+            self.assertEqual(api.main(), 0)
+        self.assertEqual(seen, [1, 2, 3])
+        fetcher.rotate_proxy_session.assert_called_once_with()
+
+    def test_sustained_tunnel_failures_abort_without_marking_unseen(self) -> None:
+        fetcher = self._fetcher()
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            if page == 1:
+                return self._page("1", nxt=True, fillers=49)
+            raise api.MorphMarketFetchError("net::ERR_TUNNEL_CONNECTION_FAILED")
+
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "10",
+            "SKIP_UNCHANGED": "0",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "0",
+            "CATALOG_SESSION_ROTATE_PAGES": "0",
+            "CATALOG_SESSION_RETRIES": "1",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "start_scrape_run", return_value=992),
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 120,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe") as mark,
+            patch.object(api, "finalise_scrape_run") as finalise,
+            patch.object(api, "request_after_scrape"),
+            patch.object(api, "notify_discord_failure"),
+            patch.object(api.time, "sleep"),
+            patch.object(api, "retry_delay", side_effect=lambda base: base),
+        ):
+            self.assertEqual(api.main(), 1)
+        mark.assert_not_called()
+        self.assertGreaterEqual(fetcher.rotate_proxy_session.call_count, 5)
+        result = finalise.call_args.kwargs
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("catalog_checkpoint page=1", result["error_message"])
+        self.assertIn("gaps=1", result["error_message"])
+        self.assertIn("failed in a row", result["error_message"])
+
+    def test_resume_walks_forward_from_the_checkpoint(self) -> None:
+        fetcher = self._fetcher()
+        seen: list[int] = []
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen.append(page)
+            if page >= 2:
+                return self._page(str(page), nxt=False, fillers=0)
+            return self._page("1", nxt=True, fillers=49)
+
+        checkpoint = api.CatalogCheckpoint(
+            page=2, attempted=4, succeeded=4, failed=0, gaps=0, run_id=50
+        )
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "4",
+            "SKIP_UNCHANGED": "0",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "1",
+            "CATALOG_SESSION_ROTATE_PAGES": "0",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "claim_catalog_resume", return_value=checkpoint),
+            patch.object(api, "start_scrape_run") as started,
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 120,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe", return_value=True) as mark,
+            patch.object(api, "finalise_scrape_run") as finalise,
+            patch.object(api, "request_after_scrape"),
+            patch.object(api.time, "sleep"),
+        ):
+            self.assertEqual(api.main(), 0)
+        started.assert_not_called()
+        self.assertEqual(seen, [1, 2])
+        self.assertTrue(mark.call_args.kwargs["complete"])
+        self.assertGreaterEqual(mark.call_args.kwargs["succeeded"], 4)
+        self.assertEqual(finalise.call_args.args[1], 50)
+
+    def test_resume_rereads_from_page_one_and_skips_seen_details(self) -> None:
+        fetcher = self._fetcher()
+        seen_pages: list[int] = []
+        fetched: list[str] = []
+        recent = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        known = {
+            "1": {
+                "listing_id": "1",
+                "price": 120,
+                "currency": "USD",
+                "last_updated_at": recent,
+                "is_active": True,
+                "sold_at": None,
+            }
+        }
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen_pages.append(page)
+            if page == 1:
+                # "1" was already seen. "9" shifted onto this page after
+                # earlier ads disappeared and must still be read.
+                return {
+                    "results": [
+                        {"key": "1", "price": 120, "category_name": "Crested Gecko"},
+                        {"key": "9", "price": 80, "category_name": "Crested Gecko"},
+                    ]
+                    + [
+                        {"key": f"other-{i}", "category_name": "Leopard Gecko"}
+                        for i in range(48)
+                    ],
+                    "next": "more",
+                }
+            return self._page("2", nxt=False, fillers=0)
+
+        checkpoint = api.CatalogCheckpoint(
+            page=759,
+            attempted=4,
+            succeeded=4,
+            failed=0,
+            gaps=1,
+            run_id=50,
+            started_at="2026-11-11T15:00:00+00:00",
+        )
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "4",
+            "SKIP_UNCHANGED": "1",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "1",
+            "CATALOG_SESSION_ROTATE_PAGES": "0",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "claim_catalog_resume", return_value=checkpoint),
+            patch.object(api, "start_scrape_run") as started,
+            patch.object(api, "load_known_live", return_value=known),
+            patch.object(api, "load_ids_seen_since", return_value={"1"}),
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: fetched.append(lid)
+                or {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 80,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe", return_value=True) as mark,
+            patch.object(api, "finalise_scrape_run"),
+            patch.object(api, "request_after_scrape"),
+            patch.object(api.time, "sleep"),
+        ):
+            self.assertEqual(api.main(), 0)
+        started.assert_not_called()
+        self.assertEqual(seen_pages, [1, 2])
+        self.assertEqual(fetched, ["9", "2"])
+        self.assertTrue(mark.call_args.kwargs["complete"])
+
+    def test_wrong_country_rotation_aborts_without_marking_unseen(self) -> None:
+        fetcher = self._fetcher()
+        fetcher.preflight_us.side_effect = [
+            "US",
+            api.MorphMarketFetchError(
+                "proxy did not reach US after 2 preflight attempts",
+                retryable=False,
+            ),
+        ]
+        seen: list[int] = []
+
+        def list_page(page, _fetcher, backoffs=(), fail_fast_connection=False):
+            seen.append(page)
+            return self._page(str(page), nxt=True, fillers=49)
+
+        env = {
+            "INGEST_MODE": "catalog",
+            "MAX_PAGES": "4",
+            "SKIP_UNCHANGED": "0",
+            "MIN_CATALOG_PAGES": "1",
+            "MIN_CATALOG_WRITES": "1",
+            "EXPECTED_CATALOG_PAGES": "2",
+            "CATALOG_RESUME": "0",
+            "CATALOG_SESSION_ROTATE_PAGES": "1",
+            "MORPHMARKET_PAGE_RETRIES": "0",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(api, "apply_cli_args", return_value=False),
+            patch.object(api, "get_supabase", return_value=object()),
+            patch.object(api, "close_abandoned_runs"),
+            patch.object(api, "start_scrape_run", return_value=7),
+            patch.object(api, "MorphMarketFetcher", return_value=fetcher),
+            patch.object(api, "fetch_list_page", side_effect=list_page),
+            patch.object(
+                api,
+                "fetch_detail",
+                side_effect=lambda lid, _f, backoffs, **_kwargs: {
+                    "id": lid,
+                    "owner": {"id": "seller"},
+                    "category": {"name": "Crested Gecko"},
+                    "price": 120,
+                },
+            ),
+            patch.object(api, "upsert_listings", side_effect=lambda _s, _r, rows: len(rows)),
+            patch.object(api, "write_image_and_gallery_rows"),
+            patch.object(api, "patch_canonical_extras"),
+            patch.object(api, "mark_unseen_if_safe") as mark,
+            patch.object(api, "finalise_scrape_run") as finalise,
+            patch.object(api, "notify_discord_failure"),
+            patch.object(api.time, "sleep"),
+            patch.object(api, "retry_delay", side_effect=lambda base: base),
+        ):
+            self.assertEqual(api.main(), 1)
+        self.assertEqual(seen, [1])
+        mark.assert_not_called()
+        self.assertEqual(finalise.call_args.kwargs["status"], "failed")
+        self.assertIn("did not reach US", finalise.call_args.kwargs["error_message"])

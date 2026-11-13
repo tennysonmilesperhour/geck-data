@@ -115,16 +115,33 @@ The catalog checks the proxy exit country before it starts. Add these optional
 repository secrets when your provider needs settings beyond the proxy URL:
 
 - `MORPHMARKET_PROXY_COUNTRY`: provider country code, default `us`.
-- `MORPHMARKET_PROXY_SESSION_ID`: starting sticky-session identifier. One
-  session is reused for the full catalog walk.
+- `MORPHMARKET_PROXY_SESSION_ID`: optional starting sticky-session identifier.
+  When it is empty the scraper generates 12 lowercase hex characters. Each
+  rotation keeps that prefix and appends `-1`, `-2`, and so on.
 - `MORPHMARKET_PROXY_USERNAME_TEMPLATE`: provider-specific username format.
   It can use `{username}` for the username from the proxy URL, `{country}` for
   `MORPHMARKET_PROXY_COUNTRY`, and `{session}` for the current session id. Write
   the template in the syntax required by your provider. For example, place
   `{country}` and `{session}` wherever that provider expects its country and
-  session values. The scraper does not assume a vendor's format. Include
-  `{session}` so a bad exit can be rotated; existing URL query parameters and
-  credentials are retained.
+  session values. The scraper does not assume a vendor's format. A shape that
+  works with those three placeholders is
+  `{username}-country-{country}-session-{session}`. Include `{session}` so a
+  bad exit can be rotated, and include `{country}` so every new session stays
+  pinned to the United States. Existing URL query parameters and credentials
+  are retained. A session id baked into `MORPHMARKET_PROXY_URL` is not
+  rewritten; rotation only changes the username built from this template.
+
+The weekday catalog walk opens a new session every 40 list pages
+(`CATALOG_SESSION_ROTATE_PAGES`) and immediately after a tunnel or connection
+drop (`ERR_TUNNEL_CONNECTION_FAILED` and similar). Each failed list page is
+retried on up to 4 fresh sessions (`CATALOG_SESSION_RETRIES`) with a jittered
+wait of 5, 10, 20, then 40 seconds. The walk aborts only after 5 pages in a
+row have each exhausted those sessions. Detail requests rotate up to 3 times
+(`CATALOG_DETAIL_SESSION_RETRIES`). If the template has no `{session}`
+placeholder, the scraper restarts the browser on the same sticky session,
+logs that rotation is unavailable, and tells you to set the template as
+above. No secret value needs to change when the template already contains
+`{session}` and `{country}`.
 
 The geo check asks ipapi.co, then ipinfo.io, then country.is, so one
 rate-limited lookup service does not stop the run. If a geo check reports a
@@ -146,16 +163,35 @@ as soon as that secret exists. Until then they skip with a notice instead of
 failing. The newest check reads up to 40 list pages twice a day, stopping at
 the first page with no new crested listing.
 
-For temporary connection failures, HTTP 429, or server errors (5xx), the catalog
-retries the same list page after waits of 15, 30, 60, and 120 seconds. Detail
-requests retry after 5 and 15 seconds. Other modes, including the newest check,
-retry once after 10 seconds to keep waits short within its 15-minute job limit.
-Each retry restarts the browser on the same route. Removed listings (404) and
-access-denied errors (403 after the direct-to-proxy fallback) are not retried.
+For HTTP 429 or server errors (5xx), the catalog retries the same list page
+on the current session after waits of 15, 30, 60, and 120 seconds. A dropped
+proxy tunnel does not use that ladder: it rotates to a new session first, as
+described above. Detail requests retry HTTP errors after 5 and 15 seconds,
+and rotate on a tunnel drop. Other modes, including the newest check, retry
+once after 10 seconds on the same session to keep waits short within the
+15-minute job limit. Each same-session retry restarts the browser on the
+current route. Removed listings (404) and access-denied errors (403 after
+the direct-to-proxy fallback) are not retried. Pauses between catalog list
+pages add up to 0.75 seconds of jitter.
 
-A catalog that ends naturally before `MIN_CATALOG_PAGES` (default 100, capped
-at `MAX_PAGES`) now fails and asks you to check the US proxy location. Rows
-already saved stay, but it does not mark unseen listings inactive.
+A catalog that ends naturally before the trustworthy page floor now fails
+and asks you to check the US proxy location. The floor is the larger of
+`MIN_CATALOG_PAGES` (default 100) and 98% of `EXPECTED_CATALOG_PAGES`
+(default 800; the weekday job sets 840, so the floor is 823). A "no next
+page" near page 100 is not treated as a finished catalog. If a list page
+reports a total `count` that implies more pages than were walked, that end
+is incomplete too. Rows already saved stay, but the run does not mark unseen
+listings inactive. A failed catalog run stores
+`catalog_checkpoint page=N ...` on its `scrape_runs` row. The next catalog
+run within `CATALOG_RESUME_HOURS` (default 30) reopens that same row and
+reads the list again from page 1. Detail reads are skipped for listings
+whose `last_seen_at` is already at or after that row's `started_at`, unless
+the list price changed. The list is ordered by newest first, so ads that
+disappear shift later ads onto earlier pages. Resuming at page N would miss
+those still-live ads and could mark them inactive. Re-reading every list
+page closes that gap. A hole in the resumed walk, a natural end below the
+floor, or a job that never reaches the end does not mark listings inactive.
+Set `CATALOG_RESUME=0` to open a new run instead of reopening the failed one.
 
 If you do both A and B, the two schedules both refresh the same data. That is
 harmless, but you only need one.
