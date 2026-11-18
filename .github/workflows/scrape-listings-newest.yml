@@ -1,6 +1,6 @@
-name: Newest listings check (twice a day)
+name: Newest listings check (every other day)
 
-# Reads MorphMarket's newest-first list twice a day so new crested listings
+# Reads MorphMarket's newest-first list every other day so new crested listings
 # reach the Geck Inspect Market page (the Live tape, members' watchlists,
 # the morning brief) within about 12 hours. Each run may read up to 40
 # pages (MAX_PAGES below), enough for roughly 12 hours of new ads across
@@ -14,17 +14,17 @@ name: Newest listings check (twice a day)
 # (geck_data.request_after_scrape). The database picks it up within 5
 # minutes, refreshes the two listing views and runs the watchlist matcher.
 #
-# Runs at 01:07 and 13:07 UTC: 7:07pm and 7:07am in Denver during
-# daylight time, an hour earlier after it ends. Minute 7 stays clear of
+# Runs at 13:07 UTC on odd days of the month (*/2): 7:07am in Denver
+# during daylight time, 6:07am after it ends. Months with 31 days run
+# on both the 31st and the 1st. Minute 7 stays clear of
 # the top of the hour, when GitHub delays scheduled runs the most.
 # Scheduled runs can still start late or be dropped when GitHub is busy.
 #
-# No Discord message on failure: a broken route would post twice a day,
-# every day. The weekday catalog job reports the same problem once, and
+# No Discord message on failure: a broken route would post every run. The weekday catalog job reports the same problem once, and
 # the Data status page shows this check's latest result.
 on:
   schedule:
-    - cron: '7 1,13 * * *'
+    - cron: '7 13 */2 * *'
   workflow_dispatch:
 
 concurrency:
