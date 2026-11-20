@@ -1,334 +1,173 @@
-# Geck Inspect — v1 MVP
+# Geck Data
 
-A web dashboard for crested gecko market intelligence. Reads from your Supabase
-project, renders three D3 charts, and gives you (the logged-in user) a drop zone
-for new database files, images, and CSVs.
+Crested gecko market data: a Next.js site at
+[geck-data.vercel.app](https://geck-data.vercel.app) and the Python scrapers
+that fill it. It is the market side of Geck Inspect and reads and writes the
+`geck_data` schema in the Geck Inspect Supabase project.
 
-> **Stack:** Next.js 14 (App Router) · TypeScript · Tailwind · D3.js · Supabase
-> (Auth, Postgres, Storage) · deployed on Vercel.
+Read paths show crested gecko data only. Other species the scrapers or the
+extension pick up are kept, tagged with a `species`, and archived.
 
----
+> **Stack:** Next.js 15 (App Router) · React 18 · TypeScript · Tailwind 3 ·
+> D3 · Supabase (Auth, Postgres, Storage) · Python 3.11 scrapers on GitHub
+> Actions · deployed on Vercel.
 
-## What's in this repo
-
-```
-geck-inspect/
-├── README.md                              ← you are here
-├── package.json                           ← dependencies + scripts
-├── next.config.mjs, tsconfig.json, tailwind.config.ts, postcss.config.js
-├── .env.local.example                     ← copy to .env.local and fill in
-├── supabase/
-│   └── migrations/                              ← archived, do not replay
-└── src/
-    ├── middleware.ts                      ← gates /upload to logged-in users
-    ├── app/
-    │   ├── layout.tsx, globals.css
-    │   ├── page.tsx                       ← public dashboard
-    │   ├── login/page.tsx                 ← email/password sign-in
-    │   ├── upload/page.tsx                ← drop zone (logged-in only)
-    │   ├── api/upload/route.ts            ← browser drop-zone → server ingest (session auth)
-    │   └── api/ingest/route.ts            ← machine-to-machine ingest (Bearer INGEST_API_KEY)
-    ├── components/
-    │   ├── Header.tsx, LogoutButton.tsx
-    │   ├── DropZone.tsx
-    │   └── charts/
-    │       ├── PriceHistogram.tsx
-    │       ├── TraitFrequencyAndPrice.tsx
-    │       └── SellerLeaderboardScatter.tsx
-    └── lib/
-        ├── supabase/{client,server,admin}.ts
-        └── ingest/parseSqlite.ts          ← sql.js wrapper + batched upsert
-```
+For where the project stands and what comes next, read
+[`ROADMAP.md`](ROADMAP.md). For why things are the way they are, read
+[`DECISIONS.md`](DECISIONS.md).
 
 ---
 
-## Setup checklist (first time)
+## The site
 
-You'll do these once, in order.
+Header pages:
 
-### 1. Use the consolidated Supabase project
+| Route | What it shows |
+| --- | --- |
+| `/` | **Price check.** Pick morphs as chips and see the typical sale range, sold and asking bands, a confidence line, then matching listings and recent sales. |
+| `/morphs` | Morph and trait values |
+| `/listings` | Current listings, each priced against similar geckos |
+| `/sellers` | Breeders, each priced against the market |
+| `/trends` | Week-by-week market movement and morph comparison |
+| `/markets` | US, South Korea, Japan, Europe and Canada |
 
-Geck Data runs from the `geck_data` schema in the Geck Inspect project. Do not
-replay this repository's legacy migrations: they describe the retired
-standalone database and many target `public`. Future migrations belong in the
-Geck Inspect repository.
+Footer pages: `/methodology`, `/status` (data freshness), `/api-docs`,
+`/privacy`, `/terms`. Retired routes (`/market`, `/indices`, `/compare`,
+`/sold`, `/trait`, `/combo` and others) redirect to the pages above.
 
-### 2. Get your Supabase keys
+**Members only:** single listings, photos and seller pages need a sign-in.
+Aggregates (prices, charts, value tables) stay public. The bulk endpoints
+(`/data/market.json`, the snapshot CSV, arbitrage) answer 401 without a
+session or token.
 
-In the same dashboard:
+Other surfaces: `/login`, `/watchlist`, `/upload` (signed-in drop zone),
+`/admin` (analytics, `profiles.role = 'admin'`), `/data-admin` (scrape runs
+and manual job triggers, `ADMIN_USER_ID` only).
 
-1. Click the **gear icon** (Project Settings) → **API**.
-2. Copy two values:
-   - **Project URL** (`https://mmuglfphhwlaluyfyxsp.supabase.co`)
-   - **anon / public** key (the long `eyJ…` one labeled "anon public")
-   - **service_role** key (the second `eyJ…`, labeled "service_role" — **secret**)
+### API
 
-Set `NEXT_PUBLIC_SUPABASE_DB_SCHEMA` and `SUPABASE_DB_SCHEMA` to `geck_data`.
+| Route | Purpose |
+| --- | --- |
+| `/api/ingest` | Machine-to-machine ingest, `Authorization: Bearer <INGEST_API_KEY>`. The Eye in the Sky extension posts JSON events here. |
+| `/api/upload` | The signed-in drop zone's ingest (SQLite `.db`, images, CSVs) |
+| `/data/market.json` | Market data Geck Inspect reads (members or token) |
+| `/api/status.json`, `/api/version` | Freshness and build info |
+| `/api/market`, `/api/market-weekly`, `/api/pulse`, `/api/stats`, `/api/value-report`, `/api/alerts` | Data behind the pages |
+| `/api/trigger-scrape` | Starts a GitHub Actions scrape from `/data-admin` |
 
-### 3. Install Node.js (if you don't already have it)
+`/api-docs` on the site documents the public endpoints.
 
-Open Terminal and run:
+---
+
+## Data: the `geck_data` schema
+
+Geck Data runs from the `geck_data` schema in the Geck Inspect Supabase
+project. Both `NEXT_PUBLIC_SUPABASE_DB_SCHEMA` and `SUPABASE_DB_SCHEMA` must be
+`geck_data`.
+
+- **Listings and sellers:** MorphMarket listings, their price history and
+  stores, plus `cross_platform_listings` from shops outside MorphMarket.
+- **Runs:** `scrape_runs` records every scraper run; `/status` and
+  `/data-admin` read it.
+- **Public read models:** the site reads `listing_market_mv`,
+  `listing_week_mv`, `market_asks_mv`, `cross_platform_traits_mv` and
+  `v_sold_reconciled` with the publishable key, directly or through SECURITY
+  INVOKER RPCs (`market_trend`, `market_weekly`, `compare_trends`,
+  `market_compare`, `sold_price_band`, `v_regional_heatmap`, `data_health`).
+  Anon read access to those materialized views is intentional.
+- **Storage:** crested images go to the public `listing-images` bucket; other
+  species to `archive-listing-images`; raw drop-zone files to `raw-uploads`.
+
+**Schema changes belong in the
+[geck-inspect](https://github.com/tennysonmilesperhour/geck-inspect) repo.**
+`supabase/migrations/` here is an archive of the retired standalone database.
+Do not add, replay or apply migrations from this repo, and do not run
+`supabase db push`. The `legacy-migrations-read-only` workflow rejects changes
+to those files.
+
+---
+
+## Run it locally
+
+Node 22 or newer (CI and production use Node 24).
 
 ```bash
-node --version
-```
-
-If it prints `v22` or newer, you're good. Otherwise install a current LTS
-release from https://nodejs.org. CI and production currently build on Node 24.
-
-### 4. Install dependencies
-
-In the project folder:
-
-```bash
-cd ~/projects/geck-inspect
-npm install
-```
-
-This will take a minute or two. It pulls down React, Next.js, D3, Supabase
-client, etc. — about 300 MB of `node_modules/`.
-
-### 5. Create `.env.local`
-
-```bash
-cp .env.local.example .env.local
-```
-
-Now open `.env.local` in any text editor and replace the placeholder values
-with the keys you copied in step 2.
-
-### 6. Run it locally
-
-```bash
+npx --yes npm@12.2.1 ci --ignore-scripts
+cp .env.local.example .env.local   # then fill in the values
 npm run dev
 ```
 
-Open http://localhost:3000 in your browser.
+`.env.local.example` lists every variable with a comment. The essentials are
+the Supabase URL, publishable and anon keys, service role key, the two schema
+variables above, `INGEST_API_KEY` and `ADMIN_USER_ID`.
 
-- The dashboard should load with your 1,105 listings and 214 sellers.
-- Click **Log in** → **Create account** → enter an email + password.
-- Now click **Upload** to see the drop zone.
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Development server on localhost:3000 |
+| `npm run build` / `npm start` | Production build and server |
+| `npm run lint` | ESLint |
+| `npm test` | TypeScript tests (`tsx --test tests/*.test.ts`) |
+| `npx tsc --noEmit --pretty false` | Type check, required before every push |
 
----
-
-## Day-to-day use
-
-- **Refresh data:** drag a fresh `morphmarket_test.db` (or whatever your
-  scraper outputs) onto the drop zone. The dashboard auto-refreshes the next
-  time you load it.
-- **Add images:** drop them onto the upload zone. If the filename includes a
-  MorphMarket id (e.g. `mm_3631595.jpg`), it auto-links to that listing.
-- **Archive CSVs:** drop them — they're saved to the `raw-uploads` bucket for
-  later processing.
+CI (`.github/workflows/ci.yml`) runs lint, type check, `npm test`, the build,
+and the Python tests on every push and pull request.
 
 ---
 
-## Deploy to Vercel
+## The scrapers
 
-### One-time setup
+Python 3.11, in `scripts/`. Setup and per-script details are in
+[`scripts/README.md`](scripts/README.md); running them from a Mac or through
+the residential proxy is in [`docs/SCRAPER_SETUP.md`](docs/SCRAPER_SETUP.md),
+and recovering a failing job in
+[`docs/SCRAPER_RECOVERY.md`](docs/SCRAPER_RECOVERY.md).
 
-1. Push this repo to GitHub:
-   ```bash
-   cd ~/projects/geck-inspect
-   git init
-   git add .
-   git commit -m "Initial v1"
-   git remote add origin https://github.com/tennysonmilesperhour/geck-inspect.git
-   git push -u origin main
-   ```
-   (Create the empty repo on GitHub first.)
+```bash
+pip install -r scripts/requirements.txt
+python -m unittest discover -s tests -p "test_*.py"
+python scripts/check_env.py      # preflight: which project, schema and keys you are on
+```
 
-2. Go to https://vercel.com/new → import the repo.
-3. **Framework Preset:** Next.js (auto-detected).
-4. **Environment Variables:** add the Supabase values from your `.env.local`:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `NEXT_PUBLIC_SUPABASE_DB_SCHEMA` (`geck_data` in the consolidated project)
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `SUPABASE_DB_SCHEMA` (`geck_data` in the consolidated project)
-5. Click **Deploy**. ~2 minutes later you'll have a live URL like
-   `https://geck-inspect.vercel.app`.
+| Script | What it does |
+| --- | --- |
+| `scrape_listings_api.py` | MorphMarket listings through the public JSON API (catalog recrawl, newest, last 7 days) |
+| `scrape_listings.py` | MorphMarket grid scrape |
+| `scrape_details.py` | Listing details for listings not detailed recently |
+| `scrape_sellers.py` | Per-seller store scrape |
+| `scrape_cross_platform.py` | Shops outside MorphMarket into `cross_platform_listings` |
+| `download_images.py` | Primary images into Supabase Storage |
+| `backfill_history.py` | A year of history from sampled old listings |
+| `transform_and_load.py` | Shared parsers used by every scraper |
+| `check_env.py` | Preflight check, run first |
+| `probe_pages.py` | Prints market page structure for writing scrapers |
+| `pull_anthropic_billing.py` | Anthropic cost report into `anthropic_billing_daily` |
+| `export_training_dataset.py`, `train_morph_classifier.py`, `eval_morph_id.py` | Morph ID training data, classifier and evaluation |
+| `seed_geck_inspect.py`, `ingest_show_winners.py`, `mirror_and_ingest_anchors.py` | Feed images into Geck Inspect |
+| `migrate_csvs.py`, `backfill_market_listings.py`, `upload_local_images.py` | One-time migrations kept for reference |
 
-### Subsequent deploys
-
-`git push` to `main` → Vercel auto-deploys. That's it.
-
-Database migrations under `supabase/migrations/` are retained as a read-only
-record of the retired standalone Geck Data database. Geck Data now runs from the
-`geck_data` schema in the Geck Inspect Supabase project. Add and apply future
-database migrations from the Geck Inspect repository so schema ownership stays
-in one place. The `legacy-migrations-read-only` workflow blocks accidental SQL
-changes here.
-
-Apply a new Geck Inspect migration through the connected Supabase tooling, push
-it in the same session, then verify the affected function, view, or table in
-production.
+Scheduled jobs live in `.github/workflows/`: newest listings, weekday catalog
+recrawl, weekly last-7-days API listings, weekday cross-platform shops,
+nightly index refresh, weekly adjustment factors, weekly images, and the
+weekly details and sellers scrapes. Their current state is in
+[`ROADMAP.md`](ROADMAP.md) section 1. MorphMarket blocks GitHub runners
+directly, so MorphMarket jobs go through the residential proxy in the
+`MORPHMARKET_PROXY_URL` secret.
 
 ---
 
-## How the pieces fit together
+## Deploying
 
-```
-                          ┌───────────────────────┐
-   browser                │  market_listings      │
-   ┌────────────────┐     │  market_sellers       │
-   │  /  dashboard  │────▶│  listing_images       │
-   │  (D3 charts)   │     │  (Supabase Postgres)  │
-   └────────────────┘     └───────────────────────┘
-                                    ▲
-                                    │ upserts (service role)
-                                    │
-   ┌────────────────┐     ┌───────────────────────┐
-   │  /upload       │────▶│  /api/upload          │
-   │  (drop zone)   │     │  parses .db with      │
-   └────────────────┘     │  sql.js, routes       │
-       ▲                  │  images→Storage       │
-       │ session cookie   │  csv→Storage          │
-       │                  └───────────────────────┘
-   ┌───┴────────────┐                ▲
-   │  middleware.ts │  blocks unauth │
-   └────────────────┘                │
-                                     │ uploads
-                          ┌──────────┴────────────┐
-                          │  listing-images       │
-                          │  raw-uploads          │
-                          │  (Supabase Storage)   │
-                          └───────────────────────┘
-```
+Every push to `main` deploys to production on Vercel. See
+[`CLAUDE.md`](CLAUDE.md) for the working rules (type check before pushing,
+small commits, ask before destructive changes).
 
----
+## Companion projects
 
-## Troubleshooting
-
-**"Could not load data from Supabase" on the dashboard**
-The migration didn't run, or the env vars are wrong. Re-check step 1 and step 5.
-
-**`npm run dev` errors about missing modules**
-You skipped `npm install`. Run it.
-
-**Upload of a `.db` file hangs or times out**
-sql.js loads its WASM from a CDN on first use — first parse can be slow. If it
-takes more than 60s, the Vercel serverless route will time out. For very large
-DBs, fall back to the Python `upload_to_supabase.py` script we built earlier.
-
-**Login says "Email not confirmed"**
-By default Supabase requires email confirmation. Either confirm the link they
-emailed you, or in the Supabase dashboard go to **Authentication → Providers →
-Email** and toggle off "Confirm email" for development.
-
----
-
-## Extension event stream (v2)
-
-Alongside bulk `.db` uploads, the browser extension pushes live JSON events to
-`/api/ingest` as it captures data while you browse MorphMarket and other
-platforms. The API branches on `Content-Type`:
-
-```
-POST /api/ingest
-Authorization: Bearer <INGEST_API_KEY>
-Content-Type: application/json
-
-{ "events": [
-  { "type": "listingSeen",      "payload": { …listing… } },
-  { "type": "priceDrop",        "payload": { listing_id, old_price, new_price } },
-  { "type": "soldInferred",     "payload": { listing_id } },
-  { "type": "auctionClose",     "payload": { listing_id, final_price, bid_count, closed_at } },
-  { "type": "showMention",      "payload": { show_name, show_date, context, source_url } },
-  { "type": "sellerSnapshot",   "payload": { seller_id, feedback_count, total_listings, … } },
-  { "type": "crossPlatform",    "payload": { platform, external_id, title, price, … } },
-  { "type": "alertMatch",       "payload": { alert_id, listing_id | cross_platform_listing_id } },
-  { "type": "searchResultBatch","payload": { listings: [ … ] } }
-]}
-```
-
-The historical event-table definitions are archived in
-`supabase/migrations/0002_extension_streams.sql`. Do not replay this file in
-the consolidated project. Maintain the current schema through migrations in
-the Geck Inspect repository.
-
-## Analytics routes
-
-| Route | What it shows |
-|---|---|
-| `/` | Market pulse — past-7d KPIs + three charts |
-| `/sold` | Sold listings with days-to-sell histogram |
-| `/price-drops` | Every drop the extension captured |
-| `/sellers` | Seller leaderboard + table |
-| `/sellers/[id]` | One seller's timeline, inventory, recent sales |
-| `/shows` | Expo/show mention aggregation |
-| `/cross-platform` | Listings from Fauna Classifieds, Reptile Forums, Preloved, Kijiji |
-| `/alerts` | Your saved queries and their matches (login required) |
-| `/admin/analytics` | **Admin only** — Growth / Engagement / Features / Retention / Errors |
-
-## Admin analytics (`/admin/analytics`)
-
-A five-tab dashboard at `/admin/analytics`, gated to users with
-`profiles.role = 'admin'`. Structure mirrors the companion app's Analytics
-page so patterns stay consistent across the stack:
-
-- **Growth** — new signups, new listings, price drops, sold, cross-platform,
-  show mentions. Every KPI compares the selected period to the prior period
-  of equal length and shows the raw prior count next to the delta.
-- **Engagement** — DAU from `user_events`, sessions, return rate, top pages
-  (events + distinct sessions per page).
-- **Features** — `page_view` vs feature events, top event names, full
-  breakdown table with **count + unique-user reach** per event name.
-- **Retention** — weekly cohort grid (last 8 signup weeks × W+1..W+4
-  follow-up weeks). Incomplete weeks render `—`; cell color saturates at 60%.
-- **Errors** — `error_logs` viewer with period/level/search filters and a
-  detail modal (mark resolved, delete).
-
-### Telemetry
-
-`src/lib/telemetry.ts` exposes four entry points, all safe to call from
-anywhere on the client:
-
-```ts
-import {
-  trackEvent,
-  trackPageView,
-  reportError,
-  installGlobalErrorHandlers,
-} from "@/lib/telemetry";
-
-trackEvent("upload_started", { filename, bytes });
-trackEvent("alert_created", { query_type: "maturity" });
-```
-
-Page views are already captured automatically on every route change via
-`src/components/TelemetryClient.tsx`. `installGlobalErrorHandlers()` is
-invoked once at mount and routes uncaught `window.error` + unhandled promise
-rejections into `public.error_logs`; `src/components/ErrorBoundary.tsx` adds
-the React render-time pipeline.
-
-Every event row carries a `source` column (currently `'geck-inspect'`) so
-future inspectors / scrapers / the browser extension can write into the
-same tables via the Supabase REST API and stay distinguishable in the
-dashboard.
-
-### Enabling it
-
-1. Verify that the consolidated project has the analytics schema using the
-   Geck Inspect repository instructions. The local
-   `supabase/migrations/0003_admin_analytics.sql` is historical reference only;
-   do not replay it. Add any missing schema through Geck Inspect migrations.
-2. Promote yourself to admin once, in the Supabase SQL editor:
-   ```sql
-   update public.profiles set role = 'admin' where email = 'you@example.com';
-   ```
-3. Reload the app; an **Analytics** tab appears in the header and
-   `/admin/analytics` unlocks.
-
-## Next up (v3 ideas)
-
-- Geographic map of sellers (D3 + TopoJSON US states).
-- Image gallery on the dashboard, filterable by trait.
-- Trait combo box plots.
-- Pedigree premium chart (proven_breeder vs not).
-- In-UI alert creation / editing (currently insert directly into `alerts`).
-- CSV parsing in `/api/upload` — route to the right staging table by filename
-  prefix.
+- [geck-inspect](https://github.com/tennysonmilesperhour/geck-inspect): the
+  web app. It reads this data through `/data/market.json` and direct queries,
+  and owns the database migrations.
+- [eyeinthesky](https://github.com/tennysonmilesperhour/eyeinthesky): the
+  Chrome extension that posts marketplace events to `/api/ingest`.
 
 ## Baseline checklist
 
@@ -341,8 +180,8 @@ dashboard.
 [ ] revenue lands in business account     [ ] sales tax configured (physical goods)
 ```
 
-The repository is public, so the private-repo item stays open. CI already runs on pull requests and on pushes to `main`. Dependabot is configured for npm, pip (`/scripts`), and GitHub Actions, and `package-lock.json` is committed. PostHog initializes only when `NEXT_PUBLIC_POSTHOG_KEY` is set; exception autocapture is enabled in that init, and this checklist stays unticked until that is confirmed in production.
-
-## Public data access
-
-The site reads `geck_data.listing_market_mv`, `listing_week_mv`, `market_asks_mv`, `cross_platform_traits_mv`, and `v_sold_reconciled` with the publishable (anon) key, directly or via SECURITY INVOKER RPCs (`market_trend`, `market_weekly`, `compare_trends`, `market_compare`, `sold_price_band`, `v_regional_heatmap`, `data_health`). Anon read access to those 5 materialized views is intentional.
+The repository is public, so the private-repo item stays open. CI runs on
+pull requests and on pushes to `main`. Dependabot covers npm, pip (`/scripts`)
+and GitHub Actions, and `package-lock.json` is committed. PostHog initializes
+only when `NEXT_PUBLIC_POSTHOG_KEY` is set, with exception autocapture on;
+the item stays unticked until that is confirmed in production.
